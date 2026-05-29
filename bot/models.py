@@ -37,6 +37,29 @@ class Item(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    # Поля для брони и продажи (добавлены позже)
+    booking_price: Mapped[Optional[float]] = mapped_column(nullable=True)
+    booking_prepayment: Mapped[Optional[float]] = mapped_column(nullable=True)
+    booking_platform: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    booking_full_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    booking_phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    booking_payment_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    booking_bonus: Mapped[Optional[float]] = mapped_column(nullable=True)
+    booking_bonus_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    
+    sale_price: Mapped[Optional[float]] = mapped_column(nullable=True)
+    sale_prepayment: Mapped[Optional[float]] = mapped_column(nullable=True)
+    sale_payment_amount: Mapped[Optional[float]] = mapped_column(nullable=True)
+    sale_payment_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    sale_platform: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    sale_full_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    sale_phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    sale_bonus: Mapped[Optional[float]] = mapped_column(nullable=True)
+    sale_bonus_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    sale_change: Mapped[Optional[float]] = mapped_column(nullable=True)
+    sale_change_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    is_sold: Mapped[bool] = mapped_column(Boolean, default=False)
+
     def __repr__(self):
         return f"<Item {self.id}: {self.text[:50]}>"
 
@@ -45,15 +68,20 @@ class Client(Base):
     __tablename__ = "clients"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    full_name: Mapped[str] = mapped_column(String(150), nullable=False)
-    phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
+    full_name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
+    phones: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)   # ← ДОБАВЛЕНО
     telegram_username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     social_network: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     referral_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-
+    birth_date: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 
     purchases: Mapped[list["Purchase"]] = relationship("Purchase", back_populates="client", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Client {self.id}: {self.full_name}>"
 
 
 class Purchase(Base):
@@ -62,12 +90,10 @@ class Purchase(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"))
     client: Mapped[Client] = relationship("Client", back_populates="purchases")
-
-    total_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_amount: Mapped[float] = mapped_column(nullable=False)
     purchase_type: Mapped[str] = mapped_column(String(50), nullable=False)
     payment_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     items_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -75,7 +101,7 @@ class DeletedItem(Base):
     __tablename__ = "deleted_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    item_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    item_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     serial: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     category_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -83,9 +109,6 @@ class DeletedItem(Base):
     deleted_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     restored: Mapped[bool] = mapped_column(Boolean, default=False)
     sale_message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-
-    def __repr__(self):
-        return f"<DeletedItem {self.id}: {self.text[:50]}>"
 
 
 class Sale(Base):
@@ -104,9 +127,6 @@ class Sale(Base):
     message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     sold_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    def __repr__(self):
-        return f"<Sale {self.id}>"
-
 
 class Preorder(Base):
     __tablename__ = "preorders"
@@ -120,9 +140,6 @@ class Preorder(Base):
     installment: Mapped[float] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    def __repr__(self):
-        return f"<Preorder {self.id}>"
-
 
 class Booking(Base):
     __tablename__ = "bookings"
@@ -132,26 +149,16 @@ class Booking(Base):
     total_amount: Mapped[float] = mapped_column(default=0)
     booked_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    def __repr__(self):
-        return f"<Booking {self.id}>"
-
 
 class DailyPayment(Base):
     __tablename__ = "daily_payments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    payment_type: Mapped[str] = mapped_column(String(20), nullable=False)
     amount: Mapped[float] = mapped_column(default=0)
-    payment_type: Mapped[str] = mapped_column(String(20), default='cash')
-    cash: Mapped[float] = mapped_column(default=0)
-    terminal: Mapped[float] = mapped_column(default=0)
-    qr: Mapped[float] = mapped_column(default=0)
-    transfer: Mapped[float] = mapped_column(default=0)
-    invoice: Mapped[float] = mapped_column(default=0)
-    installment: Mapped[float] = mapped_column(default=0)
+    sale_message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    def __repr__(self):
-        return f"<DailyPayment {self.id}>"
 
 
 class ProcessedMessage(Base):
@@ -161,9 +168,6 @@ class ProcessedMessage(Base):
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     message_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     processed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    def __repr__(self):
-        return f"<ProcessedMessage {self.chat_id}:{self.message_id}>"
 
 
 class Seller(Base):
@@ -176,9 +180,6 @@ class Seller(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    def __repr__(self):
-        return f"<Seller {self.id}: {self.name}>"
-
 
 class SellerDay(Base):
     __tablename__ = "seller_days"
@@ -186,12 +187,7 @@ class SellerDay(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     seller_id: Mapped[int] = mapped_column(ForeignKey("sellers.id", ondelete="CASCADE"))
     date: Mapped[datetime] = mapped_column(Date, nullable=False, index=True)
-
     seller: Mapped[Seller] = relationship("Seller", back_populates="days")
 
-    def __repr__(self):
-        return f"<SellerDay {self.id}: seller={self.seller_id} date={self.date}>"
 
-
-# Добавляем обратную связь в Seller
-Seller.days: Mapped[list["SellerDay"]] = relationship("SellerDay", back_populates="seller", cascade="all, delete-orphan")
+Seller.days = relationship("SellerDay", back_populates="seller", cascade="all, delete-orphan")
