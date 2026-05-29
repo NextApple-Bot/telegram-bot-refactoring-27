@@ -14,7 +14,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
 
-# Sentry (опционально)
+# ============================================================
+# Sentry (только если задан DSN, иначе не загружаем)
+# ============================================================
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 if SENTRY_DSN:
     import sentry_sdk
@@ -29,7 +31,9 @@ if SENTRY_DSN:
     )
     logging.info("✅ Sentry инициализирован")
 
-# Логирование
+# ============================================================
+# Настройка логирования (JSON или текст)
+# ============================================================
 log_format = os.getenv("LOG_FORMAT", "text").lower()
 if log_format == "json":
     from pythonjsonlogger import jsonlogger
@@ -43,7 +47,27 @@ else:
 
 logger = logging.getLogger(__name__)
 
+# ============================================================
+# Мониторинг памяти (опционально, для отладки)
+# ============================================================
+try:
+    import psutil
+    MEMORY_LOGGING = True
+except ImportError:
+    MEMORY_LOGGING = False
+    logger.warning("⚠️ psutil не установлен, мониторинг памяти отключён")
 
+
+def log_memory():
+    if MEMORY_LOGGING:
+        process = psutil.Process()
+        mem_mb = process.memory_info().rss / 1024 / 1024
+        logger.debug(f"📊 Память процесса: {mem_mb:.1f} MB")
+
+
+# ============================================================
+# Основной класс приложения
+# ============================================================
 class Application:
     def __init__(self):
         self.bot = None
@@ -178,6 +202,9 @@ class Application:
         }, status_code=200 if overall else 503)
 
 
+# ============================================================
+# Сборка Starlette приложения с админкой
+# ============================================================
 def create_starlette_app(app_instance):
     routes = [
         Route("/webhook", app_instance.webhook, methods=["POST"]),
@@ -210,6 +237,9 @@ def create_starlette_app(app_instance):
     return starlette_app
 
 
+# ============================================================
+# Точка входа
+# ============================================================
 async def main_entry():
     app = Application()
     try:
@@ -223,6 +253,7 @@ async def main_entry():
     port = int(os.getenv("PORT", "8000"))
     logger.info(f"🚀 Запуск сервера на порту {port}")
 
+    # Запускаем uvicorn с минимальными настройками
     config = uvicorn.Config(
         starlette_app,
         host="0.0.0.0",
@@ -230,13 +261,18 @@ async def main_entry():
         log_level="info",
         timeout_graceful_shutdown=30,
         timeout_keep_alive=30,
+        # Ограничиваем количество процессов – для экономии памяти
+        workers=1,
+        limit_concurrency=100,
     )
     server = uvicorn.Server(config)
     await server.serve()
 
-    # Если uvicorn остановился (по любой причине), блокируем завершение main_entry
-    # Это предотвратит выход из процесса и перезапуск контейнера.
-    await asyncio.Future()  # Бесконечное ожидание
+    # Если uvicorn остановился (по сигналу), то блокируем завершение main_entry,
+    # чтобы процесс не завершился и Render не перезапускал контейнер.
+    # Это поможет избежать ложных перезапусков из-за временных проблем.
+    logger.warning("⚠️ Uvicorn остановлен, но процесс остаётся в ожидании...")
+    await asyncio.Future()  # бесконечное ожидание
 
 
 if __name__ == "__main__":
