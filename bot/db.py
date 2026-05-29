@@ -38,7 +38,7 @@ def get_async_session_factory():
     return _async_session_factory
 
 
-# Для обратной совместимости (если какой-то старый код использует get_pool)
+# Алиас для обратной совместимости (исправляет ошибку ImportError)
 get_pool = get_async_session_factory
 
 
