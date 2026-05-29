@@ -15,13 +15,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
 
+# Sentry (опционально)
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
     from sentry_sdk.integrations.fastapi import FastApiIntegration
     from sentry_sdk.integrations.starlette import StarletteIntegration
-
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         traces_sample_rate=1.0,
@@ -29,9 +29,8 @@ if SENTRY_DSN:
         integrations=[StarletteIntegration(), FastApiIntegration()],
     )
     logging.info("✅ Sentry инициализирован")
-else:
-    logging.info("ℹ️ SENTRY_DSN не задан, мониторинг ошибок отключён")
 
+# Логирование
 log_format = os.getenv("LOG_FORMAT", "text").lower()
 if log_format == "json":
     from pythonjsonlogger import jsonlogger
@@ -129,8 +128,7 @@ class Application:
             try:
                 await self._redis_client.aclose()
                 logger.info("✅ Redis-клиент закрыт")
-            except (RuntimeError, asyncio.CancelledError, Exception) as e:
-                # Это нормально при завершении работы с uvloop + сигналы
+            except Exception as e:
                 logger.debug(f"Redis закрыт (нормально при shutdown): {e}")
         try:
             from bot.db import dispose_engine
@@ -178,7 +176,6 @@ class Application:
             "status": "healthy" if overall else "unhealthy",
             "database": {"status": "up" if db_ok else "down", "response_time_ms": round(db_time*1000, 2) if db_ok else None},
             "redis": {"status": "up" if redis_ok else "down", "response_time_ms": round(redis_time*1000, 2) if redis_ok else None},
-            "telegram_api": {"status": "up", "response_time_ms": None}
         }, status_code=200 if overall else 503)
 
 
