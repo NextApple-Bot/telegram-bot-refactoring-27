@@ -53,21 +53,24 @@ def parse_categories(lines):
     while i < n:
         line = lines[i].rstrip('\n')
         stripped = line.strip()
+
         if stripped == '':
             i += 1
             continue
+
         if re.match(r'^-{3,}$', stripped):
-            if i + 1 < n and ':' in lines[i+1]:
+            if i + 1 < n and ':' in lines[i + 1]:
                 if current_header is not None and current_items:
                     categories.append({"header": current_header, "items": current_items})
                     current_items = []
-                header_line = lines[i+1].strip()
+                header_line = lines[i + 1].strip()
                 header_text = header_line.rstrip(':').strip()
                 current_header = normalize_name(header_text)
                 i += 2
                 continue
             i += 1
             continue
+
         if stripped.startswith('-') and stripped.endswith('-') and ':' in stripped:
             if current_header is not None and current_items:
                 categories.append({"header": current_header, "items": current_items})
@@ -78,37 +81,47 @@ def parse_categories(lines):
             current_header = normalize_name(header_text)
             i += 1
             continue
-        if (re.match(r'^\s*-+\s*$', stripped) and i + 1 < n and ':' in lines[i+1] and i + 2 < n and re.match(r'^\s*-+\s*$', lines[i+2])):
+
+        if (re.match(r'^\s*-+\s*$', stripped) and
+                i + 1 < n and ':' in lines[i + 1] and
+                i + 2 < n and re.match(r'^\s*-+\s*$', lines[i + 2])):
             if current_header is not None and current_items:
                 categories.append({"header": current_header, "items": current_items})
                 current_items = []
-            header_line = lines[i+1].strip()
+            header_line = lines[i + 1].strip()
             header_text = header_line.strip('- ').strip()
             if header_text.endswith(':'):
                 header_text = header_text[:-1].strip()
             current_header = normalize_name(header_text)
             i += 3
             continue
+
         if re.match(r'^\s*-+\s*$', stripped):
             i += 1
             continue
+
         if re.match(r'^-\s*[^-]+\s*-$', stripped):
             i += 1
             continue
+
         if stripped.endswith(':'):
             if current_header is None:
                 header_text = stripped.rstrip(':').strip()
                 current_header = normalize_name(header_text)
             i += 1
             continue
+
         if current_header is None:
             current_header = "Общее:"
+
         item_text = stripped.lstrip('- ').strip()
         if item_text:
             current_items.append(item_text)
         i += 1
+
     if current_header is not None and current_items:
         categories.append({"header": current_header, "items": current_items})
+
     return categories
 
 def sort_assortment_to_categories(input_text):
@@ -120,8 +133,10 @@ def sort_items_in_category(items, header):
         item_strings = [item.get('text', '') for item in items]
     else:
         item_strings = items[:]
+
     header_lower = header.lower()
     output = []
+
     if 'iphone' in header_lower:
         groups = {}
         for item_str in item_strings:
@@ -139,6 +154,7 @@ def sort_items_in_category(items, header):
             if key not in groups:
                 groups[key] = {'eSIM': [], 'SIM+eSIM': [], 'other': []}
             groups[key][sim].append(item_str)
+
         sorted_keys = sorted(groups.keys(), key=lambda k: (k[0] is None, k[0] if k[0] is not None else float('inf')))
         for vol_gb, vol_str in sorted_keys:
             if vol_str is not None:
@@ -153,6 +169,7 @@ def sort_items_in_category(items, header):
                     output.extend(sorted(items_list))
                     output.append('-')
         return output
+
     elif 'apple watch' in header_lower:
         size_groups = {}
         for item_str in item_strings:
@@ -166,6 +183,7 @@ def sort_items_in_category(items, header):
                 output.extend(sorted(size_groups[size]))
                 output.append('-')
         return output
+
     else:
         return sorted(item_strings)
 
@@ -224,7 +242,7 @@ def add_item_to_categories(item, categories):
                 return categories, idx
         new_cat = {"header": "Б/У:", "items": [item]}
         categories.append(new_cat)
-        return categories, len(categories)-1
+        return categories, len(categories) - 1
     idx = find_category_for_item(item, categories)
     if idx is not None:
         categories[idx]['items'].append(item)
@@ -241,4 +259,4 @@ def add_item_to_categories(item, categories):
                 new_header = ' '.join(words).strip() + ':'
         new_header = normalize_name(new_header)
         categories.append({"header": new_header, "items": [item]})
-        return categories, len(categories)-1
+        return categories, len(categories) - 1
