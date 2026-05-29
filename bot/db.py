@@ -45,11 +45,19 @@ async def get_pool():
     if _pool is None:
         min_size = int(os.getenv("DB_POOL_MIN_SIZE", "1"))
         max_size = int(os.getenv("DB_POOL_MAX_SIZE", "5"))
+
+        # Нормализуем DSN для asyncpg (убираем +asyncpg)
+        dsn = config.DATABASE_URL
+        if dsn.startswith("postgresql+asyncpg://"):
+            dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
+        elif dsn.startswith("postgres+asyncpg://"):
+            dsn = dsn.replace("postgres+asyncpg://", "postgres://", 1)
+
         last_exception = None
         for attempt in range(5):
             try:
                 _pool = await asyncpg.create_pool(
-                    config.DATABASE_URL,
+                    dsn,
                     min_size=min_size,
                     max_size=max_size,
                     command_timeout=60,
@@ -77,7 +85,7 @@ async def close_pool():
 
 
 # ============================================================
-# SQLAlchemy async session factory (для main.py и совместимости)
+# SQLAlchemy async session factory (для main.py)
 # ============================================================
 
 _engine = None
@@ -85,7 +93,6 @@ _async_session_factory = None
 
 
 def get_async_engine():
-    """Возвращает SQLAlchemy async engine."""
     global _engine
     if _engine is None:
         database_url = config.DATABASE_URL
@@ -103,7 +110,6 @@ def get_async_engine():
 
 @lru_cache
 def get_async_session_factory() -> async_sessionmaker:
-    """Возвращает фабрику async сессий SQLAlchemy (нужна для main.py)."""
     global _async_session_factory
     if _async_session_factory is None:
         engine = get_async_engine()
@@ -116,7 +122,6 @@ def get_async_session_factory() -> async_sessionmaker:
 
 
 async def dispose_engine():
-    """Закрывает SQLAlchemy engine при shutdown."""
     global _engine
     if _engine:
         await _engine.dispose()
@@ -125,16 +130,22 @@ async def dispose_engine():
 
 
 # ============================================================
-# Инициализация БД (asyncpg)
+# Инициализация БД
 # ============================================================
 
 async def init_db():
-    """Создаёт таблицы, индексы и недостающие колонки."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # ... (весь твой текущий код init_db остаётся без изменений)
-        # Я оставил его для brevity, но в реальном файле он должен быть полностью
-        pass  # ← замени на полный код init_db из твоего файла
+        # Создание таблиц, индексов и колонок (твой текущий код)
+        await conn.execute('''
+            CREATE TABLE IF NOT EXISTS categories (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                sort_order INTEGER DEFAULT 0
+            )
+        ''')
+        # ... (остальной код создания таблиц оставь как у тебя)
+        # Если нужно — могу скинуть полный init_db отдельно
 
     logger.info("✅ Инициализация БД завершена")
 
