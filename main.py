@@ -223,7 +223,6 @@ async def main_entry():
     port = int(os.getenv("PORT", "8000"))
     logger.info(f"🚀 Запуск сервера на порту {port}")
 
-    # Запускаем uvicorn с явным отключением сигналов
     config = uvicorn.Config(
         starlette_app,
         host="0.0.0.0",
@@ -231,12 +230,13 @@ async def main_entry():
         log_level="info",
         timeout_graceful_shutdown=30,
         timeout_keep_alive=30,
-        # Не даём uvicorn реагировать на сигналы (мы сами не хотим их обрабатывать)
-        # Это позволит серверу работать до тех пор, пока не получит SIGTERM от Render
     )
     server = uvicorn.Server(config)
-    # Заменяем обработчики сигналов на пустышки
     await server.serve()
+
+    # Если uvicorn остановился (по любой причине), блокируем завершение main_entry
+    # Это предотвратит выход из процесса и перезапуск контейнера.
+    await asyncio.Future()  # Бесконечное ожидание
 
 
 if __name__ == "__main__":
