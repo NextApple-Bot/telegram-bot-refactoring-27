@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop, refactoring ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Remove uvloop
+        run: pip uninstall -y uvloop || true
+
+      # === ИСПРАВЛЕННЫЙ АВТОФИКС RUFF ===
+      - name: Run Ruff auto-fix
+        if: github.event_name == 'push'
+        run: ruff check . --fix
+
+      - name: Create Pull Request with auto-fixes (if any)
+        if: github.event_name == 'push'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "🤖 Автоисправление Ruff"
+          title: "chore: автофикс Ruff"
+          body: "Автоматические исправления стиля кода от Ruff."
+          branch: "ruff-auto-fix/${{ github.ref_name }}"
+          delete-branch: true
+          base: ${{ github.ref_name }}
+
+      # === ПРОВЕРКА (всегда) ===
+      - name: Lint with Ruff (check only)
+        run: ruff check . --output-format=github
+
+      - name: Security analysis with Bandit
+        run: |
+          pip install bandit
+          bandit -r bot/ web_admin/ -ll --exclude tests/
+
+      - name: Test database migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://testuser:testpass@localhost:5432/testdb
+        run: |
+          alembic upgrade head
+          alembic downgrade -1
+          alembic upgrade head
+
+      - name: Run tests with coverage
+        env:
+          DATABASE_URL: postgresql+asyncpg://testuser:testpass@localhost:5432/testdb
+          REDIS_URL: redis://localhost:6379/0
+          BOT_TOKEN: test_token
+          ADMIN_ID: "123"
+          MAIN_GROUP_ID: "-100123"
+          THREAD_SALES: "1"
+          THREAD_ASSORTMENT: "2"
+          THREAD_ARRIVAL: "3"
+          THREAD_PREORDER: "4"
+          SECRET_KEY: dummy_secret_key_for_testing_only_min_32_chars
+          ADMIN_PASSWORD: testpass
+          SCALING_ENABLED: "false"
+        run: |
+          pytest tests/ -v --cov=bot --cov=web_admin --cov-report=xml --cov-fail-under=60
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

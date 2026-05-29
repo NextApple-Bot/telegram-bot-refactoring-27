@@ -1,0 +1,23 @@
+groups:
+  - name: bot_alerts
+    rules:
+      - alert: BotDown
+        expr: up{job="telegram-bot"} == 0
+        for: 5m
+        annotations:
+          summary: "Бот не отвечает (экземпляр {{ $labels.instance }})"
+          description: "Бот не поднимается уже 5 минут."
+
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes{container="telegram_bot_app"} > 400 * 1024 * 1024
+        for: 10m
+        annotations:
+          summary: "Высокое потребление памяти (>400 MB)"
+          description: "Память: {{ $value | humanize }}B"
+
+      - alert: HighErrorRate
+        expr: rate(bot_errors_total[5m]) > 0.1
+        for: 5m
+        annotations:
+          summary: "Повышенная частота ошибок"
+          description: "Ошибок: {{ $value }} в секунду"

@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}Редактировать товар{% endblock %}
+{% block page_title %}Редактировать товар #{{ item.id }}{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-body">
+        <form method="post" id="editForm" onsubmit="return validateForm()">
+            <div class="row g-3">
+                <div class="col-md-12"><label class="form-label">Текст товара</label><input type="text" class="form-control" name="text" value="{{ item.text }}" required></div>
+                <div class="col-md-6"><label class="form-label">Серийный номер</label><input type="text" class="form-control" name="serial" value="{{ item.serial or '' }}"></div>
+                <div class="col-md-6"><label class="form-label">Категория</label><select name="category_id" class="form-select" required>{% for cat in categories %}<option value="{{ cat.id }}" {% if cat.id==item.category_id %}selected{% endif %}>{{ cat.name }}</option>{% endfor %}</select></div>
+            </div>
+            <hr class="my-4">
+            <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="is_booked" name="is_booked" {% if item.is_booked %}checked{% endif %}><label class="form-check-label fw-semibold">Бронь</label></div>
+            <div id="bookingFields" style="display: {% if item.is_booked %}block{% else %}none{% endif %};" class="bg-light p-4 rounded-3 mb-3">
+                <h5 class="mb-3">Данные бронирования</h5>
+                <div class="row g-3">
+                    <div class="col-md-3"><label class="form-label">Стоимость *</label><input type="number" step="0.01" class="form-control" name="booking_price" id="booking_price" value="{{ item.booking_price or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label">П/О</label><input type="number" step="0.01" class="form-control" name="booking_prepayment" id="booking_prepayment" value="{{ item.booking_prepayment or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label">Способ оплаты</label><select name="booking_payment_type" class="form-select"><option value="">Не указан</option><option value="cash" {% if item.booking_payment_type=='cash' %}selected{% endif %}>Наличные</option><option value="terminal" {% if item.booking_payment_type=='terminal' %}selected{% endif %}>Терминал</option><option value="qr" {% if item.booking_payment_type=='qr' %}selected{% endif %}>QR-код</option><option value="transfer" {% if item.booking_payment_type=='transfer' %}selected{% endif %}>Перевод</option><option value="invoice" {% if item.booking_payment_type=='invoice' %}selected{% endif %}>По счёту</option><option value="installment" {% if item.booking_payment_type=='installment' %}selected{% endif %}>Рассрочка</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Площадка</label><input type="text" class="form-control" name="booking_platform" id="booking_platform" value="{{ item.booking_platform or '' }}"></div>
+                    <div class="col-md-4"><label class="form-label">ФИО</label><input type="text" class="form-control" name="booking_full_name" id="booking_full_name" value="{{ item.booking_full_name or '' }}"></div>
+                    <div class="col-md-4"><label class="form-label">Телефон</label><input type="tel" class="form-control" name="booking_phone" id="booking_phone" value="{{ item.booking_phone or '' }}" placeholder="+7XXXXXXXXXX"></div>
+                    <div class="col-md-4"><label class="form-label">Дата рождения</label><input type="text" class="form-control" name="booking_birth_date" id="booking_birth_date" placeholder="ДД.ММ.ГГГГ" value="{{ item.booking_birth_date or '' }}"></div>
+                </div>
+                <div class="form-check form-switch mt-3 mb-2">
+                    <input class="form-check-input" type="checkbox" id="booking_has_bonus" name="booking_has_bonus" {% if item.booking_bonus %}checked{% endif %}>
+                    <label class="form-check-label fw-semibold">Применить скидку (бонус)</label>
+                </div>
+                <div id="bookingBonusFields" style="display: {% if item.booking_bonus %}block{% else %}none{% endif %};" class="row g-2 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Сумма скидки (₽)</label>
+                        <input type="number" step="0.01" class="form-control" name="booking_bonus" id="booking_bonus" value="{{ item.booking_bonus or '' }}">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Причина скидки</label>
+                        <input type="text" class="form-control" name="booking_bonus_reason" id="booking_bonus_reason" value="{{ item.booking_bonus_reason or '' }}" placeholder="например: День рождения, Постоянный клиент">
+                    </div>
+                </div>
+            </div>
+            <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="is_sold" name="is_sold" {% if item.is_sold %}checked{% endif %}><label class="form-check-label fw-semibold">Продажа</label><small class="text-danger ms-2">(товар удалится)</small></div>
+            <div id="saleFields" style="display: {% if item.is_sold %}block{% else %}none{% endif %};" class="bg-light p-4 rounded-3 mb-3">
+                <h5 class="mb-3">Данные продажи</h5>
+                <div class="row g-3">
+                    <div class="col-md-3"><label class="form-label">Стоимость *</label><input type="number" step="0.01" class="form-control" name="sale_price" id="sale_price" value="{{ item.sale_price or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label">П/О</label><input type="number" step="0.01" class="form-control" name="sale_prepayment" id="sale_prepayment" value="{{ item.sale_prepayment or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label">Оплата *</label><input type="number" step="0.01" class="form-control" name="sale_payment_amount" id="sale_payment_amount" value="{{ item.sale_payment_amount or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label">Способ оплаты</label><select name="sale_payment_type" class="form-select"><option value="cash" {% if item.sale_payment_type=='cash' %}selected{% endif %}>Наличные</option><option value="terminal" {% if item.sale_payment_type=='terminal' %}selected{% endif %}>Терминал</option><option value="qr" {% if item.sale_payment_type=='qr' %}selected{% endif %}>QR-код</option><option value="transfer" {% if item.sale_payment_type=='transfer' %}selected{% endif %}>Перевод</option><option value="invoice" {% if item.sale_payment_type=='invoice' %}selected{% endif %}>По счёту</option><option value="installment" {% if item.sale_payment_type=='installment' %}selected{% endif %}>Рассрочка</option><option value="paid" {% if item.sale_payment_type=='paid' %}selected{% endif %}>Оплачен</option></select></div>
+                    <div class="col-md-4"><label class="form-label">Площадка</label><input type="text" class="form-control" name="sale_platform" id="sale_platform" value="{{ item.sale_platform or '' }}"></div>
+                    <div class="col-md-4"><label class="form-label">ФИО</label><input type="text" class="form-control" name="sale_full_name" id="sale_full_name" value="{{ item.sale_full_name or '' }}"></div>
+                    <div class="col-md-4"><label class="form-label">Телефон</label><input type="tel" class="form-control" name="sale_phone" id="sale_phone" value="{{ item.sale_phone or '' }}" placeholder="+7XXXXXXXXXX"></div>
+                    <div class="col-md-4"><label class="form-label">Дата рождения</label><input type="text" class="form-control" name="sale_birth_date" id="sale_birth_date" placeholder="ДД.ММ.ГГГГ" value="{{ item.sale_birth_date or '' }}"></div>
+                </div>
+                <hr class="my-3">
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="sale_has_bonus" name="sale_has_bonus" {% if item.sale_bonus %}checked{% endif %}>
+                    <label class="form-check-label fw-semibold">Применить скидку (бонус)</label>
+                </div>
+                <div id="saleBonusFields" style="display: {% if item.sale_bonus %}block{% else %}none{% endif %};" class="row g-2 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Сумма скидки (₽)</label>
+                        <input type="number" step="0.01" class="form-control" name="sale_bonus" id="sale_bonus" value="{{ item.sale_bonus or '' }}">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Причина скидки</label>
+                        <input type="text" class="form-control" name="sale_bonus_reason" id="sale_bonus_reason" value="{{ item.sale_bonus_reason or '' }}" placeholder="например: День рождения, Постоянный клиент">
+                    </div>
+                </div>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="has_change" name="has_change" {% if item.sale_change %}checked{% endif %}>
+                    <label class="form-check-label fw-semibold">Есть сдача</label>
+                </div>
+                <div id="changeFields" style="display: {% if item.sale_change %}block{% else %}none{% endif %};" class="mb-3">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <label class="form-label">Сумма сдачи (₽)</label>
+                            <input type="number" step="0.01" class="form-control" name="sale_change" id="sale_change" value="{{ item.sale_change or '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Способ сдачи</label>
+                            <select name="sale_change_type" class="form-select">
+                                <option value="cash" {% if item.sale_change_type=='cash' %}selected{% endif %}>Наличными</option>
+                                <option value="transfer" {% if item.sale_change_type=='transfer' %}selected{% endif %}>Перевод</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <h6>Дополнительные товары / аксессуары</h6>
+                    <div id="accessories-container"></div>
+                    <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="add-accessory-btn"><i class="bi bi-plus-lg"></i> Добавить позицию</button>
+                    <small class="form-text text-muted d-block mt-1">При вводе серийного номера (от 3 символов) происходит автопоиск.</small>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+            <a href="/admin/assortment" class="btn btn-outline-secondary">Отмена</a>
+        </form>
+    </div>
+</div>
+<script>
+    const bookingDiv = document.getElementById('bookingFields');
+    const isBookedCheckbox = document.getElementById('is_booked');
+    const saleDiv = document.getElementById('saleFields');
+    const isSoldCheckbox = document.getElementById('is_sold');
+    const bookingBonusCheckbox = document.getElementById('booking_has_bonus');
+    const bookingBonusFields = document.getElementById('bookingBonusFields');
+    const saleBonusCheckbox = document.getElementById('sale_has_bonus');
+    const saleBonusFields = document.getElementById('saleBonusFields');
+    const changeCheckbox = document.getElementById('has_change');
+    const changeFields = document.getElementById('changeFields');
+
+    const fieldsToCopyBookToSale = [
+        { from: 'booking_platform', to: 'sale_platform' },
+        { from: 'booking_full_name', to: 'sale_full_name' },
+        { from: 'booking_phone', to: 'sale_phone' },
+        { from: 'booking_birth_date', to: 'sale_birth_date' }
+    ];
+
+    function copyFieldsIfEmpty() {
+        if (isSoldCheckbox.checked) {
+            fieldsToCopyBookToSale.forEach(({ from, to }) => {
+                const fromEl = document.getElementById(from);
+                const toEl = document.getElementById(to);
+                if (fromEl && toEl && !toEl.value.trim()) {
+                    toEl.value = fromEl.value;
+                }
+            });
+        }
+    }
+
+    function updateVisibility() {
+        const bookingVisible = isBookedCheckbox.checked;
+        const saleVisible = isSoldCheckbox.checked;
+        bookingDiv.style.display = bookingVisible ? 'block' : 'none';
+        saleDiv.style.display = saleVisible ? 'block' : 'none';
+        if (bookingVisible) {
+            isSoldCheckbox.checked = false;
+            saleDiv.style.display = 'none';
+        }
+        if (saleVisible) {
+            isBookedCheckbox.checked = false;
+            bookingDiv.style.display = 'none';
+            copyFieldsIfEmpty();
+        }
+        if (bookingBonusCheckbox) {
+            bookingBonusFields.style.display = bookingBonusCheckbox.checked ? 'block' : 'none';
+        }
+        if (saleBonusCheckbox) {
+            saleBonusFields.style.display = saleBonusCheckbox.checked ? 'block' : 'none';
+        }
+        if (changeCheckbox) {
+            changeFields.style.display = changeCheckbox.checked ? 'block' : 'none';
+        }
+    }
+
+    isBookedCheckbox.addEventListener('change', updateVisibility);
+    isSoldCheckbox.addEventListener('change', updateVisibility);
+    if (bookingBonusCheckbox) bookingBonusCheckbox.addEventListener('change', updateVisibility);
+    if (saleBonusCheckbox) saleBonusCheckbox.addEventListener('change', updateVisibility);
+    if (changeCheckbox) changeCheckbox.addEventListener('change', updateVisibility);
+    updateVisibility();
+
+    function cleanNumberInput(event) {
+        const input = event.target;
+        let value = input.value;
+        value = value.replace(/[^\d.-]/g, '').replace(',', '.');
+        const parts = value.split('.');
+        if (parts.length > 2) value = parts[0] + '.' + parts.slice(1).join('');
+        if (value.startsWith('-')) value = '-' + value.slice(1).replace(/-/g, '');
+        else value = value.replace(/-/g, '');
+        input.value = value;
+    }
+    const numberFields = ['booking_price', 'booking_prepayment', 'booking_bonus', 'sale_price', 'sale_prepayment', 'sale_payment_amount', 'sale_bonus', 'sale_change'];
+    numberFields.forEach(id => { const f = document.getElementById(id); if (f) f.addEventListener('input', cleanNumberInput); });
+
+    const container = document.getElementById('accessories-container');
+    const addBtn = document.getElementById('add-accessory-btn');
+    let searchTimeout = null;
+
+    function createAccessoryRow() {
+        const row = document.createElement('div');
+        row.className = 'row g-2 mb-2 align-items-end accessory-row';
+        row.innerHTML = `
+            <div class="col-md-3"><label class="form-label">Наименование</label><input type="text" class="form-control accessory-name" name="accessory_name" placeholder="Например: Комплект Аксессуаров"></div>
+            <div class="col-md-2 position-relative"><label class="form-label">Серийный номер</label><input type="text" class="form-control accessory-serial" name="accessory_serial" placeholder="J90N90D041" autocomplete="off"><div class="serial-suggestions dropdown-menu" style="display: none; position: absolute; width: 100%; max-height: 200px; overflow-y: auto;"></div></div>
+            <div class="col-md-2"><label class="form-label">Стоимость (₽)</label><input type="number" step="0.01" class="form-control accessory-price" name="accessory_price" placeholder="5000"></div>
+            <div class="col-md-3"><label class="form-label">Способ оплаты</label><select class="form-select accessory-payment" name="accessory_payment_type"><option value="">Не указан</option><option value="cash">Наличные</option><option value="terminal">Терминал</option><option value="qr">QR-код</option><option value="transfer">Перевод</option><option value="invoice">По счёту</option><option value="installment">Рассрочка</option><option value="paid">Оплачен</option></select></div>
+            <div class="col-md-2"><button type="button" class="btn btn-sm btn-outline-danger remove-accessory-btn"><i class="bi bi-trash"></i></button></div>
+        `;
+        const nameInput = row.querySelector('.accessory-name');
+        const serialInput = row.querySelector('.accessory-serial');
+        const priceInput = row.querySelector('.accessory-price');
+        const suggestionsDiv = row.querySelector('.serial-suggestions');
+        priceInput.addEventListener('input', cleanNumberInput);
+        row.querySelector('.remove-accessory-btn').addEventListener('click', () => row.remove());
+
+        serialInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            const query = this.value.trim();
+            if (query.length < 3) { suggestionsDiv.style.display = 'none'; return; }
+            searchTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/admin/assortment/api/search_by_serial?q=${encodeURIComponent(query)}`);
+                    const data = await response.json();
+                    if (data.results.length === 0) { suggestionsDiv.style.display = 'none'; return; }
+                    if (data.results.length === 1) {
+                        const item = data.results[0];
+                        nameInput.value = item.text;
+                        serialInput.value = item.serial;
+                        if (item.price !== null) priceInput.value = item.price;
+                        suggestionsDiv.style.display = 'none';
+                        return;
+                    }
+                    suggestionsDiv.innerHTML = '';
+                    data.results.forEach(item => {
+                        const opt = document.createElement('button');
+                        opt.className = 'dropdown-item'; opt.type = 'button';
+                        opt.textContent = `${item.text} (${item.serial})`;
+                        opt.addEventListener('click', () => {
+                            nameInput.value = item.text;
+                            serialInput.value = item.serial;
+                            if (item.price !== null) priceInput.value = item.price;
+                            suggestionsDiv.style.display = 'none';
+                        });
+                        suggestionsDiv.appendChild(opt);
+                    });
+                    suggestionsDiv.style.display = 'block';
+                    const hide = (e) => { if (!serialInput.contains(e.target) && !suggestionsDiv.contains(e.target)) { suggestionsDiv.style.display = 'none'; document.removeEventListener('click', hide); } };
+                    document.addEventListener('click', hide);
+                } catch (err) {
+                    console.error('Ошибка автопоиска аксессуара:', err);
+                }
+            }, 300);
+        });
+        serialInput.addEventListener('blur', () => { setTimeout(() => { if (!suggestionsDiv.matches(':hover')) suggestionsDiv.style.display = 'none'; }, 100); });
+        return row;
+    }
+    if (addBtn) addBtn.addEventListener('click', () => container.appendChild(createAccessoryRow()));
+
+    function validateForm() {
+        const isSold = document.getElementById('is_sold').checked;
+        const isBooked = document.getElementById('is_booked').checked;
+
+        if (isSold) {
+            const salePrice = parseFloat(document.getElementById('sale_price').value) || 0;
+            const salePayment = parseFloat(document.getElementById('sale_payment_amount').value) || 0;
+            const saleBonus = saleBonusCheckbox.checked ? (parseFloat(document.getElementById('sale_bonus').value) || 0) : 0;
+            const saleChange = changeCheckbox.checked ? (parseFloat(document.getElementById('sale_change').value) || 0) : 0;
+
+            if (salePrice <= 0) {
+                alert('Укажите стоимость продажи.');
+                document.getElementById('sale_price').focus();
+                return false;
+            }
+            if (salePayment <= 0 && document.getElementById('sale_payment_type').value !== 'paid') {
+                alert('Укажите сумму оплаты (или выберите "Оплачен").');
+                document.getElementById('sale_payment_amount').focus();
+                return false;
+            }
+            if (changeCheckbox.checked && !saleChange && salePayment > 0) {
+                const total = salePrice - saleBonus;
+                const change = salePayment - total;
+                if (change > 0) {
+                    document.getElementById('sale_change').value = change.toFixed(2);
+                }
+            }
+        }
+
+        if (isBooked) {
+            const bookingPrice = parseFloat(document.getElementById('booking_price').value) || 0;
+            if (bookingPrice <= 0) {
+                alert('Укажите стоимость брони.');
+                document.getElementById('booking_price').focus();
+                return false;
+            }
+        }
+
+        numberFields.forEach(id => { const f = document.getElementById(id); if (f) f.value = parseFloat(f.value.replace(/[^\d.-]/g, '').replace(',', '.')) || 0; });
+        document.querySelectorAll('.accessory-price').forEach(f => { f.value = parseFloat(f.value.replace(/[^\d.-]/g, '').replace(',', '.')) || 0; });
+
+        return true;
+    }
+
+    document.getElementById('editForm').addEventListener('submit', function(e) {
+        if (!validateForm()) {
+            e.preventDefault();
+            const submitBtn = this.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.classList.remove('btn-loading');
+        }
+    });
+</script>
+<style>
+    @media (max-width: 480px) {
+        .col-md-3, .col-md-4, .col-md-6, .col-md-12 { width: 100%; }
+        .btn { width: 100%; margin-bottom: 0.5rem; }
+        .accessory-row > div { width: 100%; margin-bottom: 0.5rem; }
+    }
+</style>
+{% endblock %}

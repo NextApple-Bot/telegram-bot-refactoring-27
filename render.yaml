@@ -1,0 +1,94 @@
+services:
+  - type: web
+    name: telegram-bot
+    runtime: docker
+    repo: https://github.com/yourusername/telegram-bot
+    plan: starter
+    healthCheckPath: /health
+    preDeployCommand: "python run_migrations.py"
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: MAIN_GROUP_ID
+        sync: false
+      - key: THREAD_SALES
+        sync: false
+      - key: THREAD_ASSORTMENT
+        sync: false
+      - key: THREAD_ARRIVAL
+        sync: false
+      - key: THREAD_PREORDER
+        sync: false
+      - key: THREAD_SERVICE
+        value: "0"
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: REDIS_URL
+        sync: false
+      - key: PLAN_AMOUNT
+        value: "600000"
+      - key: PORT
+        value: "10000"
+      - key: SCALING_ENABLED
+        value: "true"
+      - key: DB_POOL_MIN_SIZE
+        value: "1"
+      - key: DB_POOL_MAX_SIZE
+        value: "5"
+      - key: LOG_FORMAT
+        value: "json"
+      - key: LOG_TO_FILE
+        value: "false"
+      - key: APP_VERSION
+        value: "3.1.0"
+      - key: RENDER_EXTERNAL_URL
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: ENVIRONMENT
+        value: "production"
+    autoDeploy: true
+
+  - type: cron
+    name: daily-cleanup
+    runtime: docker
+    repo: https://github.com/yourusername/telegram-bot
+    schedule: "0 3 * * *"
+    dockerCommand: python cli.py cleanup
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+
+  - type: cron
+    name: daily-backup
+    runtime: docker
+    repo: https://github.com/yourusername/telegram-bot
+    schedule: "0 2 * * *"
+    dockerCommand: bash backup.sh
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - fromService:
+          type: web
+          name: telegram-bot
+          envVar: DATABASE_URL
+      - key: S3_BUCKET
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: RCLONE_CONFIG
+        sync: false
+      - key: RCLONE_REMOTE
+        sync: false

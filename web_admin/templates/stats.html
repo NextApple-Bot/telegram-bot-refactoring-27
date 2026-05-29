@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Статистика{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .stats-card {
+        border-left: 4px solid var(--primary);
+        transition: all 0.2s;
+    }
+    .stats-card:hover { box-shadow: var(--shadow-lg); }
+    .kpi-value { font-size: 2.2rem; font-weight: 700; color: var(--text-dark); line-height: 1.2; }
+    .mode-btn { border-radius: 20px; padding: 0.3rem 1.2rem; }
+    .mode-btn.active { background-color: var(--primary) !important; color: white !important; }
+    .chart-container { position: relative; width: 100%; max-width: 300px; margin: 0 auto; }
+    .payment-legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; justify-content: center; }
+    .legend-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 4px; }
+    @media (max-width: 480px) {
+        .kpi-value { font-size: 1.8rem; }
+        .mode-btn { width: 100%; margin-bottom: 0.25rem; }
+    }
+</style>
+{% endblock %}
+{% block page_title %}Статистика{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+    <div class="btn-group" role="group" aria-label="Режим периода">
+        <button type="button" class="btn btn-outline-secondary mode-btn {% if mode == 'preset' %}active{% endif %}" data-mode="preset">Предустановки</button>
+        <button type="button" class="btn btn-outline-secondary mode-btn {% if mode == 'month' %}active{% endif %}" data-mode="month">Месяц</button>
+        <button type="button" class="btn btn-outline-secondary mode-btn {% if mode == 'range' %}active{% endif %}" data-mode="range">Диапазон</button>
+    </div>
+</div>
+
+<form method="get" id="statsForm" class="row g-3 align-items-end mb-4">
+    <input type="hidden" name="mode" id="modeField" value="{{ mode }}">
+
+    <div id="presetFields" style="display: {% if mode == 'preset' %}block{% else %}none{% endif %};">
+        <div class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label">Дата</label>
+                <input type="date" class="form-control" name="target_date" value="{{ target_date }}">
+            </div>
+            <div class="col-auto">
+                <label class="form-label">Период</label>
+                <select name="days" class="form-select">
+                    <option value="7" {% if days == 7 %}selected{% endif %}>7 дней</option>
+                    <option value="14" {% if days == 14 %}selected{% endif %}>14 дней</option>
+                    <option value="30" {% if days == 30 %}selected{% endif %}>30 дней</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div id="monthFields" style="display: {% if mode == 'month' %}block{% else %}none{% endif %};">
+        <div class="col-auto">
+            <label class="form-label">Месяц</label>
+            <input type="month" class="form-control" name="month" value="{{ current_month }}">
+        </div>
+    </div>
+
+    <div id="rangeFields" style="display: {% if mode == 'range' %}block{% else %}none{% endif %};">
+        <div class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label">С</label>
+                <input type="date" class="form-control" name="date_from" value="{{ date_from }}">
+            </div>
+            <div class="col-auto">
+                <label class="form-label">По</label>
+                <input type="date" class="form-control" name="date_to" value="{{ date_to }}">
+            </div>
+        </div>
+    </div>
+
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Показать</button>
+    </div>
+</form>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card stats-card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-cart-check-fill fs-2" style="color: var(--primary);"></i>
+                <h5 class="mt-2">Продажи</h5>
+                <div class="kpi-value">{{ sales_count }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stats-card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-box-seam fs-2" style="color: var(--warning);"></i>
+                <h5 class="mt-2">Предзаказы</h5>
+                <div class="kpi-value">{{ preorders_count }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stats-card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-bookmark-check-fill fs-2" style="color: var(--success);"></i>
+                <h5 class="mt-2">Брони</h5>
+                <div class="kpi-value">{{ bookings_count }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header fw-semibold">
+                <i class="bi bi-pie-chart me-2"></i> Структура оплат
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="paymentChart"></canvas>
+                </div>
+                <div class="payment-legend mt-3" id="paymentLegend"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header fw-semibold">
+                <i class="bi bi-graph-up-arrow me-2"></i> Выручка по дням
+            </div>
+            <div class="card-body">
+                <canvas id="revenueChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const mode = this.dataset.mode;
+            document.getElementById('modeField').value = mode;
+            document.getElementById('statsForm').submit();
+        });
+    });
+
+    const payCtx = document.getElementById('paymentChart').getContext('2d');
+    const payLabels = {{ payment_labels|tojson }};
+    const payData = {{ payment_values|tojson }};
+    const payColors = ['#2563eb', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
+
+    new Chart(payCtx, {
+        type: 'doughnut',
+        data: {
+            labels: payLabels,
+            datasets: [{
+                data: payData,
+                backgroundColor: payColors.slice(0, payLabels.length),
+                borderWidth: 0,
+                hoverOffset: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                            const value = ctx.raw;
+                            const percent = ((value / total) * 100).toFixed(1);
+                            return `${ctx.label}: ${value.toLocaleString()} ₽ (${percent}%)`;
+                        }
+                    }
+                }
+            },
+            cutout: '60%',
+        }
+    });
+
+    const legendDiv = document.getElementById('paymentLegend');
+    payLabels.forEach((label, i) => {
+        const item = document.createElement('span');
+        item.className = 'badge bg-light text-dark';
+        item.innerHTML = `<span class="legend-dot" style="background-color:${payColors[i]}"></span>${label}`;
+        legendDiv.appendChild(item);
+    });
+
+    new Chart(document.getElementById('revenueChart'), {
+        type: 'line',
+        data: {
+            labels: {{ chart_dates|tojson }},
+            datasets: [{
+                label: 'Выручка (₽)',
+                data: {{ chart_revenue|tojson }},
+                borderColor: '#ef4444',
+                backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                fill: true,
+                tension: 0.3,
+                pointBackgroundColor: '#ef4444',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                tooltip: { callbacks: { label: (ctx) => `${ctx.raw.toLocaleString()} ₽` } }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: '#e2e8f0' },
+                    ticks: { callback: (v) => v.toLocaleString() + ' ₽' }
+                },
+                x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 14 } }
+            }
+        }
+    });
+</script>
+{% endblock %}

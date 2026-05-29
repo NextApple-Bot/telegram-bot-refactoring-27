@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Продавцы{% endblock %}
+{% block page_title %}Управление продавцами{% endblock %}
+{% block content %}
+<div class="mb-3">
+    <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Назад к дашборду
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post" action="/admin/sellers/add" class="row g-2">
+            <div class="col-md-6">
+                <input type="text" class="form-control" name="name" placeholder="Имя продавца" required>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary">Добавить</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header">Список продавцов</div>
+    <ul class="list-group list-group-flush">
+        {% for s in sellers %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+            {{ s.name }}
+            <form method="post" action="/admin/sellers/delete/{{ s.id }}">
+                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+<style>
+    @media (max-width: 480px) {
+        .col-md-6, .col-md-2 {
+            width: 100%;
+        }
+        .btn {
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+    }
+</style>
+{% endblock %}

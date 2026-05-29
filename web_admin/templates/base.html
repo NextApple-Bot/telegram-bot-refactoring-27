@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Bot Admin{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+        * {
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+        .sidebar {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
+        }
+        .sidebar-link {
+            transition: all 0.2s ease;
+        }
+        .sidebar-link:hover {
+            background-color: #f1f5f9;
+        }
+        .dark .sidebar-link:hover {
+            background-color: #27272a;
+            color: #60a5fa;
+        }
+        .active {
+            background-color: #eff6ff;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+        .dark .active {
+            background-color: #1e3a8a;
+            color: #60a5fa;
+        }
+
+        /* Toast */
+        .toast { animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .toast.hide { animation: slideOut 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(120%); opacity: 0; } }
+
+        /* Skeleton */
+        .skeleton { background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: loading 1.5s infinite; }
+        .dark .skeleton { background: linear-gradient(90deg, #27272a 25%, #3f3f46 50%, #27272a 75%); background-size: 200% 100%; }
+        @keyframes loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+
+    <!-- HEADER (Mobile) -->
+    <header class="bg-white border-b border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 px-4 py-4 flex items-center justify-between md:hidden sticky top-0 z-50">
+        <div class="flex items-center gap-3">
+            <button onclick="toggleSidebar()" class="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl">
+                <i data-lucide="menu" class="w-6 h-6"></i>
+            </button>
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-xl">🤖</div>
+                <div>
+                    <h1 class="text-xl font-semibold">Bot Admin</h1>
+                </div>
+            </div>
+        </div>
+        <button onclick="toggleTheme()" class="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl">
+            <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+            <i data-lucide="moon" class="w-5 h-5 block dark:hidden"></i>
+        </button>
+    </header>
+
+    <!-- SIDEBAR -->
+    <div class="flex h-screen">
+        <div id="sidebar" class="sidebar fixed md:static inset-y-0 left-0 z-50 w-72 bg-white border-r border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 shadow-2xl md:shadow-none flex flex-col transform -translate-x-full md:translate-x-0">
+            <div class="p-6 border-b border-zinc-100 dark:border-zinc-800 hidden md:flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl">🤖</div>
+                    <div>
+                        <h1 class="text-2xl font-semibold tracking-tight">Bot Admin</h1>
+                        <p class="text-xs text-zinc-400 -mt-0.5">управление продажами</p>
+                    </div>
+                </div>
+                <button onclick="toggleDesktopSidebar()" class="hidden md:block p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl">
+                    <i data-lucide="chevrons-left" class="w-5 h-5 text-zinc-500"></i>
+                </button>
+            </div>
+
+            <nav class="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
+                <a href="/admin/dashboard" onclick="closeSidebar()" class="sidebar-link flex items-center gap-3 px-4 py-3 rounded-3xl text-zinc-700 dark:text-zinc-300 {% if request.url.path.startswith('/admin/dashboard') %}active{% endif %}">
+                    <i data-lucide="layout-dashboard" class="w-5 h-5"></i><span class="font-medium">Дашборд</span>
+                </a>
+                <a href="/admin/assortment" onclick="closeSidebar()" class="sidebar-link flex items-center gap-3 px-4 py-3 rounded-3xl text-zinc-700 dark:text-zinc-300 {% if request.url.path.startswith('/admin/assortment') %}active{% endif %}">
+                    <i data-lucide="package" class="w-5 h-5"></i><span class="font-medium">Ассортимент</span>
+                </a>
+                <a href="/admin/purchases" onclick="closeSidebar()" class="sidebar-link flex items-center gap-3 px-4 py-3 rounded-3xl text-zinc-700 dark:text-zinc-300 {% if request.url.path.startswith('/admin/purchases') %}active{% endif %}">
+                    <i data-lucide="shopping-cart" class="w-5 h-5"></i><span class="font-medium">Покупки</span>
+                </a>
+                <a href="/admin/clients" onclick="closeSidebar()" class="sidebar-link flex items-center gap-3 px-4 py-3 rounded-3xl text-zinc-700 dark:text-zinc-300 {% if request.url.path.startswith('/admin/clients') %}active{% endif %}">
+                    <i data-lucide="users" class="w-5 h-5"></i><span class="font-medium">Клиенты</span>
+                </a>
+                <a href="/admin/sold" onclick="closeSidebar()" class="sidebar-link flex items-center gap-3 px-4 py-3 rounded-3xl text-zinc-700 dark:text-zinc-300 {% if request.url.path.startswith('/admin/sold') %}active{% endif %}">
+                    <i data-lucide="bag-check" class="w-5 h-5"></i><span class="font-medium">Продано</span>
+                </a>
+                <a href="/admin/stats" onclick="closeSidebar()" class="sidebar-link flex items-center gap-3 px-4 py-3 rounded-3xl text-zinc-700 dark:text-zinc-300 {% if request.url.path.startswith('/admin/stats') %}active{% endif %}">
+                    <i data-lucide="trending-up" class="w-5 h-5"></i><span class="font-medium">Статистика</span>
+                </a>
+                <a href="/admin/sellers/stats" onclick="closeSidebar()" class="sidebar-link flex items-center gap-3 px-4 py-3 rounded-3xl text-zinc-700 dark:text-zinc-300 {% if request.url.path.startswith('/admin/sellers') %}active{% endif %}">
+                    <i data-lucide="users" class="w-5 h-5"></i><span class="font-medium">Продавцы</span>
+                </a>
+            </nav>
+
+            <div class="p-4 border-t border-zinc-100 dark:border-zinc-800">
+                <a href="/admin/auth/logout" class="flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 dark:hover:bg-red-950 rounded-3xl transition-colors">
+                    <i data-lucide="log-out" class="w-5 h-5"></i><span class="font-medium">Выйти</span>
+                </a>
+            </div>
+        </div>
+
+        <div onclick="closeSidebar()" id="backdrop" class="hidden md:hidden fixed inset-0 bg-black/50 z-40"></div>
+
+        <div class="flex-1 flex flex-col min-w-0">
+            <header class="hidden md:flex bg-white border-b border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 px-8 py-5 items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <button onclick="toggleDesktopSidebar()" class="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-2xl">
+                        <i data-lucide="menu" class="w-5 h-5 text-zinc-600 dark:text-zinc-400"></i>
+                    </button>
+                    <h1 class="text-2xl font-semibold text-zinc-800 dark:text-zinc-100">{% block page_title %}Админ-панель{% endblock %}</h1>
+                </div>
+                <button onclick="toggleTheme()" class="flex items-center gap-2 px-3 py-2 rounded-2xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                    <i data-lucide="sun" class="w-5 h-5 hidden dark:block text-amber-400"></i>
+                    <i data-lucide="moon" class="w-5 h-5 block dark:hidden text-zinc-600"></i>
+                    <span class="text-sm text-zinc-600 dark:text-zinc-400">Тема</span>
+                </button>
+            </header>
+
+            <div class="flex-1 overflow-auto p-4 md:p-8" id="main-content">
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-3"></div>
+
+    <script>
+        tailwind.config = { darkMode: 'class' };
+
+        function initTheme() {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (saved === 'dark' || (!saved && prefersDark)) document.documentElement.classList.add('dark');
+        }
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) { html.classList.remove('dark'); localStorage.setItem('theme', 'light'); }
+            else { html.classList.add('dark'); localStorage.setItem('theme', 'dark'); }
+            setTimeout(() => lucide.createIcons(), 30);
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('backdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        function closeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('backdrop');
+            sidebar.classList.add('-translate-x-full');
+            backdrop.classList.add('hidden');
+        }
+
+        let desktopSidebarCollapsed = false;
+        function toggleDesktopSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            desktopSidebarCollapsed = !desktopSidebarCollapsed;
+            if (desktopSidebarCollapsed) {
+                sidebar.style.width = '0px';
+                sidebar.style.overflow = 'hidden';
+                sidebar.style.borderRight = 'none';
+                localStorage.setItem('sidebarCollapsed', 'true');
+            } else {
+                sidebar.style.width = '18rem';
+                sidebar.style.overflow = 'visible';
+                sidebar.style.borderRight = '';
+                localStorage.setItem('sidebarCollapsed', 'false');
+            }
+        }
+
+        function initDesktopSidebar() {
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                const sidebar = document.getElementById('sidebar');
+                sidebar.style.width = '0px';
+                sidebar.style.overflow = 'hidden';
+                sidebar.style.borderRight = 'none';
+                desktopSidebarCollapsed = true;
+            }
+        }
+
+        // Toast
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const icons = { success: 'check-circle', error: 'alert-circle', warning: 'alert-triangle', info: 'info' };
+            const colors = { success: 'bg-emerald-600 text-white', error: 'bg-red-600 text-white', warning: 'bg-amber-500 text-white', info: 'bg-blue-600 text-white' };
+            const toast = document.createElement('div');
+            toast.className = `toast flex items-start gap-3 px-4 py-3.5 rounded-2xl shadow-xl max-w-sm ${colors[type] || colors.success}`;
+            toast.innerHTML = `
+                <div class="flex-shrink-0 mt-0.5"><i data-lucide="${icons[type] || 'check-circle'}" class="w-5 h-5"></i></div>
+                <div class="flex-1 text-sm font-medium leading-snug pr-2">${message}</div>
+                <button onclick="this.closest('.toast').remove()" class="flex-shrink-0 opacity-70 hover:opacity-100 transition"><i data-lucide="x" class="w-4 h-4"></i></button>
+            `;
+            container.appendChild(toast);
+            lucide.createIcons();
+            setTimeout(() => { if (toast.parentNode) { toast.classList.add('hide'); setTimeout(() => toast.remove(), 250); } }, 4000);
+        }
+        window.showToast = showToast;
+
+        // Skeleton Loader
+        function showSkeleton(targetId = 'main-content') {
+            const target = document.getElementById(targetId);
+            if (!target) return;
+            target.innerHTML = `
+                <div class="space-y-4">
+                    <div class="skeleton h-8 w-48 rounded-2xl"></div>
+                    <div class="skeleton h-64 rounded-3xl"></div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="skeleton h-24 rounded-3xl"></div>
+                        <div class="skeleton h-24 rounded-3xl"></div>
+                        <div class="skeleton h-24 rounded-3xl"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function hideSkeleton(targetId = 'main-content', newContent = '') {
+            const target = document.getElementById(targetId);
+            if (!target) return;
+            target.innerHTML = newContent;
+            lucide.createIcons();
+        }
+
+        window.showSkeleton = showSkeleton;
+        window.hideSkeleton = hideSkeleton;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initTheme();
+            initDesktopSidebar();
+            lucide.createIcons();
+            
+            const links = document.querySelectorAll('#sidebar a');
+            links.forEach(link => link.addEventListener('click', () => setTimeout(closeSidebar, 50)));
+
+            console.log('%c✅ Полная версия готова: тёмная тема + toast + collapsible sidebar + skeleton!', 'color: #22c55e; font-weight: 600;');
+        });
+
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSidebar(); });
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

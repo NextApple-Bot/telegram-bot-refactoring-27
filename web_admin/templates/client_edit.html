@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Редактировать клиента{% endblock %}
+{% block page_title %}Редактировать клиента #{{ client.id }}{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">ФИО</label>
+                    <input type="text" class="form-control" name="full_name" value="{{ client.full_name or '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Основной телефон</label>
+                    <input type="text" class="form-control" name="phone" value="{{ client.phone or '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Доп. телефоны (через запятую)</label>
+                    <input type="text" class="form-control" name="phones" value="{{ client.phones or '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Telegram</label>
+                    <input type="text" class="form-control" name="telegram_username" value="{{ client.telegram_username or '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Соцсети / площадка</label>
+                    <input type="text" class="form-control" name="social_network" value="{{ client.social_network or '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Источник</label>
+                    <input type="text" class="form-control" name="referral_source" value="{{ client.referral_source or '' }}">
+                </div>
+            </div>
+            <div class="mt-4">
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+                <a href="/admin/clients/{{ client.id }}" class="btn btn-outline-secondary">Отмена</a>
+            </div>
+        </form>
+    </div>
+</div>
+<style>
+    @media (max-width: 480px) {
+        .btn {
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+    }
+</style>
+{% endblock %}

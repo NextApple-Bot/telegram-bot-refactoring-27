@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Покупки{% endblock %}
+{% block page_title %}Покупки{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-body">
+        <div class="row g-2 mb-3 align-items-end" id="purchaseFilters">
+            <div class="col-md-3">
+                <label class="form-label">Клиент</label>
+                <input type="text" class="form-control" name="client_search" placeholder="Имя или телефон" value="{{ client_search or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Дата с</label>
+                <input type="date" class="form-control" name="date_from" value="{{ date_from or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Дата по</label>
+                <input type="date" class="form-control" name="date_to" value="{{ date_to or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Тип оплаты</label>
+                <select name="payment_type" class="form-select">
+                    <option value="all">Все</option>
+                    {% for pt in payment_types %}<option value="{{ pt }}" {% if payment_type==pt %}selected{% endif %}>{{ pt|capitalize }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Тип покупки</label>
+                <select name="purchase_type" class="form-select">
+                    <option value="all">Все</option>
+                    {% for pt in purchase_types %}<option value="{{ pt }}" {% if purchase_type==pt %}selected{% endif %}>{{ pt|capitalize }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary w-100" id="applyPurchaseFilter">Фильтр</button>
+            </div>
+        </div>
+        <div class="text-end">
+            <a href="/admin/purchases/export/csv?{{ request.query_params }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download"></i> CSV</a>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Всего записей: {{ total }}</div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead>
+                <tr>
+                    <th><a href="?sort_by=id&sort_order={% if sort_by=='id' and sort_order=='asc' %}desc{% else %}asc{% endif %}&{{ request.query_params }}">ID</a></th>
+                    <th><a href="?sort_by=client_name&sort_order={% if sort_by=='client_name' and sort_order=='asc' %}desc{% else %}asc{% endif %}&{{ request.query_params }}">Клиент</a></th>
+                    <th><a href="?sort_by=created_at&sort_order={% if sort_by=='created_at' and sort_order=='asc' %}desc{% else %}asc{% endif %}&{{ request.query_params }}">Дата</a></th>
+                    <th><a href="?sort_by=total_amount&sort_order={% if sort_by=='total_amount' and sort_order=='asc' %}desc{% else %}asc{% endif %}&{{ request.query_params }}">Сумма</a></th>
+                    <th><a href="?sort_by=purchase_type&sort_order={% if sort_by=='purchase_type' and sort_order=='asc' %}desc{% else %}asc{% endif %}&{{ request.query_params }}">Тип</a></th>
+                    <th>Оплата</th>
+                    <th style="width:80px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in purchases %}
+                <tr>
+                    <td>{{ p.id }}</td>
+                    <td><a href="/admin/clients/{{ p.client_id }}" class="text-decoration-none">{{ p.client_name or '—' }}</a></td>
+                    <td>{{ p.created_at|format_date if p.created_at else '—' }}</td>
+                    <td>{{ p.total_amount|round(0) if p.total_amount else 0 }} ₽</td>
+                    <td>{{ p.purchase_type }}</td>
+                    <td>{{ p.payment_details if p.payment_details else '—' }}</td>
+                    <td>
+                        <form action="/admin/purchases/delete/{{ p.id }}" method="post" onsubmit="return confirm('Удалить покупку?');">
+                            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if total_pages > 1 %}
+    <div class="card-footer">
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                {% if page > 1 %}
+                <li class="page-item"><a class="page-link" href="?page=1&per_page={{ per_page }}&{{ request.query_params }}">«</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page-1 }}&per_page={{ per_page }}&{{ request.query_params }}">‹</a></li>
+                {% endif %}
+                <li class="page-item active"><span class="page-link">{{ page }} / {{ total_pages }}</span></li>
+                {% if page < total_pages %}
+                <li class="page-item"><a class="page-link" href="?page={{ page+1 }}&per_page={{ per_page }}&{{ request.query_params }}">›</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ total_pages }}&per_page={{ per_page }}&{{ request.query_params }}">»</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+<script>
+    document.getElementById('applyPurchaseFilter').addEventListener('click', function(e) {
+        e.preventDefault();
+        const params = new URLSearchParams(window.location.search);
+        const fields = ['client_search','date_from','date_to','payment_type','purchase_type'];
+        fields.forEach(f => {
+            const val = document.querySelector(`[name="${f}"]`).value;
+            if (val && val !== 'all') params.set(f, val); else params.delete(f);
+        });
+        params.set('page', 1);
+        window.location.search = params.toString();
+    });
+</script>
+<style>
+    @media (max-width: 480px) {
+        #purchaseFilters .col-md-3,
+        #purchaseFilters .col-md-2,
+        #purchaseFilters .col-md-1 {
+            width: 100%;
+        }
+        #purchaseFilters .btn {
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+    }
+</style>
+{% endblock %}

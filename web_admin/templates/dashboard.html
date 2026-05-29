@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-screen-2xl mx-auto">
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-4xl font-semibold tracking-tighter text-zinc-900">Дашборд</h1>
+            <p class="text-zinc-500 mt-1">{{ target_date }} • {{ stats.sales_count }} продаж • {{ stats.preorders_count }} предзаказов • {{ stats.bookings_count }} бронирований</p>
+        </div>
+        <div class="flex items-center gap-2 bg-white rounded-3xl shadow-sm p-1 border border-zinc-100">
+            <a href="/admin/dashboard?target_date={{ (target_date_iso | replace('-', '')) | int - 1 }}" class="px-5 py-2.5 text-sm font-medium rounded-3xl hover:bg-zinc-100 transition-colors">← Вчера</a>
+            <a href="/admin/dashboard" class="px-5 py-2.5 text-sm font-semibold bg-blue-600 text-white rounded-3xl shadow">Сегодня</a>
+            <a href="/admin/dashboard?target_date={{ (target_date_iso | replace('-', '')) | int + 1 }}" class="px-5 py-2.5 text-sm font-medium rounded-3xl hover:bg-zinc-100 transition-colors">Завтра →</a>
+        </div>
+    </div>
+
+    <!-- KPI Cards - Modern & Premium -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+        <div class="card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
+            <div class="flex justify-between items-start">
+                <div>
+                    <div class="flex items-center gap-2 text-zinc-500 text-sm font-medium">
+                        <i data-lucide="dollar-sign" class="w-4 h-4"></i>
+                        Выручка сегодня
+                    </div>
+                    <div class="text-5xl font-semibold tracking-tighter mt-3">{{ "{:,}".format(revenue_today | int) }} ₽</div>
+                </div>
+                <div class="text-emerald-500 bg-emerald-100 p-3 rounded-2xl">
+                    <i data-lucide="trending-up" class="w-8 h-8"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
+            <div class="flex justify-between items-start">
+                <div>
+                    <div class="flex items-center gap-2 text-zinc-500 text-sm font-medium">
+                        <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+                        Продажи сегодня
+                    </div>
+                    <div class="text-5xl font-semibold tracking-tighter mt-3">{{ sales_today }}</div>
+                </div>
+                <div class="text-blue-500 bg-blue-100 p-3 rounded-2xl">
+                    <i data-lucide="shopping-bag" class="w-8 h-8"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
+            <div class="flex justify-between items-start">
+                <div>
+                    <div class="flex items-center gap-2 text-zinc-500 text-sm font-medium">
+                        <i data-lucide="target" class="w-4 h-4"></i>
+                        План на день
+                    </div>
+                    <div class="text-5xl font-semibold tracking-tighter mt-3">{{ "{:,}".format(plan_amount) }} ₽</div>
+                </div>
+                <div class="text-amber-500 bg-amber-100 p-3 rounded-2xl">
+                    <i data-lucide="bullseye" class="w-8 h-8"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
+            <div class="flex justify-between items-start">
+                <div>
+                    <div class="flex items-center gap-2 text-zinc-500 text-sm font-medium">
+                        <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                        Выполнение
+                    </div>
+                    <div class="text-5xl font-semibold tracking-tighter mt-3">{{ ((revenue_today / plan_amount * 100) | round(1)) if plan_amount > 0 else 0 }}%</div>
+                </div>
+                <div class="text-cyan-500 bg-cyan-100 p-3 rounded-2xl">
+                    <i data-lucide="activity" class="w-8 h-8"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Chart -->
+        <div class="lg:col-span-8 card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-semibold">Продажи и выручка за 7 дней</h2>
+            </div>
+            <div class="h-80">
+                <canvas id="salesChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Sellers -->
+        <div class="lg:col-span-4 card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-semibold">Продавцы сегодня</h2>
+                <span class="px-4 py-1 bg-emerald-100 text-emerald-700 text-sm font-medium rounded-3xl">{{ sellers | selectattr('present') | list | length }} / {{ sellers | length }}</span>
+            </div>
+            <div class="flex-1 space-y-3 overflow-auto">
+                {% for seller in sellers %}
+                <div class="flex items-center justify-between p-4 bg-zinc-50 rounded-3xl">
+                    <span class="font-medium text-zinc-700">{{ seller.name }}</span>
+                    <button onclick="toggleSellerDay({{ seller.id }}, '{{ target_date_iso }}', this)" 
+                            class="px-6 py-2 rounded-3xl text-sm font-medium transition-all {% if seller.present %}bg-emerald-500 text-white{% else %}bg-white border border-zinc-200 text-zinc-500 hover:border-zinc-300{% endif %}">
+                        {% if seller.present %}На смене{% else %}Отметить{% endif %}
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Payments breakdown -->
+    <div class="mt-8 card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
+        <h2 class="text-xl font-semibold mb-6">Разбивка по типам оплаты</h2>
+        <div class="grid grid-cols-3 gap-6">
+            {% for type, amount in payments.items() %}
+            <div class="text-center">
+                <div class="text-3xl font-semibold text-zinc-900">{{ "{:,}".format(amount | int) }} ₽</div>
+                <div class="text-sm text-zinc-500 mt-1">{{ type|capitalize }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    lucide.createIcons();
+
+    const ctx = document.getElementById('salesChart');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: {{ chart_dates | tojson }},
+            datasets: [{
+                label: 'Продажи',
+                data: {{ chart_sales | tojson }},
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.4,
+                borderWidth: 3
+            }, {
+                label: 'Выручка (тыс. ₽)',
+                data: {{ chart_revenue | tojson }},
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                tension: 0.4,
+                borderWidth: 3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top', labels: { usePointStyle: true, padding: 20 } }
+            },
+            scales: {
+                y: { grid: { color: '#f1f5f9' } }
+            }
+        }
+    });
+
+    function toggleSellerDay(sellerId, date, btn) {
+        // existing logic...
+        fetch('/admin/dashboard/toggle_seller_day', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: `seller_id=${sellerId}&target_date=${date}`
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                location.reload();
+            }
+        });
+    }
+</script>
+{% endblock %}

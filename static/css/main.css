@@ -1,0 +1,321 @@
+/* === static/css/main.css === */
+/* Хирургически чистый CSS. Только функциональная красота. */
+
+:root {
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-light: #eff6ff;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --text-dark: #0f172a;
+  --text-medium: #334155;
+  --text-muted: #475569;
+  --bg-body: #f1f5f9;
+  --bg-card: #ffffff;
+  --border: #e2e8f0;
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 0px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-body);
+  color: var(--text-dark);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* === Типографика === */
+h1, h2, h3 {
+  font-weight: 600;
+  color: var(--text-dark);
+}
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* === Фокус для доступности === */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* === Сайдбар === */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: var(--sidebar-width);
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  z-index: 1000;
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 1rem;
+}
+.sidebar .logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 2rem;
+  color: var(--primary);
+  letter-spacing: -0.5px;
+}
+.sidebar .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  color: var(--text-medium);
+  font-weight: 500;
+  transition: background 0.2s, color 0.2s;
+  margin-bottom: 0.25rem;
+}
+.sidebar .nav-link:hover,
+.sidebar .nav-link.active {
+  background-color: var(--primary-light);
+  color: var(--primary);
+  text-decoration: none;
+}
+.sidebar .nav-link i {
+  font-size: 1.25rem;
+  opacity: 0.7;
+}
+
+/* === Основной контент === */
+.main-content {
+  margin-left: var(--sidebar-width);
+  padding: 2rem;
+  transition: margin-left 0.3s ease;
+  min-height: 100vh;
+}
+/* Когда сайдбар скрыт (мобильное меню) */
+.sidebar-hidden .sidebar {
+  transform: translateX(-100%);
+}
+.sidebar-hidden .main-content {
+  margin-left: 0;
+}
+
+/* Кнопка мобильного меню (бургер) */
+.menu-toggle {
+  display: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.75rem;
+  font-size: 1.5rem;
+  cursor: pointer;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 1100;
+  box-shadow: var(--shadow-sm);
+}
+
+/* === Карточки === */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.5rem;
+}
+.card-header {
+  padding: 1rem 1.5rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+.card-body {
+  padding: 1.5rem;
+}
+
+/* === Таблицы === */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.table th {
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+.table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dark);
+  word-break: break-word;
+}
+.table tbody tr:hover {
+  background-color: #f8fafc;
+}
+.table-warning {
+  background-color: #fffbeb;
+}
+
+/* === Кнопки === */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 0.875rem;
+}
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+}
+.btn-outline-secondary {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-medium);
+}
+.btn-outline-secondary:hover {
+  background-color: var(--bg-body);
+  border-color: #94a3b8;
+  color: var(--text-dark);
+}
+.btn-danger {
+  background-color: var(--danger);
+  color: white;
+  border-color: var(--danger);
+}
+.btn-sm {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+/* === Формы === */
+.form-control, .form-select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  background: white;
+  transition: border-color 0.2s;
+}
+.form-control:focus, .form-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+}
+
+/* === Пагинация === */
+.pagination {
+  display: flex;
+  gap: 0.25rem;
+}
+.pagination .page-link {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  background: white;
+  color: var(--text-dark);
+  border-radius: var(--radius-md);
+}
+.pagination .active .page-link {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+/* === Адаптивность === */
+/* Планшеты и ниже */
+@media (max-width: 992px) {
+  :root {
+    --sidebar-width: 80px;
+  }
+  .sidebar .nav-link span {
+    display: none;
+  }
+  .sidebar .nav-link i {
+    margin: 0 auto;
+  }
+}
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 0px;
+  }
+  .menu-toggle {
+    display: block;
+  }
+  .sidebar {
+    width: 280px;
+    transform: translateX(-100%);
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  .main-content {
+    margin-left: 0 !important;
+    padding: 1rem;
+  }
+  .card-body {
+    padding: 1rem;
+  }
+  .table {
+    font-size: 0.8rem;
+  }
+  .btn {
+    padding: 0.4rem 0.75rem;
+  }
+  .kpi-value {
+    font-size: 1.8rem !important;
+  }
+}
+@media (max-width: 480px) {
+  .row {
+    flex-direction: column;
+  }
+  .col-md-4, .col-md-3, .col-md-2 {
+    width: 100%;
+  }
+  .btn {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+  .top-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .modal-dialog {
+    margin: 0.5rem;
+  }
+}
