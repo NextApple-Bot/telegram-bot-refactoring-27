@@ -53,9 +53,8 @@ def extract_base_name(item):
 def parse_categories(lines):
     """
     Парсит текст ассортимента в список категорий.
-    Поддерживает:
-      - старый формат с --- и категорией между ними
-      - новый формат: строка дефисов (3+), затем строка с категорией и двоеточием, затем строка дефисов
+    Поддерживает старый формат (---) и новый (------- любой длины).
+    Возвращает список словарей с ключами 'header' и 'items'.
     """
     categories = []
     current_header = None
@@ -204,9 +203,17 @@ def sort_items_in_category(items, header):
         return sorted(items)
 
 def build_output_text(categories):
+    """
+    Формирует текст для выгрузки ассортимента.
+    categories: список словарей, каждый может иметь ключи 'header' (из парсера)
+                или 'name' (из БД). Поддерживаются оба.
+    """
     output_lines = []
     for cat in categories:
-        header = cat['header']
+        # Берём header (приоритет) или name
+        header = cat.get('header') or cat.get('name')
+        if not header:
+            continue
         display_header = normalize_name(header)
         if not display_header.endswith(':'):
             display_header += ':'
@@ -216,17 +223,20 @@ def build_output_text(categories):
         output_lines.append('-' * dash_len)
         output_lines.append('-')
 
-        if cat['items']:
-            sorted_output = sort_items_in_category(cat['items'], header)
+        items = cat.get('items', [])
+        if items:
+            # Передаём header для правильной сортировки
+            sorted_output = sort_items_in_category(items, header)
             if isinstance(sorted_output, list):
                 output_lines.extend(sorted_output)
             else:
                 output_lines.append(sorted_output)
         else:
-            pass
+            output_lines.append('')
 
         output_lines.append('')
-    return '\n'.join(output_lines)
+
+    return '\n'.join(output_lines).strip()
 
 def find_category_for_item(item, categories):
     normalized_item = normalize_name(item)
