@@ -54,7 +54,6 @@ def parse_categories(lines):
     """
     Парсит текст ассортимента в список категорий.
     Поддерживает старый формат (---) и новый (------- любой длины).
-    Возвращает список словарей с ключами 'header' и 'items' (строки).
     """
     categories = []
     current_header = None
@@ -70,7 +69,6 @@ def parse_categories(lines):
             i += 1
             continue
 
-        # Новый формат: разделитель из 3+ дефисов
         if re.match(r'^-{3,}$', stripped):
             if i + 1 < n and ':' in lines[i+1]:
                 if current_header is not None and current_items:
@@ -84,7 +82,6 @@ def parse_categories(lines):
             i += 1
             continue
 
-        # Старый формат: разделитель вида -...- с двоеточием внутри
         if stripped.startswith('-') and stripped.endswith('-') and ':' in stripped:
             if current_header is not None and current_items:
                 categories.append({"header": current_header, "items": current_items})
@@ -96,7 +93,6 @@ def parse_categories(lines):
             i += 1
             continue
 
-        # Старый формат: три строки: ---, категория, ---
         if (re.match(r'^\s*-+\s*$', stripped) and
             i + 1 < n and ':' in lines[i+1] and
             i + 2 < n and re.match(r'^\s*-+\s*$', lines[i+2])):
@@ -111,17 +107,14 @@ def parse_categories(lines):
             i += 3
             continue
 
-        # Строка, состоящая только из дефисов – пропускаем
         if re.match(r'^\s*-+\s*$', stripped):
             i += 1
             continue
 
-        # Строка вида "- что-то -" – пропускаем (это не товар)
         if re.match(r'^-\s*[^-]+\s*-$', stripped):
             i += 1
             continue
 
-        # Строка, заканчивающаяся двоеточием – возможно, категория без разделителя
         if stripped.endswith(':'):
             if current_header is None:
                 header_text = stripped.rstrip(':').strip()
@@ -129,11 +122,9 @@ def parse_categories(lines):
             i += 1
             continue
 
-        # Если нет текущей категории – создаём "Общее:"
         if current_header is None:
             current_header = "Общее:"
 
-        # Добавляем как товар (убираем начальный дефис и пробел, если есть)
         item_text = stripped.lstrip('- ').strip()
         if item_text:
             current_items.append(item_text)
@@ -149,11 +140,6 @@ def sort_assortment_to_categories(input_text):
     return parse_categories(lines)
 
 def sort_items_in_category(items, header):
-    """
-    Сортирует товары внутри категории.
-    items: список строк (старый парсер) или список словарей (из БД).
-    """
-    # Если items – список словарей, извлекаем text
     if items and isinstance(items[0], dict):
         item_strings = [item.get('text', '') for item in items]
     else:
@@ -207,95 +193,3 @@ def sort_items_in_category(items, header):
                 output.append('-')
                 output.extend(sorted(size_groups[size]))
                 output.append('-')
-        return output
-
-    else:
-        return sorted(item_strings)
-
-def build_output_text(categories):
-    """
-    Формирует текст для выгрузки ассортимента.
-    categories: список словарей, каждый может иметь ключи 'header' (из парсера)
-                или 'name' (из БД). Внутри items – строки или словари.
-    """
-    output_lines = []
-    for cat in categories:
-        header = cat.get('header') or cat.get('name')
-        if not header:
-            continue
-        display_header = normalize_name(header)
-        if not display_header.endswith(':'):
-            display_header += ':'
-        dash_len = len(display_header) + 2
-        output_lines.append('-' * dash_len)
-        output_lines.append(display_header)
-        output_lines.append('-' * dash_len)
-        output_lines.append('-')
-
-        items = cat.get('items', [])
-        if items:
-            # sort_items_in_category вернёт список строк
-            sorted_output = sort_items_in_category(items, header)
-            if isinstance(sorted_output, list):
-                output_lines.extend(sorted_output)
-            else:
-                output_lines.append(str(sorted_output))
-        else:
-            output_lines.append('')
-
-        output_lines.append('')
-
-    # Удаляем пустые строки в конце
-    while output_lines and output_lines[-1] == '':
-        output_lines.pop()
-    return '\n'.join(output_lines)
-
-def find_category_for_item(item, categories):
-    normalized_item = normalize_name(item)
-    normalized_item = normalize_model(normalized_item).lower()
-    base = extract_base_name(item).lower()
-
-    for idx, cat in enumerate(categories):
-        cat_name = normalize_name(cat['header']).lower()
-        if cat_name.endswith(':'):
-            cat_name = cat_name[:-1].strip()
-        if cat_name == base:
-            return idx
-
-    for idx, cat in enumerate(categories):
-        cat_name = normalize_name(cat['header']).lower()
-        if cat_name.endswith(':'):
-            cat_name = cat_name[:-1].strip()
-        if cat_name and (cat_name in base or base in cat_name):
-            return idx
-
-    return None
-
-def add_item_to_categories(item, categories):
-    if item.strip().startswith("Б/У -") or item.strip().startswith("Б/У "):
-        for idx, cat in enumerate(categories):
-            cat_name = normalize_name(cat['header']).lower()
-            if cat_name == "б/у" or cat_name == "б/у:":
-                categories[idx]['items'].append(item)
-                return categories, idx
-        new_cat = {"header": "Б/У:", "items": [item]}
-        categories.append(new_cat)
-        return categories, len(categories)-1
-
-    idx = find_category_for_item(item, categories)
-    if idx is not None:
-        categories[idx]['items'].append(item)
-        return categories, idx
-    else:
-        if 'iphone' in item.lower():
-            base = extract_base_name(item)
-            new_header = f"{base}:"
-        else:
-            if ',' in item:
-                new_header = item.split(',')[0].strip() + ':'
-            else:
-                words = item.split()[:2]
-                new_header = ' '.join(words).strip() + ':'
-        new_header = normalize_name(new_header)
-        categories.append({"header": new_header, "items": [item]})
-        return categories, len(categories)-1
