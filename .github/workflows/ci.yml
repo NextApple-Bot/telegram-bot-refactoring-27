@@ -65,7 +65,7 @@ jobs:
 
       - name: Create Pull Request with auto-fixes (if any)
         if: github.event_name == 'push'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "🤖 Автоисправление Ruff"
