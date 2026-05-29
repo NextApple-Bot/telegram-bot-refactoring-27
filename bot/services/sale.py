@@ -1,4 +1,4 @@
-# Файл: bot/services/sale.py
+# bot/services/sale.py
 import logging
 
 from bot.utils.validators import extract_serials
@@ -45,12 +45,10 @@ class SaleService:
                     "skip_payments": True
                 }
 
-            # Удаляем найденные товары
             from bot.services.assortment import AssortmentService
             for _item_id, serial in sold_items:
                 await AssortmentService.remove_by_serial(serial, reason='sale', conn=session)
 
-            # Сохраняем статистику продажи
             await StatsRepository.add_sale(
                 count=len(sold_items),
                 cash=payments.get('cash', 0),
