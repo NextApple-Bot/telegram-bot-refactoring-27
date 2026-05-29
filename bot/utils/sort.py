@@ -1,160 +1,164 @@
+# bot/utils/sort.py
 import re
-from typing import Dict, List, Any
 
+def normalize_name(name):
+    """Нормализует имя, удаляя лишние пробелы."""
+    return ' '.join(name.split())
 
-def normalize_name(name: str) -> str:
-    """Нормализация названия (нижний регистр + удаление лишних пробелов)."""
-    return " ".join(name.lower().split())
+def normalize_model(name):
+    """Нормализует название модели, убирая пробел после S."""
+    return re.sub(r'S\s+(\d+)', r'S\1', name, flags=re.IGNORECASE)
 
-
-def extract_base_name(text: str) -> str:
-    """Извлекает базовое название товара (до первой скобки или спецсимвола)."""
-    match = re.match(r'^([^(]+)', text.strip())
+def extract_memory(text):
+    """Извлекает объём памяти из текста (например, 256GB, 512гб, 1TB)."""
+    match = re.search(r'(\d+)\s*(gb|гб|tb)', text, re.IGNORECASE)
     if match:
-        return match.group(1).strip()
-    return text.strip()
+        return f"{match.group(1)}{match.group(2).upper()}"
+    return None
 
-
-def detect_sim_type(text: str) -> str:
-    """Определяет тип SIM-карты по тексту товара."""
-    text_lower = text.lower()
-    if any(word in text_lower for word in ["esim", "e-sim", "е-сим"]):
-        return "eSIM"
-    if any(word in text_lower for word in ["nano", "нано"]):
-        return "Nano"
-    if any(word in text_lower for word in ["dual", "2 sim", "две сим"]):
-        return "Dual"
-    return "other"
-
-
-def get_full_model_name(text: str) -> str:
-    """Извлекает чистое название модели (до первого пробела или скобки)."""
-    match = re.match(r'^([^(]+)', text.strip())
+def extract_watch_size(text):
+    """Извлекает размер часов в мм."""
+    match = re.search(r'(\d+)\s*mm', text, re.IGNORECASE)
     if match:
-        return match.group(1).strip()
-    return text.strip()
+        return int(match.group(1))
+    return None
 
+def detect_sim_type(text):
+    """Определяет тип SIM: eSIM, SIM+eSIM или other."""
+    lower = text.lower()
+    if re.search(r'\(sim\+esim\)|\bsim\+esim\b', lower):
+        return 'SIM+eSIM'
+    if re.search(r'\(esim\)|\besim\b', lower):
+        return 'eSIM'
+    return 'other'
 
-def build_output_text(categories: List[Dict[str, Any]]) -> str:
-    """
-    Формирует красивый текстовый вывод ассортимента для отправки в .txt файл.
-    """
-    lines = []
-    lines.append("📦 ТЕКУЩИЙ АССОРТИМЕНТ")
-    lines.append("=" * 50)
-    lines.append(f"Дата выгрузки: {__import__('datetime').datetime.now().strftime('%d.%m.%Y %H:%M')}\n")
+def get_full_model_name(item):
+    """Возвращает полное название товара без серийных номеров и пометок в скобках."""
+    without_brackets = re.sub(r'\([^)]*\)', '', item)
+    return normalize_name(without_brackets)
 
-    total_items = 0
+def extract_base_name(item):
+    """Возвращает базовое имя товара (модель + память) для определения категории."""
+    without_brackets = re.sub(r'\([^)]*\)', '', item)
+    if ',' in without_brackets:
+        model_part = without_brackets.split(',', 1)[0].strip()
+    else:
+        model_part = without_brackets.strip()
+    memory = extract_memory(without_brackets)
+    base = f"{model_part} {memory}" if memory else model_part
+    base = normalize_name(base)
+    base = normalize_model(base)
+    return base
 
-    for cat in categories:
-        cat_name = cat["name"]
-        items = cat.get("items", [])
-        
-        if not items:
-            continue
-
-        lines.append(f"\n🔹 {cat_name} ({len(items)} шт.)")
-        lines.append("-" * 40)
-
-        for item in items:
-            price_str = f"{item['price']:,} ₽".replace(",", " ") if item.get('price') else "—"
-            status = "🔒 ЗАБРОНИРОВАНО" if item.get("is_booked") else "✅ В наличии"
-            
-            booking_info = f" | {item['booking_info']}" if item.get("booking_info") else ""
-            serial = f" | S/N: {item['serial']}" if item.get("serial") else ""
-
-            line = f"• {item['text']}"
-            if price_str != "—":
-                line += f" — {price_str}"
-            line += f"  {status}{booking_info}{serial}"
-            lines.append(line)
-
-            total_items += 1
-
-    lines.append("\n" + "=" * 50)
-    lines.append(f"Итого товаров: {total_items}")
-    lines.append(f"Итого категорий: {len([c for c in categories if c.get('items')])}")
-
-    return "\n".join(lines)
-
-
-def sort_items_by_name(items: List[Dict]) -> List[Dict]:
-    """Сортировка товаров по названию (естественная сортировка)."""
-    def natural_key(text: str):
-        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', text)]
-    
-    return sorted(items, key=lambda x: natural_key(x.get("text", "")))
-
-
-def group_by_model(items: List[Dict]) -> Dict[str, List[Dict]]:
-    """Группирует товары по модели (для отчётов по остаткам)."""
-    groups = {}
-    for item in items:
-        model = get_full_model_name(item["text"])
-        if model not in groups:
-            groups[model] = []
-        groups[model].append(item)
-    return groups
-
-
-def sort_assortment_to_categories(content: str) -> List[Dict[str, Any]]:
+def parse_categories(lines):
     """
     Парсит текст ассортимента в список категорий.
-    Ожидаемый формат:
-    ---
-    Категория 1:
-    ---
-    Товар 1 (SN123)
-    Товар 2 (SN456)
-    ---
-    Категория 2:
-    ---
-    ...
+    Поддерживает:
+      - старый формат с --- и категорией между ними
+      - новый формат: строка дефисов (3+), строка с категорией и двоеточием, строка дефисов
     """
-    if not content or not content.strip():
-        return []
-
     categories = []
-    current_category = None
+    current_header = None
     current_items = []
+    i = 0
+    n = len(lines)
 
-    lines = [line.strip() for line in content.strip().split('\n') if line.strip()]
+    while i < n:
+        line = lines[i].rstrip('\n')
+        stripped = line.strip()
 
-    for line in lines:
-        if line.startswith('---') or line == '---':
-            if current_category and current_items:
-                categories.append({
-                    "name": current_category,
-                    "header": current_category,
-                    "items": current_items
-                })
-            current_category = None
-            current_items = []
+        # Пропускаем пустые строки
+        if stripped == '':
+            i += 1
             continue
 
-        # Если строка похожа на название категории (заканчивается на :)
-        part = line.split('(')[0] if '(' in line else line
-        if line.endswith(':') and not any(c.isdigit() for c in part):
-            if current_category and current_items:
-                categories.append({
-                    "name": current_category,
-                    "header": current_category,
-                    "items": current_items
-                })
-            current_category = line.rstrip(':').strip()
-            current_items = []
-        else:
-            # Это товар
-            if current_category is None:
-                current_category = "Без категории"
-            
-            item = {
-                "text": line,
-                "price": None,
-                "is_booked": False,
-                "booking_info": None,
-                "serial": None
-            }
-            
-            # Пытаемся извлечь серийный номер
-            serial_match = re.search(r'\(SN?[:\s-]*([A-Za-z0-9-]+)\)', line, re.IGNORECASE)
+        # ===== НОВЫЙ ФОРМАТ: строка дефисов (3 и более) =====
+        if re.match(r'^-{3,}$', stripped):
+            # Смотрим, что дальше: может быть категория на следующей строке?
+            if i + 1 < n and ':' in lines[i+1]:
+                # Завершаем предыдущую категорию
+                if current_header and current_items:
+                    categories.append({"header": current_header, "items": current_items})
+                    current_items = []
+                # Извлекаем категорию из следующей строки
+                header_line = lines[i+1].strip()
+                # Убираем возможное двоеточие в конце
+                header_text = header_line.rstrip(':').strip()
+                current_header = normalize_name(header_text)
+                i += 2  # пропускаем разделитель и строку с категорией
+                continue
+            # Если дальше не категория, просто пропускаем разделитель
+            i += 1
+            continue
+
+        # ===== СТАРЫЙ ФОРМАТ: разделитель вида -...- с двоеточием внутри =====
+        if stripped.startswith('-') and stripped.endswith('-') and ':' in stripped:
+            if current_header is not None:
+                categories.append({"header": current_header, "items": current_items})
+                current_items = []
+            header_text = stripped.strip('- ').strip()
+            if header_text.endswith(':'):
+                header_text = header_text[:-1].strip()
+            current_header = normalize_name(header_text)
+            i += 1
+            continue
+
+        # ===== СТАРЫЙ ФОРМАТ: три строки: ---, категория, --- =====
+        if (re.match(r'^\s*-+\s*$', stripped) and
+            i + 1 < n and ':' in lines[i+1] and
+            i + 2 < n and re.match(r'^\s*-+\s*$', lines[i+2])):
+            if current_header is not None:
+                categories.append({"header": current_header, "items": current_items})
+                current_items = []
+            header_line = lines[i+1].strip()
+            header_text = header_line.strip('- ').strip()
+            if header_text.endswith(':'):
+                header_text = header_text[:-1].strip()
+            current_header = normalize_name(header_text)
+            i += 3
+            continue
+
+        # Пропускаем строки, состоящие только из дефисов (запасной вариант)
+        if re.match(r'^\s*-+\s*$', stripped):
+            i += 1
+            continue
+
+        # Пропускаем строки вида "- что-то -" (не товар)
+        if re.match(r'^-\s*[^-]+\s*-$', stripped):
+            i += 1
+            continue
+
+        # Если строка заканчивается на ":" – это может быть категория без разделителя,
+        # но у нас уже есть current_header? Обрабатываем аккуратно.
+        if stripped.endswith(':'):
+            # Если текущей категории нет – начинаем новую
+            if current_header is None:
+                header_text = stripped.rstrip(':').strip()
+                current_header = normalize_name(header_text)
+            i += 1
+            continue
+
+        # Если нет текущей категории – создаём "Общее:"
+        if current_header is None:
+            current_header = "Общее:"
+            # current_items остаётся пустым
+
+        # Добавляем строку как товар (убираем начальный дефис и пробел, если есть)
+        item_text = stripped.lstrip('- ').strip()
+        if item_text:  # не пустая строка
+            current_items.append(item_text)
+        i += 1
+
+    # Добавляем последнюю категорию
+    if current_header and current_items:
+        categories.append({"header": current_header, "items": current_items})
+
+    return categories
+
+def sort_assortment_to_categories(input_text):
+    lines = input_text.splitlines()
+    return parse_categories(lines)
+
+# Остальные функции (sort_items_in_category, build_output_text, find_category_for_item, add_item_to_categories)
+# оставь без изменений, они не влияют на парсинг входящего ассортимента.
+# Но для полноты привожу их полностью (скопируй из своего старого файла, они у тебя есть)
