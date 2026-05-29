@@ -78,12 +78,12 @@ async def handle_arrival(message: Message, state: FSMContext):
         )
         return
 
-    # === Получение контента ===
+    # Получаем содержимое
     lines = []
     if message.document:
         if message.document.file_size > MAX_FILE_SIZE:
             await send_and_clean(bot=message.bot, chat_id=message.chat.id,
-                                 text="❌ Файл слишком большой.", delete_after=60)
+                                 text="❌ Файл слишком большой (макс 10 МБ).", delete_after=60)
             return
         file_path = f"/tmp/{message.document.file_name}"
         await message.bot.download(message.document, destination=file_path)
@@ -107,7 +107,7 @@ async def handle_arrival(message: Message, state: FSMContext):
     # Убираем строки-разделители
     lines = [line for line in lines if not re.match(r'^\s*-+\s*$', line)]
 
-    # Фильтруем только строки с серийным номером
+    # Оставляем только строки с серийным номером
     filtered_lines = []
     skipped_no_serial = []
     for line in lines:
@@ -147,15 +147,11 @@ async def handle_arrival(message: Message, state: FSMContext):
 
     if not cat_to_items:
         await send_and_clean(bot=message.bot, chat_id=message.chat.id,
-                             text="❌ Нет новых товаров для добавления.", delete_after=60)
+                             text="❌ Нет новых товаров для добавления (дубликаты).", delete_after=60)
         return
 
     await state.set_state(ArrivalConfirmState.waiting_for_confirm)
-    await state.update_data(
-        cat_to_items=cat_to_items,
-        skipped_duplicates=skipped_duplicates,
-        skipped_no_serial=skipped_no_serial
-    )
+    await state.update_data(cat_to_items=cat_to_items)
 
     total = sum(len(v) for v in cat_to_items.values())
     text = f"📦 Найдено новых товаров: **{total}**\n"
@@ -181,18 +177,20 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
     if action != "yes":
         await callback.message.edit_text("❌ Добавление отменено.")
         await state.clear()
+        await callback.answer()
         return
 
-    pool = await get_pool()
     total_added = 0
     failed = []
 
     for cat_name, items in cat_to_items.items():
         try:
             cat_id = await ItemRepository.get_or_create_category(cat_name)
+
             for text, serial in items:
                 is_booked = 'Бронь от' in text
                 try:
+                    pool = get_pool()                    # ← без await
                     async with pool.acquire() as conn:
                         await conn.execute('''
                             INSERT INTO items (text, serial, category_id, is_booked)
@@ -200,7 +198,7 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
                         ''', text, serial, cat_id, is_booked)
                     total_added += 1
                 except Exception as e:
-                    logger.error(f"Ошибка добавления: {text} | {e}")
+                    logger.error(f"Ошибка добавления товара: {text} | {e}")
                     failed.append(text)
         except Exception as e:
             logger.exception(f"Ошибка с категорией {cat_name}")
@@ -212,11 +210,11 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
     if total_added > 0 and not failed:
         await callback.message.edit_text(f"✅ Успешно добавлено {total_added} товаров!")
     elif total_added > 0:
-        msg = f"✅ Добавлено: {total_added}\n❌ Не удалось добавить:\n"
-        for item in failed[:6]:
+        msg = f"✅ Добавлено: {total_added}\n\n❌ Не удалось добавить:\n"
+        for item in failed[:7]:
             msg += f"• {item}\n"
-        if len(failed) > 6:
-            msg += f"... и ещё {len(failed)-6}"
+        if len(failed) > 7:
+            msg += f"... и ещё {len(failed) - 7}"
         await callback.message.edit_text(msg)
     else:
         await callback.message.edit_text("❌ Не удалось добавить ни одного товара.")
