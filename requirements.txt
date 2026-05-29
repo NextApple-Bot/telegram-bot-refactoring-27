@@ -13,7 +13,7 @@ python-multipart==0.0.9
 passlib[bcrypt]==1.7.4
 itsdangerous==2.1.2
 cachetools==5.3.3
-redis==5.0.1
+redis==8.0.0
 python-json-logger==2.0.7
 psycopg2-binary==2.9.10
 prometheus-fastapi-instrumentator==7.1.0
