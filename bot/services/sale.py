@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 class SaleService:
     @staticmethod
     async def process_sale(content: str, chat_id: int, message_id: int, payments: dict) -> dict:
-        # Локальные импорты для предотвращения циклической зависимости
         from bot.db import get_async_session_factory
-        from bot.repositories import ItemRepository, StatsRepository
+        from bot.repositories import ItemRepository
+        from bot.repositories.stats import StatsRepository
 
         serials = list(set(extract_serials(content)))
         is_accessory = (len(serials) == 0)
@@ -46,7 +46,7 @@ class SaleService:
                 }
 
             # Удаляем найденные товары
-            from .assortment import AssortmentService
+            from bot.services.assortment import AssortmentService
             for _item_id, serial in sold_items:
                 await AssortmentService.remove_by_serial(serial, reason='sale', conn=session)
 
