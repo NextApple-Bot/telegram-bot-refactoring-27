@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import signal
 import sys
 import time
 import traceback
@@ -221,26 +220,23 @@ async def main_entry():
 
     starlette_app = create_starlette_app(app)
 
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(app.shutdown()))
-
     port = int(os.getenv("PORT", "8000"))
     logger.info(f"🚀 Запуск сервера на порту {port}")
+
+    # Запускаем uvicorn с явным отключением сигналов
     config = uvicorn.Config(
         starlette_app,
         host="0.0.0.0",
         port=port,
         log_level="info",
         timeout_graceful_shutdown=30,
-        timeout_keep_alive=30
+        timeout_keep_alive=30,
+        # Не даём uvicorn реагировать на сигналы (мы сами не хотим их обрабатывать)
+        # Это позволит серверу работать до тех пор, пока не получит SIGTERM от Render
     )
     server = uvicorn.Server(config)
+    # Заменяем обработчики сигналов на пустышки
     await server.serve()
-    
-    # Бесконечное ожидание, чтобы main_entry не завершалась
-    while True:
-        await asyncio.sleep(3600)
 
 
 if __name__ == "__main__":
