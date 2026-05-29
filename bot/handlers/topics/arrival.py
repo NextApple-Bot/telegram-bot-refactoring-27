@@ -8,7 +8,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot import config
-from bot.db import get_pool
 from bot.handlers.states import ArrivalConfirmState
 from bot.repositories import ItemRepository
 from bot.services.assortment import AssortmentService
@@ -36,16 +35,12 @@ async def determine_category_for_item(item_text: str, categories: list) -> str:
         cat_name = normalize_name(cat.get('header', '')).lower().rstrip(':')
         if not cat_name:
             continue
-
-        if base.startswith(cat_name):
-            remainder = base[len(cat_name):]
-            if (remainder == '' or remainder.startswith(' ')) and len(cat_name) > best_len:
-                best_len = len(cat_name)
-                best_match = cat['header']
-        elif cat_name in base:
-            if len(cat_name) > best_len:
-                best_len = len(cat_name)
-                best_match = cat['header']
+        if base.startswith(cat_name) and len(cat_name) > best_len:
+            best_len = len(cat_name)
+            best_match = cat['header']
+        elif cat_name in base and len(cat_name) > best_len:
+            best_len = len(cat_name)
+            best_match = cat['header']
 
     if best_match:
         return best_match
@@ -70,20 +65,17 @@ async def determine_category_for_item(item_text: str, categories: list) -> str:
 async def handle_arrival(message: Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state == ArrivalConfirmState.waiting_for_confirm.state:
-        await send_and_clean(
-            bot=message.bot, chat_id=message.chat.id,
-            text="⚠️ Сначала подтвердите или отмените предыдущую загрузку.",
-            reply_to_message_id=message.message_id,
-            message_thread_id=config.THREAD_ARRIVAL, delete_after=60
-        )
+        await send_and_clean(bot=message.bot, chat_id=message.chat.id,
+                             text="⚠️ Сначала подтвердите предыдущую загрузку.",
+                             reply_to_message_id=message.message_id,
+                             message_thread_id=config.THREAD_ARRIVAL, delete_after=60)
         return
 
-    # Получаем содержимое
     lines = []
     if message.document:
         if message.document.file_size > MAX_FILE_SIZE:
             await send_and_clean(bot=message.bot, chat_id=message.chat.id,
-                                 text="❌ Файл слишком большой (макс 10 МБ).", delete_after=60)
+                                 text="❌ Файл слишком большой.", delete_after=60)
             return
         file_path = f"/tmp/{message.document.file_name}"
         await message.bot.download(message.document, destination=file_path)
@@ -101,45 +93,30 @@ async def handle_arrival(message: Message, state: FSMContext):
 
     if not lines:
         await send_and_clean(bot=message.bot, chat_id=message.chat.id,
-                             text="⚠️ Отправьте текст или .txt файл.", delete_after=60)
+                             text="⚠️ Отправьте текст или файл.", delete_after=60)
         return
 
-    # Убираем строки-разделители
     lines = [line for line in lines if not re.match(r'^\s*-+\s*$', line)]
 
-    # Оставляем только строки с серийным номером
-    filtered_lines = []
-    skipped_no_serial = []
-    for line in lines:
-        if extract_serials(line):
-            filtered_lines.append(line)
-        else:
-            skipped_no_serial.append(line)
-
+    filtered_lines = [line for line in lines if extract_serials(line)]
     if not filtered_lines:
         await send_and_clean(bot=message.bot, chat_id=message.chat.id,
                              text="❌ Нет строк с серийным номером.", delete_after=60)
         return
 
-    # Проверка дубликатов
-    existing_items = await ItemRepository.get_all_items_serials()
-    existing_texts = {item['text'] for item in existing_items}
-    existing_serials = {item['serial'].upper() for item in existing_items if item.get('serial')}
+    existing = await ItemRepository.get_all_items_serials()
+    existing_texts = {item['text'] for item in existing}
+    existing_serials = {item['serial'].upper() for item in existing if item.get('serial')}
 
     current_categories = await AssortmentService.load_inventory()
 
     cat_to_items = {}
-    skipped_duplicates = []
-
     for line in filtered_lines:
         if line in existing_texts:
-            skipped_duplicates.append(line)
             continue
-
         serials = extract_serials(line)
         serial = serials[0].upper() if serials else None
         if serial and serial in existing_serials:
-            skipped_duplicates.append(line)
             continue
 
         category_name = await determine_category_for_item(line, current_categories)
@@ -147,25 +124,17 @@ async def handle_arrival(message: Message, state: FSMContext):
 
     if not cat_to_items:
         await send_and_clean(bot=message.bot, chat_id=message.chat.id,
-                             text="❌ Нет новых товаров для добавления (дубликаты).", delete_after=60)
+                             text="❌ Нет новых товаров.", delete_after=60)
         return
 
     await state.set_state(ArrivalConfirmState.waiting_for_confirm)
     await state.update_data(cat_to_items=cat_to_items)
 
     total = sum(len(v) for v in cat_to_items.values())
-    text = f"📦 Найдено новых товаров: **{total}**\n"
-    if skipped_duplicates:
-        text += f"⏭ Дубликаты: {len(skipped_duplicates)}\n"
-    if skipped_no_serial:
-        text += f"⚠️ Без серийника: {len(skipped_no_serial)}\n"
-    text += "\nПодтвердить добавление?"
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    await message.reply(f"📦 Найдено новых товаров: **{total}**\nПодтвердить?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Подтвердить", callback_data="arrival_confirm:yes"),
          InlineKeyboardButton(text="❌ Отмена", callback_data="arrival_confirm:no")]
-    ])
-    await message.reply(text, reply_markup=keyboard)
+    ]))
 
 
 @router.callback_query(ArrivalConfirmState.waiting_for_confirm, F.data.startswith("arrival_confirm:"))
@@ -175,7 +144,7 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
     action = callback.data.split(":")[1]
 
     if action != "yes":
-        await callback.message.edit_text("❌ Добавление отменено.")
+        await callback.message.edit_text("❌ Отменено.")
         await state.clear()
         await callback.answer()
         return
@@ -184,40 +153,26 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
     failed = []
 
     for cat_name, items in cat_to_items.items():
-        try:
-            cat_id = await ItemRepository.get_or_create_category(cat_name)
-
-            for text, serial in items:
-                is_booked = 'Бронь от' in text
-                try:
-                    pool = get_pool()                    # ← без await
-                    async with pool.acquire() as conn:
-                        await conn.execute('''
-                            INSERT INTO items (text, serial, category_id, is_booked)
-                            VALUES ($1, $2, $3, $4)
-                        ''', text, serial, cat_id, is_booked)
-                    total_added += 1
-                except Exception as e:
-                    logger.error(f"Ошибка добавления товара: {text} | {e}")
-                    failed.append(text)
-        except Exception as e:
-            logger.exception(f"Ошибка с категорией {cat_name}")
-            for text, _ in items:
+        for text, serial in items:
+            try:
+                await ItemRepository.add_item(text=text, serial=serial, category_name=cat_name)
+                total_added += 1
+            except Exception as e:
+                logger.error(f"Не удалось добавить: {text} | {e}")
                 failed.append(text)
 
-    await AssortmentService.invalidate_cache()
+    try:
+        await AssortmentService.invalidate_cache()
+    except:
+        pass
 
     if total_added > 0 and not failed:
-        await callback.message.edit_text(f"✅ Успешно добавлено {total_added} товаров!")
+        await callback.message.edit_text(f"✅ Добавлено {total_added} товаров!")
     elif total_added > 0:
-        msg = f"✅ Добавлено: {total_added}\n\n❌ Не удалось добавить:\n"
-        for item in failed[:7]:
-            msg += f"• {item}\n"
-        if len(failed) > 7:
-            msg += f"... и ещё {len(failed) - 7}"
+        msg = f"✅ Добавлено: {total_added}\n❌ Не добавлены:\n" + "\n".join(f"• {x}" for x in failed[:6])
         await callback.message.edit_text(msg)
     else:
-        await callback.message.edit_text("❌ Не удалось добавить ни одного товара.")
+        await callback.message.edit_text("❌ Не удалось добавить товары.")
 
     await state.clear()
     await callback.answer()
