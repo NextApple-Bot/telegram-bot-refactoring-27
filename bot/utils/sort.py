@@ -54,7 +54,7 @@ def parse_categories(lines):
     """
     Парсит текст ассортимента в список категорий.
     Поддерживает старый формат (---) и новый (------- любой длины).
-    Возвращает список словарей с ключами 'header' и 'items'.
+    Возвращает список словарей с ключами 'header' и 'items' (строки).
     """
     categories = []
     current_header = None
@@ -149,14 +149,24 @@ def sort_assortment_to_categories(input_text):
     return parse_categories(lines)
 
 def sort_items_in_category(items, header):
+    """
+    Сортирует товары внутри категории.
+    items: список строк (старый парсер) или список словарей (из БД).
+    """
+    # Если items – список словарей, извлекаем text
+    if items and isinstance(items[0], dict):
+        item_strings = [item.get('text', '') for item in items]
+    else:
+        item_strings = items[:]
+
     header_lower = header.lower()
     output = []
 
     if 'iphone' in header_lower:
         groups = {}
-        for item in items:
-            sim = detect_sim_type(item)
-            match = re.search(r'(\d+)\s*(gb|tb)', item, re.IGNORECASE)
+        for item_str in item_strings:
+            sim = detect_sim_type(item_str)
+            match = re.search(r'(\d+)\s*(gb|tb)', item_str, re.IGNORECASE)
             if match:
                 num = int(match.group(1))
                 unit = match.group(2).lower()
@@ -168,7 +178,7 @@ def sort_items_in_category(items, header):
             key = (vol_gb, vol_str)
             if key not in groups:
                 groups[key] = {'eSIM': [], 'SIM+eSIM': [], 'other': []}
-            groups[key][sim].append(item)
+            groups[key][sim].append(item_str)
 
         sorted_keys = sorted(groups.keys(), key=lambda k: (k[0] is None, k[0] if k[0] is not None else float('inf')))
         for vol_gb, vol_str in sorted_keys:
@@ -187,9 +197,9 @@ def sort_items_in_category(items, header):
 
     elif 'apple watch' in header_lower:
         size_groups = {}
-        for item in items:
-            size = extract_watch_size(item)
-            size_groups.setdefault(size, []).append(item)
+        for item_str in item_strings:
+            size = extract_watch_size(item_str)
+            size_groups.setdefault(size, []).append(item_str)
         sorted_sizes = sorted(size_groups.keys(), key=lambda s: (s is None, s if s is not None else float('inf')))
         for size in sorted_sizes:
             if size is not None:
@@ -200,17 +210,16 @@ def sort_items_in_category(items, header):
         return output
 
     else:
-        return sorted(items)
+        return sorted(item_strings)
 
 def build_output_text(categories):
     """
     Формирует текст для выгрузки ассортимента.
     categories: список словарей, каждый может иметь ключи 'header' (из парсера)
-                или 'name' (из БД). Поддерживаются оба.
+                или 'name' (из БД). Внутри items – строки или словари.
     """
     output_lines = []
     for cat in categories:
-        # Берём header (приоритет) или name
         header = cat.get('header') or cat.get('name')
         if not header:
             continue
@@ -225,18 +234,21 @@ def build_output_text(categories):
 
         items = cat.get('items', [])
         if items:
-            # Передаём header для правильной сортировки
+            # sort_items_in_category вернёт список строк
             sorted_output = sort_items_in_category(items, header)
             if isinstance(sorted_output, list):
                 output_lines.extend(sorted_output)
             else:
-                output_lines.append(sorted_output)
+                output_lines.append(str(sorted_output))
         else:
             output_lines.append('')
 
         output_lines.append('')
 
-    return '\n'.join(output_lines).strip()
+    # Удаляем пустые строки в конце
+    while output_lines and output_lines[-1] == '':
+        output_lines.pop()
+    return '\n'.join(output_lines)
 
 def find_category_for_item(item, categories):
     normalized_item = normalize_name(item)
