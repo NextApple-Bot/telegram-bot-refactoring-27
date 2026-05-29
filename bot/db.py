@@ -1,5 +1,5 @@
+# bot/db.py
 import logging
-import os
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -36,6 +36,10 @@ def get_async_session_factory():
         )
         logger.info("✅ Фабрика асинхронных сессий SQLAlchemy создана")
     return _async_session_factory
+
+
+# Для обратной совместимости (если какой-то старый код использует get_pool)
+get_pool = get_async_session_factory
 
 
 async def dispose_engine():
