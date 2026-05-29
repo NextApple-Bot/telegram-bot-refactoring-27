@@ -238,8 +238,9 @@ async def main_entry():
     server = uvicorn.Server(config)
     await server.serve()
     
-    # Блокируем завершение main_entry, чтобы сервер не останавливался
-    await asyncio.Event().wait()
+    # Бесконечное ожидание, чтобы main_entry не завершалась
+    while True:
+        await asyncio.sleep(3600)
 
 
 if __name__ == "__main__":
