@@ -1,32 +1,27 @@
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import RedirectResponse
 
-from web_admin.auth import is_authenticated, login_user, logout_user
+from web_admin.auth import login_user, logout_user, is_authenticated
+from web_admin.templates import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="web_admin/templates")
 
 
-@router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+@router.get("/login")
+async def login_form(request: Request):
     if is_authenticated(request):
-        return RedirectResponse("/admin/dashboard")
+        return RedirectResponse(url="/dashboard")
     return templates.TemplateResponse("login.html", {"request": request})
 
 
 @router.post("/login")
-async def login_post(request: Request, password: str = Form(...)):
+async def login_submit(request: Request, password: str = Form(...)):
     if login_user(request, password):
-        return RedirectResponse("/admin/dashboard", status_code=303)
-    else:
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Неверный пароль"}
-        )
+        return RedirectResponse(url="/dashboard", status_code=303)
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
 
 @router.get("/logout")
 async def logout(request: Request):
     logout_user(request)
-    return RedirectResponse("/admin/auth/login")
+    return RedirectResponse(url="/auth/login")
