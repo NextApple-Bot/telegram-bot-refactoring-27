@@ -186,19 +186,4 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
     action = callback.data.split(":")[1]
 
     if action == "yes" and cat_to_items:
-        async_session = get_async_session_factory()
-        async with async_session() as session, session.begin():
-            total_added = 0
-            for cat_name, items in cat_to_items.items():
-                cat_id = await ItemRepository.get_or_create_category(cat_name, conn=session)
-                for text, serial in items:
-                    is_booked = "Бронь" in text.upper()
-                    await ItemRepository.add_item(text, serial, cat_id, is_booked=is_booked, conn=session)
-                    total_added += 1
-
-        await AssortmentService.invalidate_cache()
-        await callback.message.edit_text(f"✅ Успешно добавлено **{total_added}** товаров.")
-    else:
-        await callback.message.edit_text("❌ Добавление отменено.")
-
-    await state.clear()
+       
