@@ -3,7 +3,7 @@ import traceback
 from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
-from aiogram.types import Update, Message, CallbackQuery
+from aiogram.types import Update
 
 from bot import config
 from telegram_alerter import send_alert
@@ -18,51 +18,57 @@ class ErrorHandlerMiddleware(BaseMiddleware):
         event: Update,
         data: Dict[str, Any]
     ) -> Any:
+
         try:
             return await handler(event, data)
 
         except Exception as exc:
-            # Получаем информацию о событии
-            update_id = getattr(event, "update_id", "unknown")
+            # Собираем контекст ошибки
+            update_id = getattr(event, "update_id", None)
             user_id = None
             chat_id = None
-            message_text = None
+            event_type = type(event).__name__
 
-            # Пытаемся вытащить пользователя и чат
-            if isinstance(event, Update):
-                if event.message:
+            # Пытаемся получить информацию о пользователе и чате
+            try:
+                if hasattr(event, "message") and event.message:
                     user_id = event.message.from_user.id if event.message.from_user else None
                     chat_id = event.message.chat.id
-                    message_text = event.message.text or event.message.caption
-                elif event.callback_query:
+                elif hasattr(event, "callback_query") and event.callback_query:
                     user_id = event.callback_query.from_user.id if event.callback_query.from_user else None
                     chat_id = event.callback_query.message.chat.id if event.callback_query.message else None
-                    message_text = event.callback_query.data
+            except Exception:
+                pass
 
-            # Логируем ошибку подробно
-            logger.exception(
-                f"❌ Критическая ошибка в обработчике\n"
-                f"Update ID: {update_id}\n"
+            # Логируем ошибку с контекстом
+            logger.error(
+                f"❌ Ошибка при обработке Update #{update_id}\n"
+                f"Тип события: {event_type}\n"
                 f"User ID: {user_id}\n"
                 f"Chat ID: {chat_id}\n"
-                f"Text/Data: {message_text}\n"
-                f"Error: {exc}"
+                f"Ошибка: {exc}\n"
+                f"Traceback:\n{traceback.format_exc()}"
             )
 
-            # Отправляем алерт админам (только на валидные ID)
+            # Отправляем алерт админам (защищённо)
             try:
-                admin_ids = config.ADMIN_IDS if hasattr(config, "ADMIN_IDS") else []
-                error_text = (
-                    f"🚨 <b>Ошибка в боте</b>\n\n"
-                    f"<b>Пользователь:</b> {user_id}\n"
-                    f"<b>Ошибка:</b> {str(exc)[:300]}\n"
-                    f"<b>Update ID:</b> {update_id}"
-                )
-                for admin_id in admin_ids:
-                    if admin_id:  # защита от пустых/неверных ID
-                        await send_alert(error_text, admin_id)
-            except Exception as alert_exc:
-                logger.error(f"Не удалось отправить алерт админу: {alert_exc}")
+                admin_ids = getattr(config, "ADMIN_IDS", [])
+                if admin_ids:
+                    alert_text = (
+                        f"🚨 <b>Критическая ошибка в боте</b>\n\n"
+                        f"<b>Update ID:</b> {update_id}\n"
+                        f"<b>Тип:</b> {event_type}\n"
+                        f"<b>Пользователь:</b> {user_id}\n"
+                        f"<b>Ошибка:</b> {str(exc)[:400]}"
+                    )
+                    for admin_id in admin_ids:
+                        if admin_id:  # защита от пустых значений
+                            try:
+                                await send_alert(alert_text, admin_id)
+                            except Exception as alert_error:
+                                logger.warning(f"Не удалось отправить алерт админу {admin_id}: {alert_error}")
+            except Exception as e:
+                logger.error(f"Ошибка при отправке алерта: {e}")
 
-            # Пробрасываем ошибку дальше (чтобы aiogram мог обработать)
+            # Пробрасываем ошибку дальше (чтобы не менять текущее поведение)
             raise
