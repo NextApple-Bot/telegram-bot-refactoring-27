@@ -4,77 +4,89 @@
 
 {% block content %}
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h4 class="mb-1">Дашборд</h4>
-        <p class="text-muted mb-0">{{ target_date }}</p>
+        <h4 class="mb-1">Дашборд — {{ target_date }}</h4>
+        <p class="text-muted mb-0">
+            {{ stats.sales_count }} продаж • {{ stats.preorders_count }} предзаказов • {{ stats.bookings_count }} бронирований
+        </p>
     </div>
     <div>
-        <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editStatsModal">
-            ✏️ Редактировать статистику
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editStatsModal">
+            <i class="bi bi-pencil-square me-2"></i> Редактировать статистику
         </button>
     </div>
 </div>
 
-<!-- Метрики -->
+<!-- Основные карточки -->
 <div class="row g-3 mb-4">
     <div class="col-md-3">
-        <div class="card">
+        <div class="card shadow-sm">
             <div class="card-body">
                 <h6 class="text-muted">Выручка сегодня</h6>
-                <h3>{{ "{:,.0f}".format(revenue_today) }} ₽</h3>
+                <h3 class="mb-0">{{ "{:,.0f}".format(revenue_today) }} ₽</h3>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card">
+        <div class="card shadow-sm">
             <div class="card-body">
                 <h6 class="text-muted">Продажи сегодня</h6>
-                <h3>{{ sales_today }}</h3>
+                <h3 class="mb-0">{{ sales_today }}</h3>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card">
+        <div class="card shadow-sm">
             <div class="card-body">
-                <h6 class="text-muted">План</h6>
-                <h3>{{ "{:,.0f}".format(plan_amount) }} ₽</h3>
+                <h6 class="text-muted">План на день</h6>
+                <h3 class="mb-0">{{ "{:,.0f}".format(plan_amount) }} ₽</h3>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card">
+        <div class="card shadow-sm">
             <div class="card-body">
-                <h6 class="text-muted">Выполнение</h6>
-                <h3>{{ ((revenue_today / plan_amount) * 100) | round(1) if plan_amount > 0 else 0 }}%</h3>
+                <h6 class="text-muted">Выполнение плана</h6>
+                <h3 class="mb-0">{{ ((revenue_today / plan_amount) * 100) | round(1) if plan_amount > 0 else 0 }}%</h3>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Разбивка платежей -->
+<!-- Платежи + Продавцы -->
 <div class="row g-3 mb-4">
+    <!-- Платежи -->
     <div class="col-md-6">
-        <div class="card">
-            <div class="card-header"><strong>Платежи</strong></div>
+        <div class="card shadow-sm h-100">
+            <div class="card-header">
+                <strong>Платежи за день</strong>
+            </div>
             <div class="card-body">
                 {% for type, amount in payments.items() %}
-                    <div class="d-flex justify-content-between">
+                    <div class="d-flex justify-content-between py-1 border-bottom">
                         <span>{{ type|capitalize }}</span>
                         <strong>{{ "{:,.0f}".format(amount) }} ₽</strong>
                     </div>
                 {% endfor %}
+                <div class="d-flex justify-content-between pt-2 fw-bold">
+                    <span>Итого</span>
+                    <span>{{ "{:,.0f}".format(revenue_today) }} ₽</span>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Продавцы -->
     <div class="col-md-6">
-        <div class="card">
-            <div class="card-header"><strong>Продавцы сегодня</strong></div>
+        <div class="card shadow-sm h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>Продавцы сегодня</strong>
+                <a href="/admin/sellers/manage" class="btn btn-sm btn-outline-secondary">Управление</a>
+            </div>
             <div class="card-body">
                 {% for seller in sellers %}
-                    <div class="d-flex justify-content-between mb-2">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
                         <span>{{ seller.name }}</span>
                         <button class="btn btn-sm {% if seller.present %}btn-success{% else %}btn-outline-secondary{% endif %}"
                                 onclick="toggleSeller({{ seller.id }})">
@@ -88,24 +100,28 @@
 </div>
 
 <!-- Графики -->
-<div class="row">
+<div class="row g-3">
     <div class="col-md-6">
-        <div class="card">
+        <div class="card shadow-sm">
             <div class="card-header"><strong>Продажи за 7 дней</strong></div>
-            <div class="card-body"><canvas id="salesChart"></canvas></div>
+            <div class="card-body">
+                <canvas id="salesChart" height="120"></canvas>
+            </div>
         </div>
     </div>
     <div class="col-md-6">
-        <div class="card">
+        <div class="card shadow-sm">
             <div class="card-header"><strong>Выручка за 7 дней</strong></div>
-            <div class="card-body"><canvas id="revenueChart"></canvas></div>
+            <div class="card-body">
+                <canvas id="revenueChart" height="120"></canvas>
+            </div>
         </div>
     </div>
 </div>
 
 <!-- Модальное окно редактирования статистики -->
 <div class="modal fade" id="editStatsModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Редактировать статистику за {{ target_date }}</h5>
@@ -115,30 +131,32 @@
                 <form id="editStatsForm">
                     <input type="hidden" name="target_date" value="{{ target_date_iso }}">
 
-                    <div class="mb-3">
-                        <label class="form-label">Продажи</label>
-                        <input type="number" class="form-control" name="sales_count" value="{{ stats.sales_count }}">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Количество</h6>
+                            <div class="mb-3">
+                                <label>Продажи</label>
+                                <input type="number" class="form-control" name="sales_count" value="{{ stats.sales_count }}">
+                            </div>
+                            <div class="mb-3">
+                                <label>Предзаказы</label>
+                                <input type="number" class="form-control" name="preorders_count" value="{{ stats.preorders_count }}">
+                            </div>
+                            <div class="mb-3">
+                                <label>Брони</label>
+                                <input type="number" class="form-control" name="bookings_count" value="{{ stats.bookings_count }}">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Платежи</h6>
+                            {% for type in ['cash', 'terminal', 'qr', 'transfer', 'invoice', 'installment'] %}
+                            <div class="mb-2">
+                                <label>{{ type|capitalize }}</label>
+                                <input type="number" step="0.01" class="form-control" name="{{ type }}" value="{{ payments.get(type, 0) }}">
+                            </div>
+                            {% endfor %}
+                        </div>
                     </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Предзаказы</label>
-                        <input type="number" class="form-control" name="preorders_count" value="{{ stats.preorders_count }}">
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Брони</label>
-                        <input type="number" class="form-control" name="bookings_count" value="{{ stats.bookings_count }}">
-                    </div>
-
-                    <hr>
-                    <h6>Платежи</h6>
-
-                    {% for type in ['cash', 'terminal', 'qr', 'transfer', 'invoice', 'installment'] %}
-                    <div class="mb-2">
-                        <label class="form-label">{{ type|capitalize }}</label>
-                        <input type="number" step="0.01" class="form-control" name="{{ type }}" value="{{ payments.get(type, 0) }}">
-                    </div>
-                    {% endfor %}
                 </form>
             </div>
             <div class="modal-footer">
@@ -159,7 +177,12 @@
         type: 'line',
         data: {
             labels: {{ chart_dates | tojson }},
-            datasets: [{ label: 'Продажи', data: {{ chart_sales | tojson }}, borderColor: '#0d6efd' }]
+            datasets: [{
+                label: 'Продажи',
+                data: {{ chart_sales | tojson }},
+                borderColor: '#0d6efd',
+                tension: 0.3
+            }]
         }
     });
 
@@ -167,11 +190,15 @@
         type: 'line',
         data: {
             labels: {{ chart_dates | tojson }},
-            datasets: [{ label: 'Выручка', data: {{ chart_revenue | tojson }}, borderColor: '#198754' }]
+            datasets: [{
+                label: 'Выручка',
+                data: {{ chart_revenue | tojson }},
+                borderColor: '#198754',
+                tension: 0.3
+            }]
         }
     });
 
-    // Отметка продавца
     async function toggleSeller(sellerId) {
         await fetch('/admin/dashboard/toggle_seller_day', {
             method: 'POST',
@@ -181,20 +208,18 @@
         location.reload();
     }
 
-    // Сохранение статистики
     async function saveStats() {
         const form = document.getElementById('editStatsForm');
         const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
 
-        const response = await fetch('/admin/dashboard/update_stats', {
+        const res = await fetch('/admin/dashboard/update_stats', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
         });
 
-        const result = await response.json();
-
+        const result = await res.json();
         if (result.success) {
             alert('Статистика успешно сохранена!');
             location.reload();
