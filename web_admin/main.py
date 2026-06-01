@@ -11,7 +11,7 @@ from web_admin.routes.assortment import views as assortment_views
 app = FastAPI(title="Admin Panel")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
-# === Роуты ===
+# Роуты
 app.include_router(auth.router,          prefix="/auth",      tags=["auth"])
 app.include_router(dashboard.router,     prefix="/dashboard", tags=["dashboard"])
 app.include_router(clients.router,       prefix="/clients",   tags=["clients"])
@@ -28,8 +28,8 @@ app.include_router(debug.router,         prefix="",           tags=["debug"])
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Разрешаем доступ к логину без авторизации
-    if path in ("/auth/login", "/auth/login/"):
+    # Разрешаем доступ к странице логина
+    if path.startswith("/auth/login"):
         return await call_next(request)
 
     if not is_authenticated(request):
@@ -41,9 +41,3 @@ async def auth_middleware(request: Request, call_next):
 @app.get("/")
 async def root():
     return RedirectResponse(url="/dashboard")
-
-
-@app.get("/auth/login")
-async def login_redirect():
-    """На случай, если кто-то зайдёт напрямую"""
-    return RedirectResponse(url="/auth/login")
