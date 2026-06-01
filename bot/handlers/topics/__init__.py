@@ -5,7 +5,7 @@ from .assortment import router as assortment_router
 from .preorder import router as preorder_router
 from .sales import router as sales_router
 
-# Собираем все роутеры топиков в один
+# Объединяем все роутеры топиков
 topics_router = Router()
 
 topics_router.include_router(arrival_router)
