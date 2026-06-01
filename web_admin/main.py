@@ -11,7 +11,6 @@ from web_admin.routes.assortment import views as assortment_views
 app = FastAPI(title="Admin Panel")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
-# === Роуты ===
 app.include_router(auth.router,          prefix="/auth",      tags=["auth"])
 app.include_router(dashboard.router,     prefix="/dashboard", tags=["dashboard"])
 app.include_router(clients.router,       prefix="/clients",   tags=["clients"])
@@ -28,8 +27,8 @@ app.include_router(debug.router,         prefix="",           tags=["debug"])
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Разрешаем доступ к странице логина
-    if path.startswith("/auth/login"):
+    # Разрешаем логин
+    if "/auth/login" in path:
         return await call_next(request)
 
     if not is_authenticated(request):
