@@ -1,7 +1,7 @@
 import logging
 from typing import List, Dict, Any
 
-from sqlalchemy import select, delete, update
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db import get_async_session_factory
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class AssortmentService:
-    """Сервис для работы с ассортиментом (категории + товары)."""
+    """Сервис для работы с ассортиментом."""
 
     @staticmethod
     async def load_inventory() -> List[Dict[str, Any]]:
@@ -52,10 +52,7 @@ class AssortmentService:
 
     @staticmethod
     async def remove_by_serial(serial: str, reason: str = 'sale', conn=None) -> bool:
-        """
-        Удаляет товар по серийному номеру.
-        Создаёт запись в DeletedItem и удаляет из таблицы items.
-        """
+        """Удаляет товар по серийному номеру (с созданием записи в DeletedItem)."""
         if not serial:
             return False
 
@@ -76,10 +73,9 @@ class AssortmentService:
             )
 
             if not item:
-                logger.warning(f"Товар с serial {serial} не найден для удаления")
+                logger.warning(f"Товар с serial {serial} не найден")
                 return False
 
-            # Создаём запись в архиве
             deleted = DeletedItem(
                 item_id=item.id,
                 text=item.text,
@@ -88,8 +84,6 @@ class AssortmentService:
                 reason=reason
             )
             session.add(deleted)
-
-            # Удаляем из активного ассортимента
             await session.delete(item)
 
             if own_session:
@@ -99,7 +93,7 @@ class AssortmentService:
             return True
 
         except Exception as e:
-            logger.exception(f"Ошибка при удалении товара по serial {serial}")
+            logger.exception(f"Ошибка при удалении товара {serial}")
             if own_session:
                 await session.rollback()
             return False
@@ -107,4 +101,16 @@ class AssortmentService:
             if own_session:
                 await session.close()
 
-    # ... остальные методы (import_arrival_from_txt, import_arrival_from_excel и т.д.) остаются без изменений
+    @staticmethod
+    async def invalidate_cache():
+        """
+        Очищает кэш ассортимента.
+        Безопасный метод — не падает, даже если кэш не используется.
+        """
+        try:
+            from bot.services.cache import cache
+            await cache.delete("assortment:*")
+            logger.info("🗑 Кэш ассортимента очищен")
+        except Exception:
+            # Если кэша нет или произошла ошибка — просто игнорируем
+            pass
