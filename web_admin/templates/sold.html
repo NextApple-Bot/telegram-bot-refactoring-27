@@ -1,140 +1,52 @@
 {% extends "base.html" %}
-{% block title %}Проданные товары{% endblock %}
-{% block page_title %}Проданные товары (хранятся 7 дней){% endblock %}
+
+{% block page_title %}Проданные товары{% endblock %}
 
 {% block content %}
-<div class="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 mb-6">
-    <div class="flex flex-col md:flex-row gap-4 items-end">
-        <div>
-            <label class="block text-sm font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">На странице</label>
-            <select id="per_page" class="px-4 py-2.5 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950">
-                <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
-                <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
-                <option value="200" {% if per_page == 200 %}selected{% endif %}>200</option>
-            </select>
-        </div>
-        <button onclick="applyPerPage()" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-medium">Применить</button>
-    </div>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Проданные товары <small class="text-muted">(хранятся 7 дней)</small></h4>
 </div>
 
-<!-- Bulk Actions Bar -->
-<div id="bulk-bar" class="hidden mb-4 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 rounded-3xl px-5 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-        <span class="font-medium text-emerald-700 dark:text-emerald-300" id="selected-count">0 выбрано</span>
-    </div>
-    <div class="flex gap-2">
-        <button onclick="bulkRestore()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-sm font-medium flex items-center gap-2">
-            <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Восстановить выбранные
-        </button>
-        <button onclick="clearSelection()" class="px-4 py-2 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-2xl text-sm">Отменить</button>
-    </div>
-</div>
-
-<div class="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-    <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-        <div class="font-semibold">Всего записей: <span class="text-emerald-600">{{ total }}</span></div>
-    </div>
-
-    <div class="overflow-x-auto">
-        <table class="w-full">
-            <thead class="bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
-                <tr>
-                    <th class="w-12 px-6 py-4">
-                        <input type="checkbox" id="select-all" class="w-4 h-4 accent-emerald-600" onchange="toggleSelectAll()">
-                    </th>
-                    <th class="px-6 py-4 text-left text-sm font-semibold text-zinc-600 dark:text-zinc-400">Товар</th>
-                    <th class="px-6 py-4 text-left text-sm font-semibold text-zinc-600 dark:text-zinc-400">Серийный номер</th>
-                    <th class="px-6 py-4 text-left text-sm font-semibold text-zinc-600 dark:text-zinc-400">Категория</th>
-                    <th class="px-6 py-4 text-left text-sm font-semibold text-zinc-600 dark:text-zinc-400">Дата продажи</th>
-                    <th class="w-28 px-6 py-4"></th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {% for item in items %}
-                <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-950 transition">
-                    <td class="px-6 py-4">
-                        <input type="checkbox" class="sold-checkbox w-4 h-4 accent-emerald-600" value="{{ item.id }}" onchange="updateBulkBar()">
-                    </td>
-                    <td class="px-6 py-4 font-medium text-zinc-900 dark:text-white">{{ item.text }}</td>
-                    <td class="px-6 py-4 text-zinc-600 dark:text-zinc-400">{{ item.serial or '—' }}</td>
-                    <td class="px-6 py-4 text-zinc-600 dark:text-zinc-400">{{ item.category_id or '—' }}</td>
-                    <td class="px-6 py-4 text-sm text-zinc-500">{{ item.deleted_at|format_date if item.deleted_at else '—' }}</td>
-                    <td class="px-6 py-4">
-                        <form action="/admin/sold/restore/{{ item.id }}" method="post" onsubmit="return confirm('Восстановить товар?');">
-                            <button class="px-4 py-1.5 text-sm bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900 dark:hover:bg-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-2xl flex items-center gap-1.5">
-                                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Восстановить
-                            </button>
-                        </form>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="6" class="px-6 py-12 text-center text-zinc-500">Нет проданных товаров</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    {% if total_pages > 1 %}
-    <div class="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-center">
-        <div class="flex gap-1">
-            {% if page > 1 %}
-            <a href="?page={{ page-1 }}&per_page={{ per_page }}" class="px-4 py-2 rounded-2xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800">&laquo;</a>
-            {% endif %}
-            <span class="px-5 py-2 bg-emerald-600 text-white rounded-2xl font-medium">{{ page }} / {{ total_pages }}</span>
-            {% if page < total_pages %}
-            <a href="?page={{ page+1 }}&per_page={{ per_page }}" class="px-4 py-2 rounded-2xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800">&raquo;</a>
-            {% endif %}
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Товар</th>
+                        <th>Серийный номер</th>
+                        <th>Категория</th>
+                        <th>Дата продажи</th>
+                        <th style="width: 120px;">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr>
+                        <td>{{ item.id }}</td>
+                        <td>{{ item.text }}</td>
+                        <td><code>{{ item.serial or '—' }}</code></td>
+                        <td>{{ item.category_id }}</td>
+                        <td>{{ item.deleted_at|format_date if item.deleted_at else '—' }}</td>
+                        <td>
+                            <form action="/admin/sold/restore/{{ item.id }}" method="post">
+                                <button type="submit" class="btn btn-sm btn-outline-success">
+                                    Восстановить
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center py-4">Проданных товаров нет</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
-    {% endif %}
 </div>
 
-<script>
-    function applyPerPage() {
-        const perPage = document.getElementById('per_page').value;
-        window.location.href = `?page=1&per_page=${perPage}`;
-    }
-
-    function toggleSelectAll() {
-        const selectAll = document.getElementById('select-all');
-        const checkboxes = document.querySelectorAll('.sold-checkbox');
-        checkboxes.forEach(cb => cb.checked = selectAll.checked);
-        updateBulkBar();
-    }
-
-    function updateBulkBar() {
-        const checkboxes = document.querySelectorAll('.sold-checkbox:checked');
-        const bar = document.getElementById('bulk-bar');
-        const countEl = document.getElementById('selected-count');
-
-        if (checkboxes.length > 0) {
-            bar.classList.remove('hidden');
-            bar.classList.add('flex');
-            countEl.textContent = `${checkboxes.length} выбрано`;
-        } else {
-            bar.classList.add('hidden');
-            bar.classList.remove('flex');
-        }
-    }
-
-    function clearSelection() {
-        document.querySelectorAll('.sold-checkbox').forEach(cb => cb.checked = false);
-        document.getElementById('select-all').checked = false;
-        updateBulkBar();
-    }
-
-    function bulkRestore() {
-        const checkboxes = document.querySelectorAll('.sold-checkbox:checked');
-        if (checkboxes.length === 0) return;
-
-        const ids = Array.from(checkboxes).map(cb => cb.value);
-        
-        if (!confirm(`Восстановить ${ids.length} товаров?`)) return;
-
-        showToast(`Восстановлено ${ids.length} товаров (демо)`, 'success');
-        setTimeout(() => window.location.reload(), 1200);
-    }
-</script>
 {% endblock %}
