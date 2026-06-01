@@ -23,7 +23,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
     (F.text | F.caption | F.document)
 )
 async def handle_assortment_upload(message: Message, state: FSMContext):
-    logger.info(f"🔔 ПОЛУЧЕНО СООБЩЕЖЕНИЕ В АССОРТИМЕНТ: chat_id={message.chat.id}, thread_id={message.message_thread_id}")
+    logger.info(f"🔔 ПОЛУЧЕНО СООБЩЕНИЕ В АССОРТИМЕНТ: chat_id={message.chat.id}, thread_id={message.message_thread_id}")
 
     content = None
 
@@ -98,4 +98,15 @@ async def process_assortment_confirm(callback: CallbackQuery, state: FSMContext)
 
     if action == "yes" and categories:
         try:
-            logger.info(f"Начина
+            logger.info(f"Начинаем массовую замену ассортимента: {len(categories)} категорий")
+            await ItemRepository.bulk_replace_assortment(categories)
+            await AssortmentService.invalidate_cache()
+            logger.info("Массовая замена успешно выполнена")
+            await callback.message.edit_text("✅ Ассортимент успешно заменён.")
+        except Exception as e:
+            logger.exception("Ошибка при замене ассортимента")
+            await callback.message.edit_text(f"❌ Ошибка при сохранении: {e}")
+    else:
+        await callback.message.edit_text("❌ Загрузка отменена.")
+
+    await state.clear()
