@@ -1,116 +1,76 @@
 import logging
-from typing import List, Dict, Any
-
-from sqlalchemy import select, delete
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 
 from bot.db import get_async_session_factory
-from bot.models import Category, DeletedItem, Item
+from bot.models import DeletedItem, Item
+from bot.services.cache import cache
 
 logger = logging.getLogger(__name__)
 
 
 class AssortmentService:
-    """Сервис для работы с ассортиментом."""
+    """Сервис для работы с ассортиментом + кэширование."""
 
-    @staticmethod
-    async def load_inventory() -> List[Dict[str, Any]]:
-        """Загружает весь ассортимент с группировкой по категориям."""
-        async with get_async_session_factory()() as session:
-            query = (
-                select(Category, Item)
-                .outerjoin(Item, Category.id == Item.category_id)
-                .order_by(Category.sort_order, Category.name, Item.text)
-            )
-            result = await session.execute(query)
-            rows = result.all()
-
-        categories: Dict[str, Dict[str, Any]] = {}
-        for cat, item in rows:
-            cat_name = cat.name.strip()
-            if cat_name not in categories:
-                categories[cat_name] = {
-                    "id": cat.id,
-                    "name": cat_name,
-                    "sort_order": getattr(cat, 'sort_order', 999),
-                    "items": []
-                }
-
-            if item:
-                categories[cat_name]["items"].append({
-                    "id": item.id,
-                    "text": item.text.strip(),
-                    "price": getattr(item, 'booking_price', None) or getattr(item, 'sale_price', None),
-                    "is_booked": item.is_booked,
-                    "serial": item.serial,
-                })
-
-        return sorted(
-            categories.values(),
-            key=lambda x: (x.get("sort_order", 999), x["name"])
-        )
-
-    @staticmethod
-    async def remove_by_serial(serial: str, reason: str = 'sale', conn=None) -> bool:
-        """Удаляет товар по серийному номеру (с созданием записи в DeletedItem)."""
-        if not serial:
-            return False
-
-        own_session = False
-        if conn is None:
-            async_session = get_async_session_factory()
-            session = async_session()
-            own_session = True
-        else:
-            session = conn
-
-        try:
-            if own_session:
-                await session.begin()
-
-            item = await session.scalar(
-                select(Item).where(Item.serial == serial)
-            )
-
-            if not item:
-                logger.warning(f"Товар с serial {serial} не найден")
-                return False
-
-            deleted = DeletedItem(
-                item_id=item.id,
-                text=item.text,
-                serial=item.serial,
-                category_id=item.category_id,
-                reason=reason
-            )
-            session.add(deleted)
-            await session.delete(item)
-
-            if own_session:
-                await session.commit()
-
-            logger.info(f"Товар {serial} удалён (причина: {reason})")
-            return True
-
-        except Exception as e:
-            logger.exception(f"Ошибка при удалении товара {serial}")
-            if own_session:
-                await session.rollback()
-            return False
-        finally:
-            if own_session:
-                await session.close()
+    CACHE_KEY = "assortment:all"
+    CACHE_TTL = 300  # 5 минут
 
     @staticmethod
     async def invalidate_cache():
+        """Полностью очищает кэш ассортимента."""
+        try:
+            await cache.delete(AssortmentService.CACHE_KEY)
+            logger.info("🗑 Кэш ассортимента полностью очищен")
+        except Exception as e:
+            logger.warning(f"Не удалось очистить кэш ассортимента: {e}")
+
+    @staticmethod
+    async def load_inventory() -> list[dict[str, Any]]:
         """
-        Очищает кэш ассортимента.
-        Безопасный метод — не падает, даже если кэш не используется.
+        Загружает ассортимент.
+        Сначала пытается взять из кэша, если нет — грузит из БД и кэширует.
         """
         try:
-            from bot.services.cache import cache
-            await cache.delete("assortment:*")
-            logger.info("🗑 Кэш ассортимента очищен")
-        except Exception:
-            # Если кэша нет или произошла ошибка — просто игнорируем
-            pass
+            cached = await cache.get(AssortmentService.CACHE_KEY)
+            if cached is not None:
+                logger.debug("Ассортимент взят из кэша")
+                return cached
+        except Exception as e:
+            logger.warning(f"Ошибка чтения кэша ассортимента: {e}")
+
+        # Если кэша нет — грузим из репозитория
+        from bot.repositories.item import ItemRepository
+        categories = await ItemRepository.get_all_categories_with_items()
+
+        # Сохраняем в кэш
+        try:
+            await cache.set(
+                AssortmentService.CACHE_KEY,
+                categories,
+                ttl=AssortmentService.CACHE_TTL
+            )
+            logger.debug("Ассортимент сохранён в кэш")
+        except Exception as e:
+            logger.warning(f"Не удалось сохранить ассортимент в кэш: {e}")
+
+        return categories
+
+    @staticmethod
+    async def remove_by_serial(serial: str, reason: str = 'sale', conn=None) -> bool:
+        """Удаляет товар по серийному номеру и инвалидирует кэш."""
+        from bot.repositories.item import ItemRepository
+
+        result = await ItemRepository.remove_by_serial(serial, reason=reason, conn=conn)
+
+        if result:
+            await AssortmentService.invalidate_cache()
+
+        return result
+
+    @staticmethod
+    async def save_inventory(categories: list[dict]):
+        """Полностью заменяет ассортимент и сбрасывает кэш."""
+        from bot.repositories.item import ItemRepository
+
+        await ItemRepository.bulk_replace_assortment(categories)
+        await AssortmentService.invalidate_cache()
+        logger.info("Ассортимент полностью заменён + кэш сброшен")
