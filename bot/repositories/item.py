@@ -15,10 +15,7 @@ class ItemRepository:
 
     @staticmethod
     async def get_all_categories_with_items() -> list[dict[str, Any]]:
-        """
-        Возвращает все категории с товарами.
-        Используется в AssortmentService.load_inventory() + кэшировании.
-        """
+        """Возвращает все категории с товарами (для кэширования)."""
         async_session = get_async_session_factory()
         async with async_session() as session:
             query = (
@@ -47,10 +44,8 @@ class ItemRepository:
 
     @staticmethod
     async def get_or_create_category(name: str, conn=None) -> int:
-        """Возвращает ID категории. Если не существует — создаёт."""
-        name = name.strip()
-        if not name:
-            name = "Без категории:"
+        """Возвращает ID категории. Создаёт, если не существует."""
+        name = name.strip() or "Без категории:"
 
         own_session = False
         if conn is None:
@@ -71,7 +66,6 @@ class ItemRepository:
             if category:
                 return category.id
 
-            # Создаём новую категорию
             max_order = await session.scalar(
                 select(func.coalesce(func.max(Category.sort_order), 0))
             )
@@ -87,7 +81,6 @@ class ItemRepository:
         except IntegrityError:
             if own_session:
                 await session.rollback()
-            # На случай гонки — пробуем ещё раз найти
             category = await session.scalar(
                 select(Category).where(func.lower(Category.name) == func.lower(name))
             )
@@ -98,25 +91,70 @@ class ItemRepository:
 
     @staticmethod
     async def bulk_replace_assortment(categories: list[dict]) -> None:
-        """Полностью заменяет ассортимент (используется при загрузке из топика Ассортимент)."""
+        """Полная замена ассортимента."""
         async_session = get_async_session_factory()
         async with async_session() as session, session.begin():
-            # Удаляем все товары
             await session.execute(delete(Item))
-            # Удаляем все категории (кроме системных при необходимости)
             await session.execute(delete(Category))
 
             for cat in categories:
                 header = cat.get("header") or cat.get("name", "Без категории:")
-                new_category = Category(name=header.strip(), sort_order=cat.get("sort_order", 999))
-                session.add(new_category)
+                new_cat = Category(name=header.strip(), sort_order=cat.get("sort_order", 999))
+                session.add(new_cat)
                 await session.flush()
 
                 for item_text in cat.get("items", []):
-                    session.add(Item(text=item_text.strip(), category_id=new_category.id))
+                    session.add(Item(text=item_text.strip(), category_id=new_cat.id))
 
-        logger.info(f"Ассортимент полностью заменён ({len(categories)} категорий)")
+        logger.info(f"Ассортимент заменён ({len(categories)} категорий)")
 
     @staticmethod
     async def remove_by_serial(serial: str, reason: str = "sale", conn=None) -> bool:
-        """Удаляет товар по серий
+        """Удаляет товар по серийному номеру."""
+        if not serial:
+            return False
+
+        normalized = serial.strip().upper()
+        own_session = False
+
+        if conn is None:
+            async_session = get_async_session_factory()
+            session = async_session()
+            own_session = True
+        else:
+            session = conn
+
+        try:
+            if own_session:
+                await session.begin()
+
+            item = await session.scalar(
+                select(Item).where(func.upper(Item.serial) == normalized)
+            )
+
+            if not item:
+                return False
+
+            deleted = DeletedItem(
+                item_id=item.id,
+                text=item.text,
+                serial=item.serial,
+                category_id=item.category_id,
+                reason=reason
+            )
+            session.add(deleted)
+            await session.delete(item)
+
+            if own_session:
+                await session.commit()
+
+            return True
+
+        except Exception:
+            logger.exception(f"Ошибка удаления по serial: {serial}")
+            if own_session:
+                await session.rollback()
+            return False
+        finally:
+            if own_session:
+                await session.close()
