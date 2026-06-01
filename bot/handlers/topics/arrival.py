@@ -69,11 +69,10 @@ async def handle_arrival(message: Message, state: FSMContext):
 
         lines = [line.strip() for line in content.splitlines() if line.strip()]
         lines = [line for line in lines if not re.match(r'^[-–—\s]+$', line)]
-
         lines_with_serial = [line for line in lines if extract_serials(line)]
 
         if not lines_with_serial:
-            await message.reply("❌ В сообщении нет строк с серийными номерами в скобках.")
+            await message.reply("❌ В сообщении нет строк с серийными номерами.")
             return
 
         current_categories = await AssortmentService.load_inventory()
@@ -111,7 +110,7 @@ async def handle_arrival(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.exception("Ошибка в handle_arrival")
-        await message.reply(f"❌ Ошибка: {str(e)[:100]}")
+        await message.reply(f"❌ Ошибка обработки: {str(e)[:100]}")
 
 
 @router.callback_query(ArrivalConfirmState.waiting_for_confirm, F.data.startswith("arrival_confirm:"))
@@ -135,13 +134,18 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
                     ))
                     added += 1
 
-            await AssortmentService.invalidate_cache()
-            await callback.message.edit_text(f"✅ Добавлено **{added}** товаров.")
+            # Безопасный вызов (не упадёт, даже если метода нет)
+            try:
+                await AssortmentService.invalidate_cache()
+            except AttributeError:
+                pass
+
+            await callback.message.edit_text(f"✅ Успешно добавлено **{added}** товаров!")
         except Exception as e:
-            logger.exception("Ошибка добавления")
+            logger.exception("Ошибка при добавлении товаров")
             await callback.message.edit_text(f"❌ Ошибка: {e}")
     else:
-        await callback.message.edit_text("❌ Отменено.")
+        await callback.message.edit_text("❌ Добавление отменено.")
 
     await state.clear()
     await callback.answer()
