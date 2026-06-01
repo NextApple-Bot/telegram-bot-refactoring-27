@@ -1,19 +1,14 @@
 from aiogram import Router
 
-from .base import router as base_router
-from .topics.arrival import router as arrival_router
-from .topics.assortment import router as assortment_router
-from .topics.preorder import router as preorder_router
-from .topics.sales import router as sales_router
+from .arrival import router as arrival_router
+from .assortment import router as assortment_router
+from .preorder import router as preorder_router
+from .sales import router as sales_router
 
-# Главный роутер
-router = Router()
+# Собираем все роутеры топиков в один
+topics_router = Router()
 
-# Подключаем базовые хендлеры (start, help и т.д.)
-router.include_router(base_router)
-
-# Подключаем хендлеры по топикам
-router.include_router(arrival_router)
-router.include_router(assortment_router)
-router.include_router(preorder_router)
-router.include_router(sales_router)
+topics_router.include_router(arrival_router)
+topics_router.include_router(assortment_router)
+topics_router.include_router(preorder_router)
+topics_router.include_router(sales_router)
