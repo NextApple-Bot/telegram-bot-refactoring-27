@@ -5,113 +5,107 @@
 {% block content %}
 
 <div class="mb-4">
-    <div class="d-flex justify-content-between align-items-center">
+    <div class="d-flex justify-content-between align-items-center flex-wrap">
         <div>
             <h4 class="mb-1">Дашборд</h4>
-            <p class="text-muted mb-0">{{ target_date }} • {{ stats.sales_count }} продаж • {{ stats.preorders_count }} предзаказов • {{ stats.bookings_count }} бронирований</p>
+            <p class="text-muted mb-0">
+                {{ target_date }} • 
+                {{ stats.sales_count }} продаж • 
+                {{ stats.preorders_count }} предзаказов • 
+                {{ stats.bookings_count }} бронирований
+            </p>
         </div>
 
-        <div class="btn-group">
-            <a href="?target_date={{ (target_date_iso | string | replace('-', '')) | int - 1 }}" class="btn btn-outline-secondary btn-sm">← Вчера</a>
+        <div class="btn-group mt-2 mt-md-0">
+            <a href="?target_date={{ (target_date_iso | string).replace('-','') | int - 1 }}" class="btn btn-outline-secondary btn-sm">← Вчера</a>
             <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm">Сегодня</a>
-            <a href="?target_date={{ (target_date_iso | string | replace('-', '')) | int + 1 }}" class="btn btn-outline-secondary btn-sm">Завтра →</a>
+            <a href="?target_date={{ (target_date_iso | string).replace('-','') | int + 1 }}" class="btn btn-outline-secondary btn-sm">Завтра →</a>
         </div>
     </div>
 </div>
 
-<!-- Основные метрики -->
+<!-- Метрики -->
 <div class="row g-3 mb-4">
     <!-- Выручка -->
     <div class="col-md-3">
-        <div class="card h-100">
+        <div class="card shadow-sm h-100">
             <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6 class="text-muted">Выручка сегодня</h6>
-                        <h3 class="mb-0">{{ "{:,.0f}".format(revenue_today) }} ₽</h3>
-                    </div>
-                    <div class="text-end">
-                        {% if revenue_change_yesterday is not none %}
-                            {% if revenue_change_yesterday >= 0 %}
-                                <span class="badge bg-success">+{{ revenue_change_yesterday }}%</span>
-                            {% else %}
-                                <span class="badge bg-danger">{{ revenue_change_yesterday }}%</span>
-                            {% endif %}
-                        {% endif %}
-                    </div>
-                </div>
+                <h6 class="text-muted">Выручка сегодня</h6>
+                <h2 class="mb-1">{{ "{:,.0f}".format(revenue_today) }} ₽</h2>
+                {% if revenue_change_yesterday is not none %}
+                    {% if revenue_change_yesterday >= 0 %}
+                        <span class="badge bg-success">+{{ revenue_change_yesterday }}% ко вчера</span>
+                    {% else %}
+                        <span class="badge bg-danger">{{ revenue_change_yesterday }}% ко вчера</span>
+                    {% endif %}
+                {% endif %}
             </div>
         </div>
     </div>
 
     <!-- Продажи -->
     <div class="col-md-3">
-        <div class="card h-100">
+        <div class="card shadow-sm h-100">
             <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6 class="text-muted">Продажи сегодня</h6>
-                        <h3 class="mb-0">{{ sales_today }}</h3>
-                    </div>
-                    <div class="text-end">
-                        {% if sales_change_yesterday is not none %}
-                            {% if sales_change_yesterday >= 0 %}
-                                <span class="badge bg-success">+{{ sales_change_yesterday }}%</span>
-                            {% else %}
-                                <span class="badge bg-danger">{{ sales_change_yesterday }}%</span>
-                            {% endif %}
-                        {% endif %}
-                    </div>
-                </div>
+                <h6 class="text-muted">Продажи сегодня</h6>
+                <h2 class="mb-1">{{ sales_today }}</h2>
+                {% if sales_change_yesterday is not none %}
+                    {% if sales_change_yesterday >= 0 %}
+                        <span class="badge bg-success">+{{ sales_change_yesterday }}% ко вчера</span>
+                    {% else %}
+                        <span class="badge bg-danger">{{ sales_change_yesterday }}% ко вчера</span>
+                    {% endif %}
+                {% endif %}
             </div>
         </div>
     </div>
 
     <!-- План -->
     <div class="col-md-3">
-        <div class="card h-100">
+        <div class="card shadow-sm h-100">
             <div class="card-body">
                 <h6 class="text-muted">План на день</h6>
-                <h3 class="mb-0">{{ "{:,.0f}".format(plan_amount) }} ₽</h3>
+                <h2 class="mb-1">{{ "{:,.0f}".format(plan_amount) }} ₽</h2>
             </div>
         </div>
     </div>
 
     <!-- Выполнение -->
     <div class="col-md-3">
-        <div class="card h-100">
+        <div class="card shadow-sm h-100">
             <div class="card-body">
                 <h6 class="text-muted">Выполнение плана</h6>
-                <h3 class="mb-0">
+                <h2 class="mb-1">
                     {% if plan_amount > 0 %}
                         {{ ((revenue_today / plan_amount) * 100) | round(1) }}%
                     {% else %}
                         —
                     {% endif %}
-                </h3>
+                </h2>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Разбивка платежей -->
+<!-- Разбивка платежей + Продавцы -->
 <div class="row g-3 mb-4">
+    <!-- Платежи -->
     <div class="col-md-6">
-        <div class="card h-100">
+        <div class="card shadow-sm h-100">
             <div class="card-header">
                 <strong>Разбивка по типам оплаты</strong>
             </div>
             <div class="card-body">
                 <ul class="list-group list-group-flush">
                     {% for type, amount in payments.items() %}
-                    <li class="list-group-item d-flex justify-content-between">
+                    <li class="list-group-item d-flex justify-content-between px-0">
                         <span>{{ type|capitalize }}</span>
                         <strong>{{ "{:,.0f}".format(amount) }} ₽</strong>
                     </li>
                     {% endfor %}
-                    <li class="list-group-item d-flex justify-content-between bg-light">
-                        <strong>Итого</strong>
-                        <strong>{{ "{:,.0f}".format(revenue_today) }} ₽</strong>
+                    <li class="list-group-item d-flex justify-content-between px-0 fw-bold bg-light">
+                        <span>Итого</span>
+                        <span>{{ "{:,.0f}".format(revenue_today) }} ₽</span>
                     </li>
                 </ul>
             </div>
@@ -120,10 +114,12 @@
 
     <!-- Продавцы -->
     <div class="col-md-6">
-        <div class="card h-100">
+        <div class="card shadow-sm h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <strong>Продавцы сегодня</strong>
-                <span class="badge bg-secondary">{{ sellers | selectattr('present') | list | length }} / {{ sellers | length }}</span>
+                <span class="badge bg-secondary">
+                    {{ sellers | selectattr('present') | list | length }} / {{ sellers | length }}
+                </span>
             </div>
             <div class="card-body">
                 {% for seller in sellers %}
@@ -144,22 +140,22 @@
 <!-- Графики -->
 <div class="row g-3">
     <div class="col-md-6">
-        <div class="card">
+        <div class="card shadow-sm">
             <div class="card-header">
-                <strong>Продажи за последние 7 дней</strong>
+                <strong>Продажи за 7 дней</strong>
             </div>
             <div class="card-body">
-                <canvas id="salesChart" height="120"></canvas>
+                <canvas id="salesChart" height="110"></canvas>
             </div>
         </div>
     </div>
     <div class="col-md-6">
-        <div class="card">
+        <div class="card shadow-sm">
             <div class="card-header">
-                <strong>Выручка за последние 7 дней</strong>
+                <strong>Выручка за 7 дней</strong>
             </div>
             <div class="card-body">
-                <canvas id="revenueChart" height="120"></canvas>
+                <canvas id="revenueChart" height="110"></canvas>
             </div>
         </div>
     </div>
@@ -170,12 +166,10 @@
 {% block extra_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // Данные из Python
     const chartDates = {{ chart_dates | tojson }};
     const chartSales = {{ chart_sales | tojson }};
     const chartRevenue = {{ chart_revenue | tojson }};
 
-    // График продаж
     new Chart(document.getElementById('salesChart'), {
         type: 'line',
         data: {
@@ -184,40 +178,34 @@
                 label: 'Продажи',
                 data: chartSales,
                 borderColor: '#0d6efd',
-                tension: 0.3,
-                fill: false
+                tension: 0.3
             }]
         },
         options: { responsive: true, maintainAspectRatio: false }
     });
 
-    // График выручки
     new Chart(document.getElementById('revenueChart'), {
         type: 'line',
         data: {
             labels: chartDates,
             datasets: [{
-                label: 'Выручка (₽)',
+                label: 'Выручка',
                 data: chartRevenue,
                 borderColor: '#198754',
-                tension: 0.3,
-                fill: false
+                tension: 0.3
             }]
         },
         options: { responsive: true, maintainAspectRatio: false }
     });
 
-    // Функция отметки продавца
     async function toggleSeller(sellerId) {
         const targetDate = "{{ target_date_iso }}";
-        const response = await fetch('/admin/dashboard/toggle_seller_day', {
+        await fetch('/admin/dashboard/toggle_seller_day', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: `seller_id=${sellerId}&target_date=${targetDate}`
         });
-        if (response.ok) {
-            location.reload();
-        }
+        location.reload();
     }
 </script>
 {% endblock %}
