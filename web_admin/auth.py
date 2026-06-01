@@ -1,27 +1,61 @@
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+from datetime import datetime, timedelta
+from starlette.requests import Request
 
-from web_admin.auth import login_user, logout_user, is_authenticated
-from web_admin.templates import templates
-
-router = APIRouter()
+from bot.config import config
 
 
-@router.get("/login")
-async def login_form(request: Request):
-    if is_authenticated(request):
-        return RedirectResponse(url="/dashboard")
-    return templates.TemplateResponse("login.html", {"request": request})
+def verify_password(plain_password: str) -> bool:
+    """Проверяет пароль."""
+    if not config.ADMIN_PASSWORD:
+        return False
+    return plain_password == config.ADMIN_PASSWORD
 
 
-@router.post("/login")
-async def login_submit(request: Request, password: str = Form(...)):
-    if login_user(request, password):
-        return RedirectResponse(url="/dashboard", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+def is_authenticated(request: Request) -> bool:
+    """Проверяет авторизацию. Более устойчивая версия."""
+    try:
+        # Пытаемся получить сессию разными способами
+        session = getattr(request, 'session', None)
+        if session is None:
+            # Пробуем через scope
+            scope = getattr(request, 'scope', {})
+            session = scope.get('session', {})
+
+        if not session or not session.get("authenticated"):
+            return False
+
+        login_time_str = session.get("login_time")
+        if login_time_str:
+            try:
+                login_time = datetime.fromisoformat(login_time_str)
+                if datetime.utcnow() - login_time > timedelta(days=7):
+                    session.clear()
+                    return False
+            except Exception:
+                if hasattr(session, 'clear'):
+                    session.clear()
+                return False
+
+        return True
+    except Exception:
+        return False
 
 
-@router.get("/logout")
-async def logout(request: Request):
-    logout_user(request)
-    return RedirectResponse(url="/auth/login")
+def login_user(request: Request, password: str) -> bool:
+    """Выполняет вход."""
+    if verify_password(password):
+        try:
+            request.session["authenticated"] = True
+            request.session["login_time"] = datetime.utcnow().isoformat()
+            return True
+        except Exception:
+            return False
+    return False
+
+
+def logout_user(request: Request):
+    """Выход из системы."""
+    try:
+        request.session.clear()
+    except Exception:
+        pass
