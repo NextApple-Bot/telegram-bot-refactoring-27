@@ -17,7 +17,7 @@ class SaleService:
     ) -> dict[str, Any]:
 
         from bot.db import get_async_session_factory
-        from bot.repositories import ItemRepository
+        from bot.repositories.item import ItemRepository
         from bot.repositories.stats import StatsRepository
         from bot.services.assortment import AssortmentService
 
@@ -25,7 +25,7 @@ class SaleService:
         is_accessory = len(serials) == 0
 
         if is_accessory:
-            logger.info("Аксессуар: сохраняем только платежи, статистику продаж не обновляем.")
+            logger.info("Аксессуар: сохраняем только платежи, статистика продаж не обновляется.")
             return {
                 "sold_items": [],
                 "not_found": [],
@@ -38,7 +38,7 @@ class SaleService:
         async_session = get_async_session_factory()
         async with async_session() as session, session.begin():
             sold_items = []
-            failed_to_remove = []
+            not_found = []
 
             for serial in serials:
                 try:
@@ -46,9 +46,10 @@ class SaleService:
 
                     if not item_id:
                         logger.warning(f"Товар с серийным номером {serial} не найден в ассортименте.")
+                        not_found.append(serial)
                         continue
 
-                    # Пытаемся удалить товар
+                    # Удаляем товар из ассортимента
                     removed = await AssortmentService.remove_by_serial(
                         serial, reason='sale', conn=session
                     )
@@ -57,14 +58,13 @@ class SaleService:
                         sold_items.append((item_id, serial))
                         logger.info(f"Товар продан и удалён из ассортимента: {serial}")
                     else:
-                        failed_to_remove.append(serial)
+                        not_found.append(serial)
                         logger.warning(f"Не удалось удалить товар {serial} из ассортимента.")
 
                 except Exception as e:
                     logger.exception(f"Ошибка при обработке серийного номера {serial}")
-                    failed_to_remove.append(serial)
+                    not_found.append(serial)
 
-            # Если ничего не удалось продать
             if not sold_items:
                 logger.info(f"Ни один товар не был продан. Серийники: {serials}")
                 return {
@@ -76,7 +76,7 @@ class SaleService:
                     "skip_payments": True
                 }
 
-            # Сохраняем статистику только по успешно проданным товарам
+            # Сохраняем статистику продаж
             try:
                 await StatsRepository.add_sale(
                     count=len(sold_items),
@@ -92,9 +92,6 @@ class SaleService:
                 )
             except Exception as e:
                 logger.exception("Ошибка при сохранении статистики продажи")
-                # Можно решить: откатывать транзакцию или нет. Пока продолжаем.
-
-            not_found = [s for s in serials if s not in [x[1] for x in sold_items]]
 
             logger.info(f"Успешно обработано продаж: {len(sold_items)}. Не найдено: {len(not_found)}")
 
