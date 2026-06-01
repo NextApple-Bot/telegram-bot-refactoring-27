@@ -11,90 +11,141 @@ from web_admin.templates import templates
 router = APIRouter()
 
 
+def get_date_range(target_date: str | None = None):
+    if target_date:
+        today = datetime.strptime(target_date, "%Y-%m-%d").date()
+    else:
+        today = datetime.now().date()
+    return today
+
+
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, target_date: str | None = None):
-    today = datetime.now().date() if not target_date else datetime.strptime(target_date, "%Y-%m-%d").date()
+    today = get_date_range(target_date)
+    yesterday = today - timedelta(days=1)
+    week_ago = today - timedelta(days=7)
+
     async_session = get_async_session_factory()
     async with async_session() as session:
-        sales_count = (await session.execute(select(func.count(Sale.id)).where(func.date(Sale.sold_at) == today))).scalar() or 0
+        # === Продажи сегодня ===
+        sales_today = (await session.execute(
+            select(func.count(Sale.id)).where(func.date(Sale.sold_at) == today)
+        )).scalar() or 0
 
-        try:
-            payment_rows = (await session.execute(
-                select(
-                    func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'cash'), 0).label('cash'),
-                    func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'terminal'), 0).label('terminal'),
-                    func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'qr'), 0).label('qr'),
-                    func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'transfer'), 0).label('transfer'),
-                    func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'invoice'), 0).label('invoice'),
-                    func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'installment'), 0).label('installment'),
-                ).where(func.date(DailyPayment.created_at) == today)
-            )).one()
-            payments = {col: getattr(payment_rows, col, 0) for col in ['cash', 'terminal', 'qr', 'transfer', 'invoice', 'installment']}
-        except Exception:
-            payments = {'cash': 0, 'terminal': 0, 'qr': 0, 'transfer': 0, 'invoice': 0, 'installment': 0}
+        sales_yesterday = (await session.execute(
+            select(func.count(Sale.id)).where(func.date(Sale.sold_at) == yesterday)
+        )).scalar() or 0
 
-        total_revenue = sum(payments.values())
-        plan = 600000
+        # === Выручка сегодня ===
+        payment_rows = (await session.execute(
+            select(
+                func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'cash'), 0).label('cash'),
+                func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'terminal'), 0).label('terminal'),
+                func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'qr'), 0).label('qr'),
+                func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'transfer'), 0).label('transfer'),
+                func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'invoice'), 0).label('invoice'),
+                func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'installment'), 0).label('installment'),
+            ).where(func.date(DailyPayment.created_at) == today)
+        )).one()
 
-        preorders_count = (await session.execute(select(func.count(Preorder.id)).where(func.date(Preorder.created_at) == today))).scalar() or 0
-        bookings_count = (await session.execute(select(func.count(Booking.id)).where(func.date(Booking.booked_at) == today))).scalar() or 0
+        payments = {
+            'cash': payment_rows.cash or 0,
+            'terminal': payment_rows.terminal or 0,
+            'qr': payment_rows.qr or 0,
+            'transfer': payment_rows.transfer or 0,
+            'invoice': payment_rows.invoice or 0,
+            'installment': payment_rows.installment or 0,
+        }
+        revenue_today = sum(payments.values())
 
-        dates_labels = [(today - timedelta(days=i)).strftime("%d.%m") for i in range(6, -1, -1)]
-        sales_chart = []
-        revenue_chart = []
+        # Выручка вчера
+        revenue_yesterday_rows = (await session.execute(
+            select(func.coalesce(func.sum(DailyPayment.amount), 0))
+            .where(func.date(DailyPayment.created_at) == yesterday)
+        )).scalar() or 0
+
+        # === Предзаказы и брони ===
+        preorders_today = (await session.execute(
+            select(func.count(Preorder.id)).where(func.date(Preorder.created_at) == today)
+        )).scalar() or 0
+
+        bookings_today = (await session.execute(
+            select(func.count(Booking.id)).where(func.date(Booking.booked_at) == today)
+        )).scalar() or 0
+
+        # === Графики за 7 дней ===
+        chart_dates = []
+        chart_sales = []
+        chart_revenue = []
+
         for i in range(6, -1, -1):
             d = today - timedelta(days=i)
-            cnt = (await session.execute(select(func.count(Sale.id)).where(func.date(Sale.sold_at) == d))).scalar() or 0
-            rev = 0
-            sales_chart.append(cnt)
-            revenue_chart.append(float(rev))
+            chart_dates.append(d.strftime("%d.%m"))
 
+            sales_count = (await session.execute(
+                select(func.count(Sale.id)).where(func.date(Sale.sold_at) == d)
+            )).scalar() or 0
+            chart_sales.append(sales_count)
+
+            rev = (await session.execute(
+                select(func.coalesce(func.sum(DailyPayment.amount), 0))
+                .where(func.date(DailyPayment.created_at) == d)
+            )).scalar() or 0
+            chart_revenue.append(float(rev))
+
+        # === Продавцы ===
         sellers_rows = (await session.execute(
-            select(Seller.id, Seller.name.label('name'), SellerDay.id.isnot(None).label('present'))
+            select(Seller.id, Seller.name, SellerDay.id.isnot(None).label('present'))
             .outerjoin(SellerDay, (Seller.id == SellerDay.seller_id) & (SellerDay.date == today))
             .order_by(Seller.name)
         )).all()
-        sellers = [{"id": r.id, "name": r.name, "present": r.present} for r in sellers_rows]
+
+        sellers = [{"id": r.id, "name": r.name, "present": bool(r.present)} for r in sellers_rows]
+
+    # Расчёты изменений
+    sales_change_yesterday = round(((sales_today - sales_yesterday) / sales_yesterday * 100), 1) if sales_yesterday > 0 else None
+    revenue_change_yesterday = round(((revenue_today - revenue_yesterday_rows) / revenue_yesterday_rows * 100), 1) if revenue_yesterday_rows > 0 else None
 
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "target_date": today.strftime("%d.%m.%Y"),
         "target_date_iso": today.isoformat(),
-        "sales_today": sales_count,
-        "revenue_today": total_revenue,
-        "sales_change_yesterday": 0,
-        "sales_change_week": 0,
-        "revenue_change_yesterday": 0,
-        "revenue_change_week": 0,
+        "sales_today": sales_today,
+        "revenue_today": revenue_today,
+        "sales_change_yesterday": sales_change_yesterday,
+        "revenue_change_yesterday": revenue_change_yesterday,
         "payments": payments,
-        "total_revenue": total_revenue,
-        "plan_amount": plan,
-        "stats": {"sales_count": sales_count, "preorders_count": preorders_count, "bookings_count": bookings_count},
+        "stats": {
+            "sales_count": sales_today,
+            "preorders_count": preorders_today,
+            "bookings_count": bookings_today
+        },
         "sellers": sellers,
-        "chart_dates": dates_labels,
-        "chart_sales": sales_chart,
-        "chart_revenue": revenue_chart,
-        "top_labels": [],
-        "top_counts": [],
-        "days": 7,
+        "chart_dates": chart_dates,
+        "chart_sales": chart_sales,
+        "chart_revenue": chart_revenue,
+        "plan_amount": 600000,
     })
+
 
 @router.post("/toggle_seller_day")
 async def toggle_seller_day(seller_id: int = Form(...), target_date: str = Form(...)):
     date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
     async_session = get_async_session_factory()
-    try:
-        async with async_session() as session, session.begin():
-            existing = (await session.execute(select(SellerDay).where(SellerDay.seller_id == seller_id, SellerDay.date == date_obj))).scalar_one_or_none()
-            if existing:
-                await session.delete(existing)
-                status = "removed"
-            else:
-                session.add(SellerDay(seller_id=seller_id, date=date_obj))
-                status = "added"
-        return {"success": True, "status": status}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    async with async_session() as session, session.begin():
+        existing = (await session.execute(
+            select(SellerDay).where(SellerDay.seller_id == seller_id, SellerDay.date == date_obj)
+        )).scalar_one_or_none()
+
+        if existing:
+            await session.delete(existing)
+            status = "removed"
+        else:
+            session.add(SellerDay(seller_id=seller_id, date=date_obj))
+            status = "added"
+
+    return {"success": True, "status": status}
+
 
 @router.post("/update_stats")
 async def update_stats(request: Request):
@@ -102,6 +153,7 @@ async def update_stats(request: Request):
     target_date_str = data.get("target_date")
     if not target_date_str:
         return JSONResponse({"success": False, "error": "target_date is required"}, status_code=400)
+
     target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
 
     async_session = get_async_session_factory()
@@ -120,20 +172,7 @@ async def update_stats(request: Request):
             session.add(Sale(sold_at=target_date))
         for _ in range(int(data.get("preorders_count", 0))):
             session.add(Preorder(created_at=target_date))
-
-        sys_item = (await session.execute(select(Item).where(Item.id == 0))).scalar_one_or_none()
-        if not sys_item:
-            sys_cat = (await session.execute(select(Category).where(Category.name == '__SYSTEM__'))).scalar_one_or_none()
-            if not sys_cat:
-                sys_cat = Category(name='__SYSTEM__', sort_order=-1)
-                session.add(sys_cat)
-                await session.flush()
-            session.add(Item(id=0, text='__SYSTEM_STATS__', category_id=sys_cat.id, is_booked=False))
         for _ in range(int(data.get("bookings_count", 0))):
             session.add(Booking(item_id=0, booked_at=target_date))
 
     return JSONResponse({"success": True})
-
-@router.get("/top_models_data")
-async def top_models_data(request: Request, days: int = 7, target_date: str | None = None):
-    return JSONResponse({"labels": [], "counts": []})
