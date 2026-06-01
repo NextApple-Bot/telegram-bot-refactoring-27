@@ -45,10 +45,12 @@ async def send_booking_notification(
 ):
     try:
         bot = get_notification_bot()
+
         if is_cancel:
             message_text = f"❌ Отмена Брони:\n\n{item_text}"
         else:
             lines = ["БРОНЬ:\n", f"{item_text}"]
+
             if price is not None:
                 if bonus:
                     reason_str = f" ({bonus_reason})" if bonus_reason else ""
@@ -56,7 +58,8 @@ async def send_booking_notification(
                 else:
                     lines.append(f"Стоимость – {format_number(price)}")
             lines.append("")
-            if prepayment is not None and prepayment > 0:
+
+            if prepayment and prepayment > 0:
                 prepayment_str = f"П/О – {format_number(prepayment)}"
                 if payment_type:
                     payment_type_ru = {
@@ -66,10 +69,12 @@ async def send_booking_notification(
                     prepayment_str += f" ({payment_type_ru})"
                 lines.append(prepayment_str)
                 lines.append("")
+
             if price is not None:
                 total = price - (bonus or 0)
                 lines.append(f"Общая – {format_number(total)}")
                 lines.append("")
+
             if full_name:
                 lines.append(full_name)
             if birth_date:
@@ -77,6 +82,7 @@ async def send_booking_notification(
             if phone:
                 lines.append(phone)
             lines.append("")
+
             if platform:
                 lines.append(f"Площадка – {platform}")
 
@@ -88,6 +94,7 @@ async def send_booking_notification(
             message_thread_id=config.THREAD_PREORDER
         )
         logger.info(f"✅ Уведомление о брони отправлено: {item_text}")
+
     except Exception as e:
         logger.error(f"❌ Ошибка при отправке уведомления о брони: {e}")
 
@@ -111,6 +118,7 @@ async def send_sale_notification(
 ):
     try:
         bot = get_notification_bot()
+
         payment_type_ru = {
             'cash': 'Наличными', 'terminal': 'Терминал', 'qr': 'QR-код',
             'transfer': 'Перевод', 'invoice': 'Оплата по счету', 'installment': 'Рассрочка',
@@ -118,6 +126,7 @@ async def send_sale_notification(
         }
 
         lines = [item_text]
+
         if bonus:
             reason_str = f" ({bonus_reason})" if bonus_reason else ""
             lines.append(f"Стоимость – {format_number(price)} (Скидка {format_number(bonus)}{reason_str})")
@@ -125,6 +134,7 @@ async def send_sale_notification(
             lines.append(f"Стоимость – {format_number(price)}")
         lines.append("")
 
+        # Аксессуары
         if accessories:
             for acc in accessories:
                 lines.append(acc['text'])
@@ -134,6 +144,7 @@ async def send_sale_notification(
         else:
             lines.append("")
 
+        # Платежи
         payments = {}
         if payment_type != "paid" and payment_amount and payment_amount > 0:
             payments[payment_type] = payments.get(payment_type, 0) + payment_amount
@@ -141,7 +152,7 @@ async def send_sale_notification(
         if accessories:
             for acc in accessories:
                 pay_type = acc.get('payment_type')
-                if pay_type and pay_type != "paid" and acc['price'] > 0:
+                if pay_type and pay_type != "paid" and acc.get('price', 0) > 0:
                     payments[pay_type] = payments.get(pay_type, 0) + acc['price']
 
         if prepayment and prepayment > 0:
@@ -155,19 +166,15 @@ async def send_sale_notification(
             for pt, amount in payments.items():
                 if amount > 0:
                     line = f"{payment_type_ru.get(pt, pt)} – {format_number(amount)}"
-                    if change is not None and change > 0 and pt == change_type:
+                    if change and change > 0 and pt == change_type:
                         change_str = f" (сдача {'наличными' if change_type == 'cash' else 'переводом'} - {format_number(change)}₽)"
                         line += change_str
                     lines.append(line)
                     lines.append("")
 
-        if lines and lines[-1] == "":
-            lines.pop()
-        lines.append("")
-
+        # Итоговая сумма
         total = price + accessories_total - (bonus or 0)
         lines.append(f"Общая – {format_number(total)}")
-        lines.append("")
         lines.append("")
 
         if full_name:
@@ -177,15 +184,18 @@ async def send_sale_notification(
         if phone:
             lines.append(phone)
         lines.append("")
+
         if platform:
             lines.append(f"Площадка – {platform}")
 
         message_text = "\n".join(lines)
+
         await bot.send_message(
             chat_id=config.MAIN_GROUP_ID,
             text=message_text,
             message_thread_id=config.THREAD_SALES
         )
         logger.info(f"✅ Уведомление о продаже отправлено: {item_text}")
+
     except Exception as e:
         logger.error(f"❌ Ошибка при отправке уведомления о продаже: {e}")
