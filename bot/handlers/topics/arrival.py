@@ -4,10 +4,12 @@ import re
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from sqlalchemy import select
 
 from bot import config
 from bot.db import get_async_session_factory
 from bot.handlers.states import ArrivalConfirmState
+from bot.models import Item
 from bot.repositories import ItemRepository
 from bot.services.assortment import AssortmentService
 from bot.utils.sort import extract_base_name, normalize_name
@@ -19,7 +21,6 @@ router = Router()
 
 async def determine_category_for_item(item_text: str, categories: list) -> str:
     stripped = item_text.strip()
-
     if stripped.startswith("Б/У -") or stripped.startswith("Б/У "):
         return "Б/У:"
     if stripped.startswith("NS -") or stripped.startswith("NS "):
@@ -110,7 +111,7 @@ async def handle_arrival(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.exception("Ошибка в handle_arrival")
-        await message.reply(f"❌ Ошибка обработки: {str(e)[:100]}")
+        await message.reply(f"❌ Ошибка: {str(e)[:100]}")
 
 
 @router.callback_query(ArrivalConfirmState.waiting_for_confirm, F.data.startswith("arrival_confirm:"))
@@ -122,9 +123,20 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
     if action == "yes" and items:
         try:
             added = 0
+            skipped_duplicates = 0
+
             async_session = get_async_session_factory()
             async with async_session() as session, session.begin():
                 for item in items:
+                    # Проверка на дубликат серийного номера
+                    if item.get("serial"):
+                        existing = await session.scalar(
+                            select(Item.id).where(Item.serial == item["serial"])
+                        )
+                        if existing:
+                            skipped_duplicates += 1
+                            continue
+
                     cat_id = await ItemRepository.get_or_create_category(item["category"], conn=session)
                     from bot.models import Item as ItemModel
                     session.add(ItemModel(
@@ -134,13 +146,17 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
                     ))
                     added += 1
 
-            # Безопасный вызов (не упадёт, даже если метода нет)
             try:
                 await AssortmentService.invalidate_cache()
             except AttributeError:
                 pass
 
-            await callback.message.edit_text(f"✅ Успешно добавлено **{added}** товаров!")
+            text = f"✅ Добавлено **{added}** товаров."
+            if skipped_duplicates > 0:
+                text += f"\n⚠️ Пропущено дублей: **{skipped_duplicates}**"
+
+            await callback.message.edit_text(text)
+
         except Exception as e:
             logger.exception("Ошибка при добавлении товаров")
             await callback.message.edit_text(f"❌ Ошибка: {e}")
