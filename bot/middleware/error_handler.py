@@ -1,62 +1,68 @@
-import asyncio
 import logging
 import traceback
-from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, User
+from aiogram.types import Update, Message, CallbackQuery
+
+from bot import config
+from telegram_alerter import send_alert
 
 logger = logging.getLogger(__name__)
 
 
 class ErrorHandlerMiddleware(BaseMiddleware):
-    """Глобальный обработчик ошибок."""
-
     async def __call__(
         self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: dict[str, Any],
+        handler: Callable[[Any, Dict[str, Any]], Awaitable[Any]],
+        event: Update,
+        data: Dict[str, Any]
     ) -> Any:
         try:
             return await handler(event, data)
 
         except Exception as exc:
-            user: User | None = data.get("event_from_user")
-            user_info = f"{user.id} ({user.full_name})" if user else "Unknown"
+            # Получаем информацию о событии
+            update_id = getattr(event, "update_id", "unknown")
+            user_id = None
+            chat_id = None
+            message_text = None
 
-            logger.error(
+            # Пытаемся вытащить пользователя и чат
+            if isinstance(event, Update):
+                if event.message:
+                    user_id = event.message.from_user.id if event.message.from_user else None
+                    chat_id = event.message.chat.id
+                    message_text = event.message.text or event.message.caption
+                elif event.callback_query:
+                    user_id = event.callback_query.from_user.id if event.callback_query.from_user else None
+                    chat_id = event.callback_query.message.chat.id if event.callback_query.message else None
+                    message_text = event.callback_query.data
+
+            # Логируем ошибку подробно
+            logger.exception(
                 f"❌ Критическая ошибка в обработчике\n"
-                f"Пользователь: {user_info}\n"
-                f"Тип события: {type(event).__name__}\n"
-                f"{traceback.format_exc()}"
+                f"Update ID: {update_id}\n"
+                f"User ID: {user_id}\n"
+                f"Chat ID: {chat_id}\n"
+                f"Text/Data: {message_text}\n"
+                f"Error: {exc}"
             )
 
-            # Асинхронное уведомление админов
-            asyncio.create_task(self._notify_admins(exc, user))
-
-            # Пробуем ответить пользователю
+            # Отправляем алерт админам (только на валидные ID)
             try:
-                bot = data.get("bot")
-                if bot and user:
-                    await bot.send_message(
-                        user.id,
-                        "❌ Произошла внутренняя ошибка.\nМы уже уведомлены и исправим её."
-                    )
-            except Exception:
-                pass
+                admin_ids = config.ADMIN_IDS if hasattr(config, "ADMIN_IDS") else []
+                error_text = (
+                    f"🚨 <b>Ошибка в боте</b>\n\n"
+                    f"<b>Пользователь:</b> {user_id}\n"
+                    f"<b>Ошибка:</b> {str(exc)[:300]}\n"
+                    f"<b>Update ID:</b> {update_id}"
+                )
+                for admin_id in admin_ids:
+                    if admin_id:  # защита от пустых/неверных ID
+                        await send_alert(error_text, admin_id)
+            except Exception as alert_exc:
+                logger.error(f"Не удалось отправить алерт админу: {alert_exc}")
 
-            return None  # не ломаем бота
-
-    async def _notify_admins(self, exc: Exception, user: User | None):
-        try:
-            from telegram_alerter import send_alert
-            msg = (
-                f"🚨 Ошибка в боте\n"
-                f"Пользователь: {user.full_name if user else 'Unknown'}\n"
-                f"Ошибка: {type(exc).__name__}: {exc}"
-            )
-            await send_alert(msg, is_critical=True)
-        except Exception as e:
-            logger.error(f"Не удалось отправить алерт: {e}")
+            # Пробрасываем ошибку дальше (чтобы aiogram мог обработать)
+            raise
