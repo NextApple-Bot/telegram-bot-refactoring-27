@@ -90,6 +90,31 @@ class ItemRepository:
                 await session.close()
 
     @staticmethod
+    async def get_item_id_by_serial(serial: str, conn=None) -> int | None:
+        """Возвращает ID товара по серийному номеру."""
+        if not serial:
+            return None
+
+        normalized = serial.strip().upper()
+        own_session = False
+
+        if conn is None:
+            async_session = get_async_session_factory()
+            session = async_session()
+            own_session = True
+        else:
+            session = conn
+
+        try:
+            item_id = await session.scalar(
+                select(Item.id).where(func.upper(Item.serial) == normalized)
+            )
+            return item_id
+        finally:
+            if own_session:
+                await session.close()
+
+    @staticmethod
     async def bulk_replace_assortment(categories: list[dict]) -> None:
         """Полная замена ассортимента."""
         async_session = get_async_session_factory()
