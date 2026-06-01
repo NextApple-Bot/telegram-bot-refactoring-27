@@ -68,9 +68,13 @@ async def handle_arrival(message: Message, state: FSMContext):
             await message.reply("⚠️ Отправь текст с товарами.")
             return
 
+        logger.info(f"📥 Получено сообщение в Arrival (chat_id={message.chat.id})")
+
         lines = [line.strip() for line in content.splitlines() if line.strip()]
         lines = [line for line in lines if not re.match(r'^[-–—\s]+$', line)]
         lines_with_serial = [line for line in lines if extract_serials(line)]
+
+        logger.info(f"Найдено строк с серийными номерами: {len(lines_with_serial)}")
 
         if not lines_with_serial:
             await message.reply("❌ В сообщении нет строк с серийными номерами.")
@@ -92,6 +96,8 @@ async def handle_arrival(message: Message, state: FSMContext):
         if not parsed_items:
             await message.reply("❌ Не удалось распознать товары.")
             return
+
+        logger.info(f"Успешно распознано товаров для добавления: {len(parsed_items)}")
 
         await state.update_data(temp_items=parsed_items)
         await state.set_state(ArrivalConfirmState.waiting_for_confirm)
@@ -120,24 +126,34 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
     items = data.get("temp_items", [])
     action = callback.data.split(":")[1]
 
-    if action == "yes" and items:
-        try:
-            added = 0
-            skipped_duplicates = 0
+    if action != "yes" or not items:
+        await callback.message.edit_text("❌ Добавление отменено.")
+        await state.clear()
+        await callback.answer()
+        return
 
-            async_session = get_async_session_factory()
-            async with async_session() as session, session.begin():
-                for item in items:
-                    # Проверка на дубликат серийного номера
+    logger.info(f"🚀 Начинаем добавление {len(items)} товаров из Arrival")
+
+    added = 0
+    skipped_duplicates = 0
+    failed = 0
+
+    try:
+        async_session = get_async_session_factory()
+        async with async_session() as session, session.begin():
+            for item in items:
+                try:
                     if item.get("serial"):
                         existing = await session.scalar(
                             select(Item.id).where(Item.serial == item["serial"])
                         )
                         if existing:
                             skipped_duplicates += 1
+                            logger.info(f"⏭ Пропущен дубликат: {item['serial']}")
                             continue
 
                     cat_id = await ItemRepository.get_or_create_category(item["category"], conn=session)
+
                     from bot.models import Item as ItemModel
                     session.add(ItemModel(
                         text=item["text"],
@@ -145,23 +161,29 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
                         category_id=cat_id
                     ))
                     added += 1
+                    logger.debug(f"✅ Добавлен товар: {item['text'][:60]}")
 
-            try:
-                await AssortmentService.invalidate_cache()
-            except AttributeError:
-                pass
+                except Exception as e:
+                    failed += 1
+                    logger.warning(f"❌ Ошибка добавления товара: {item['text'][:60]} | {e}")
 
-            text = f"✅ Добавлено **{added}** товаров."
-            if skipped_duplicates > 0:
-                text += f"\n⚠️ Пропущено дублей: **{skipped_duplicates}**"
+        try:
+            await AssortmentService.invalidate_cache()
+        except Exception:
+            pass
 
-            await callback.message.edit_text(text)
+        text = f"✅ **Добавлено:** {added} товаров\n"
+        if skipped_duplicates > 0:
+            text += f"⏭ **Пропущено дублей:** {skipped_duplicates}\n"
+        if failed > 0:
+            text += f"❌ **Ошибок:** {failed}\n"
 
-        except Exception as e:
-            logger.exception("Ошибка при добавлении товаров")
-            await callback.message.edit_text(f"❌ Ошибка: {e}")
-    else:
-        await callback.message.edit_text("❌ Добавление отменено.")
+        await callback.message.edit_text(text)
+        logger.info(f"✅ Завершено добавление. Добавлено: {added}, дублей: {skipped_duplicates}, ошибок: {failed}")
+
+    except Exception as e:
+        logger.exception("Критическая ошибка при массовом добавлении товаров")
+        await callback.message.edit_text(f"❌ Произошла ошибка при добавлении: {e}")
 
     await state.clear()
     await callback.answer()
