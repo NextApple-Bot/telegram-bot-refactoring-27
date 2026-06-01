@@ -1,17 +1,15 @@
 import logging
-import os
 import re
 
-import aiofiles
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot import config
+from bot.db import get_async_session_factory
 from bot.handlers.states import ArrivalConfirmState
 from bot.repositories import ItemRepository
 from bot.services.assortment import AssortmentService
-from bot.utils.helpers import send_and_clean
 from bot.utils.sort import extract_base_name, normalize_name
 from bot.utils.validators import extract_serials
 
@@ -21,6 +19,7 @@ router = Router()
 
 async def determine_category_for_item(item_text: str, categories: list) -> str:
     stripped = item_text.strip()
+
     if stripped.startswith("Б/У -") or stripped.startswith("Б/У "):
         return "Б/У:"
     if stripped.startswith("NS -") or stripped.startswith("NS "):
@@ -31,15 +30,15 @@ async def determine_category_for_item(item_text: str, categories: list) -> str:
     best_len = 0
 
     for cat in categories:
-        cat_name = normalize_name(cat.get('header', '')).lower().rstrip(':')
+        cat_name = normalize_name(str(cat.get('header') or cat.get('name', ''))).lower().rstrip(':')
         if not cat_name:
             continue
         if base.startswith(cat_name) and len(cat_name) > best_len:
             best_len = len(cat_name)
-            best_match = cat['header']
+            best_match = cat.get('header') or cat.get('name')
         elif cat_name in base and len(cat_name) > best_len:
             best_len = len(cat_name)
-            best_match = cat['header']
+            best_match = cat.get('header') or cat.get('name')
 
     if best_match:
         return best_match
@@ -59,57 +58,90 @@ async def determine_category_for_item(item_text: str, categories: list) -> str:
 @router.message(
     F.chat.id == config.MAIN_GROUP_ID,
     F.message_thread_id == config.THREAD_ARRIVAL,
-    (F.text | F.caption | F.document)
+    (F.text | F.caption)
 )
 async def handle_arrival(message: Message, state: FSMContext):
-    # Здесь остаётся вся логика парсинга, фильтрации по serial, проверки дубликатов и определения категории.
-    # Я могу скинуть полный файл одним сообщением, если нужно.
-    pass
+    try:
+        content = message.text or message.caption
+        if not content:
+            await message.reply("⚠️ Отправь текст с товарами.")
+            return
+
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+        lines = [line for line in lines if not re.match(r'^[-–—\s]+$', line)]
+
+        lines_with_serial = [line for line in lines if extract_serials(line)]
+
+        if not lines_with_serial:
+            await message.reply("❌ В сообщении нет строк с серийными номерами в скобках.")
+            return
+
+        current_categories = await AssortmentService.load_inventory()
+
+        parsed_items = []
+        for line in lines_with_serial:
+            serials = extract_serials(line)
+            serial = serials[0] if serials else None
+            category = await determine_category_for_item(line, current_categories)
+            parsed_items.append({
+                "text": line,
+                "serial": serial,
+                "category": category
+            })
+
+        if not parsed_items:
+            await message.reply("❌ Не удалось распознать товары.")
+            return
+
+        await state.update_data(temp_items=parsed_items)
+        await state.set_state(ArrivalConfirmState.waiting_for_confirm)
+
+        preview = f"📥 Найдено **{len(parsed_items)}** товаров.\n\n"
+        for item in parsed_items[:8]:
+            preview += f"• {item['text'][:70]}\n"
+        if len(parsed_items) > 8:
+            preview += f"... и ещё {len(parsed_items)-8}\n"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Добавить в ассортимент", callback_data="arrival_confirm:yes")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="arrival_confirm:no")]
+        ])
+
+        await message.reply(preview, reply_markup=keyboard)
+
+    except Exception as e:
+        logger.exception("Ошибка в handle_arrival")
+        await message.reply(f"❌ Ошибка: {str(e)[:100]}")
 
 
 @router.callback_query(ArrivalConfirmState.waiting_for_confirm, F.data.startswith("arrival_confirm:"))
 async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    cat_to_items = data.get("cat_to_items", {})
+    items = data.get("temp_items", [])
     action = callback.data.split(":")[1]
 
-    if action != "yes":
-        await callback.message.edit_text("❌ Добавление отменено.")
-        await state.clear()
-        await callback.answer()
-        return
+    if action == "yes" and items:
+        try:
+            added = 0
+            async_session = get_async_session_factory()
+            async with async_session() as session, session.begin():
+                for item in items:
+                    cat_id = await ItemRepository.get_or_create_category(item["category"], conn=session)
+                    from bot.models import Item as ItemModel
+                    session.add(ItemModel(
+                        text=item["text"],
+                        serial=item.get("serial"),
+                        category_id=cat_id
+                    ))
+                    added += 1
 
-    total_added = 0
-    failed = []
-
-    for cat_name, items in cat_to_items.items():
-        for text, serial in items:
-            try:
-                await ItemRepository.add_item(
-                    text=text,
-                    serial=serial,
-                    category_name=cat_name
-                )
-                total_added += 1
-            except Exception as e:
-                logger.exception(f"Ошибка добавления товара: {text}")
-                failed.append(text)
-
-    # Безопасная инвалидация кэша
-    try:
-        await AssortmentService.invalidate_cache()
-    except Exception:
-        logger.warning("Не удалось инвалидировать кэш ассортимента")
-
-    if total_added > 0 and not failed:
-        await callback.message.edit_text(f"✅ Успешно добавлено {total_added} товаров!")
-    elif total_added > 0:
-        msg = f"✅ Добавлено: {total_added}\n❌ Не удалось добавить:\n"
-        for item in failed[:8]:
-            msg += f"• {item}\n"
-        await callback.message.edit_text(msg)
+            await AssortmentService.invalidate_cache()
+            await callback.message.edit_text(f"✅ Добавлено **{added}** товаров.")
+        except Exception as e:
+            logger.exception("Ошибка добавления")
+            await callback.message.edit_text(f"❌ Ошибка: {e}")
     else:
-        await callback.message.edit_text("❌ Не удалось добавить ни одного товара.")
+        await callback.message.edit_text("❌ Отменено.")
 
     await state.clear()
     await callback.answer()
