@@ -15,7 +15,6 @@ class ItemRepository:
 
     @staticmethod
     async def get_or_create_category(name: str, conn: Optional[AsyncSession] = None) -> int:
-        """Создаёт категорию, если её нет. Новые категории добавляются в конец."""
         session = conn
         own_session = False
 
@@ -34,7 +33,6 @@ class ItemRepository:
             if category:
                 return category.id
 
-            # Новая категория в конец
             max_order_result = await session.execute(
                 select(func.coalesce(func.max(Category.sort_order), 0))
             )
@@ -57,7 +55,6 @@ class ItemRepository:
         is_booked: bool = False,
         conn: Optional[AsyncSession] = None
     ):
-        """Добавляет товар в БД."""
         session = conn
         own_session = False
 
@@ -83,7 +80,6 @@ class ItemRepository:
 
     @staticmethod
     async def get_all_categories_with_items(conn: Optional[AsyncSession] = None) -> List[Dict[str, Any]]:
-        """Возвращает все категории с товарами (для AssortmentService и arrival)."""
         session = conn
         own_session = False
 
@@ -102,4 +98,85 @@ class ItemRepository:
             categories = result.scalars().all()
 
             data = []
-           
+            for cat in categories:
+                if cat.name == "__SYSTEM__":
+                    continue
+                items = [{"text": item.text, "serial": item.serial} for item in getattr(cat, "items", [])]
+                data.append({"header": cat.name, "items": items})
+            return data
+        finally:
+            if own_session:
+                await session.close()
+
+    @staticmethod
+    async def bulk_replace_assortment(categories: list, conn: Optional[AsyncSession] = None):
+        session = conn
+        own_session = False
+
+        if session is None:
+            from bot.db import get_async_session_factory
+            async_session = get_async_session_factory()
+            session = async_session()
+            own_session = True
+
+        try:
+            if own_session:
+                await session.begin()
+
+            await session.execute(
+                text("DELETE FROM items WHERE category_id NOT IN (SELECT id FROM categories WHERE name = '__SYSTEM__')")
+            )
+            await session.execute(text("DELETE FROM categories WHERE name != '__SYSTEM__'"))
+
+            for cat_data in categories:
+                header = cat_data.get("header", "").strip()
+                if not header:
+                    continue
+
+                cat_id = await ItemRepository.get_or_create_category(header, conn=session)
+
+                for item_text in cat_data.get("items", []):
+                    if not item_text.strip():
+                        continue
+                    serials = extract_serials(item_text)
+                    serial = serials[0] if serials else None
+                    is_booked = "Бронь от" in item_text or "БРОНЬ" in item_text.upper()
+
+                    await ItemRepository.add_item(
+                        text=item_text.strip(),
+                        serial=serial,
+                        category_id=cat_id,
+                        is_booked=is_booked,
+                        conn=session
+                    )
+
+            if own_session:
+                await session.commit()
+
+        except Exception as e:
+            if own_session:
+                await session.rollback()
+            raise e
+        finally:
+            if own_session:
+                await session.close()
+
+    @staticmethod
+    async def get_item_id_by_serial(serial: str, conn: Optional[AsyncSession] = None) -> Optional[int]:
+        session = conn
+        own_session = False
+
+        if session is None:
+            from bot.db import get_async_session_factory
+            async_session = get_async_session_factory()
+            session = async_session()
+            own_session = True
+
+        try:
+            result = await session.execute(
+                select(Item.id).where(Item.serial == serial.strip().upper())
+            )
+            return result.scalar_one_or_none()
+        finally:
+            if own_session:
+                await session.close()
