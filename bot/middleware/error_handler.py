@@ -1,4 +1,4 @@
-пimport logging
+import logging
 import traceback
 from typing import Any, Awaitable, Callable, Dict
 
@@ -23,13 +23,11 @@ class ErrorHandlerMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         except Exception as exc:
-            # Собираем контекст ошибки
             update_id = getattr(event, "update_id", None)
             user_id = None
             chat_id = None
             event_type = type(event).__name__
 
-            # Пытаемся получить информацию о пользователе и чате
             try:
                 if hasattr(event, "message") and event.message:
                     user_id = event.message.from_user.id if event.message.from_user else None
@@ -40,7 +38,6 @@ class ErrorHandlerMiddleware(BaseMiddleware):
             except Exception:
                 pass
 
-            # Логируем ошибку с контекстом
             logger.error(
                 f"❌ Ошибка при обработке Update #{update_id}\n"
                 f"Тип события: {event_type}\n"
@@ -50,7 +47,6 @@ class ErrorHandlerMiddleware(BaseMiddleware):
                 f"Traceback:\n{traceback.format_exc()}"
             )
 
-            # Отправляем алерт админам (защищённо)
             try:
                 admin_ids = getattr(config, "ADMIN_IDS", [])
                 if admin_ids:
@@ -62,7 +58,7 @@ class ErrorHandlerMiddleware(BaseMiddleware):
                         f"<b>Ошибка:</b> {str(exc)[:400]}"
                     )
                     for admin_id in admin_ids:
-                        if admin_id:  # защита от пустых значений
+                        if admin_id:
                             try:
                                 await send_alert(alert_text, admin_id)
                             except Exception as alert_error:
@@ -70,5 +66,4 @@ class ErrorHandlerMiddleware(BaseMiddleware):
             except Exception as e:
                 logger.error(f"Ошибка при отправке алерта: {e}")
 
-            # Пробрасываем ошибку дальше (чтобы не менять текущее поведение)
             raise
