@@ -1,15 +1,17 @@
 import re
 
-# Список слов, которые точно не являются серийными номерами
-COLOR_WORDS = {
-    "BLUE", "YELLOW", "INDIGO", "CITRUS", "LAVENDER", "PURPLE", 
-    "BLACK", "WHITE", "RED", "GREEN", "ORANGE", "PINK", "GRAY", "GREY",
-    "SPACE", "STARLIGHT", "MIDNIGHT", "SILVER", "GOLD", "GRAPHITE"
-}
 
 def extract_serials(text: str) -> list[str]:
+    """Улучшенная версия с защитой от цветов и несерийных слов."""
     if not isinstance(text, str):
         return []
+
+    # Слова, которые точно не являются серийными номерами
+    COLOR_WORDS = {
+        "BLUE", "YELLOW", "INDIGO", "CITRUS", "LAVENDER", "PURPLE",
+        "BLACK", "WHITE", "RED", "GREEN", "ORANGE", "PINK", "GRAY", "GREY",
+        "SPACE", "STARLIGHT", "MIDNIGHT", "SILVER", "GOLD", "GRAPHITE"
+    }
 
     serials = set()
     matches = re.finditer(r'\(([^)]+)\)', text)
@@ -21,31 +23,37 @@ def extract_serials(text: str) -> list[str]:
 
         upper_candidate = candidate.upper()
 
-        # Пропускаем явные цвета и несерийные слова
+        # Пропускаем цвета
         if upper_candidate in COLOR_WORDS:
             continue
         if any(color in upper_candidate for color in COLOR_WORDS):
             continue
 
-        # Вариант 1: содержит символ №
+        # Вариант с символом №
         if '№' in candidate:
             serials.add(upper_candidate)
             continue
 
-        # Вариант 2: чисто цифровой серийник (минимум 10 цифр)
+        # Чисто цифровой серийник (≥10 цифр)
         if candidate.isdigit() and len(candidate) >= 10:
             serials.add(candidate)
             continue
 
-        # Вариант 3: содержит дефис (типичный формат Apple)
+        # С дефисом
         if '-' in candidate and re.fullmatch(r'[A-Za-z0-9\-]{6,30}', candidate):
             serials.add(upper_candidate)
             continue
 
-        # Вариант 4: смешанный (буквы + цифры) — самый частый случай
-        # Требуем минимум 6 символов и наличие хотя бы одной цифры
+        # Смешанный формат (буквы + цифры) — основной случай
         if re.fullmatch(r'[A-Za-z0-9]{6,30}', candidate):
-            if any(char.isdigit() for char in candidate):   # обязательно должна быть цифра
+            if any(char.isdigit() for char in candidate):
                 serials.add(upper_candidate)
 
     return list(serials)
+
+
+def normalize_serial(serial: str) -> str:
+    """Нормализует серийный номер (убирает пробелы и приводит к верхнему регистру)."""
+    if not serial:
+        return ""
+    return re.sub(r'\s+', '', serial).upper()
