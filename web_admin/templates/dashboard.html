@@ -1,105 +1,137 @@
 {% extends "base.html" %}
 
+{% block page_title %}Дашборд{% endblock %}
+
 {% block content %}
-<div class="max-w-screen-2xl mx-auto">
-    <div class="flex items-center justify-between mb-8">
+
+<div class="mb-4">
+    <div class="d-flex justify-content-between align-items-center">
         <div>
-            <h1 class="text-4xl font-semibold tracking-tighter text-zinc-900">Дашборд</h1>
-            <p class="text-zinc-500 mt-1">{{ target_date }} • {{ stats.sales_count }} продаж • {{ stats.preorders_count }} предзаказов • {{ stats.bookings_count }} бронирований</p>
+            <h4 class="mb-1">Дашборд</h4>
+            <p class="text-muted mb-0">{{ target_date }} • {{ stats.sales_count }} продаж • {{ stats.preorders_count }} предзаказов • {{ stats.bookings_count }} бронирований</p>
         </div>
-        <div class="flex items-center gap-2 bg-white rounded-3xl shadow-sm p-1 border border-zinc-100">
-            <a href="/admin/dashboard?target_date={{ (target_date_iso | replace('-', '')) | int - 1 }}" class="px-5 py-2.5 text-sm font-medium rounded-3xl hover:bg-zinc-100 transition-colors">← Вчера</a>
-            <a href="/admin/dashboard" class="px-5 py-2.5 text-sm font-semibold bg-blue-600 text-white rounded-3xl shadow">Сегодня</a>
-            <a href="/admin/dashboard?target_date={{ (target_date_iso | replace('-', '')) | int + 1 }}" class="px-5 py-2.5 text-sm font-medium rounded-3xl hover:bg-zinc-100 transition-colors">Завтра →</a>
+
+        <div class="btn-group">
+            <a href="?target_date={{ (target_date_iso | string | replace('-', '')) | int - 1 }}" class="btn btn-outline-secondary btn-sm">← Вчера</a>
+            <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm">Сегодня</a>
+            <a href="?target_date={{ (target_date_iso | string | replace('-', '')) | int + 1 }}" class="btn btn-outline-secondary btn-sm">Завтра →</a>
         </div>
     </div>
+</div>
 
-    <!-- KPI Cards - Modern & Premium -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        <div class="card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
-            <div class="flex justify-between items-start">
-                <div>
-                    <div class="flex items-center gap-2 text-zinc-500 text-sm font-medium">
-                        <i data-lucide="dollar-sign" class="w-4 h-4"></i>
-                        Выручка сегодня
+<!-- Основные метрики -->
+<div class="row g-3 mb-4">
+    <!-- Выручка -->
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted">Выручка сегодня</h6>
+                        <h3 class="mb-0">{{ "{:,.0f}".format(revenue_today) }} ₽</h3>
                     </div>
-                    <div class="text-5xl font-semibold tracking-tighter mt-3">{{ "{:,}".format(revenue_today | int) }} ₽</div>
-                </div>
-                <div class="text-emerald-500 bg-emerald-100 p-3 rounded-2xl">
-                    <i data-lucide="trending-up" class="w-8 h-8"></i>
-                </div>
-            </div>
-        </div>
-
-        <div class="card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
-            <div class="flex justify-between items-start">
-                <div>
-                    <div class="flex items-center gap-2 text-zinc-500 text-sm font-medium">
-                        <i data-lucide="shopping-cart" class="w-4 h-4"></i>
-                        Продажи сегодня
+                    <div class="text-end">
+                        {% if revenue_change_yesterday is not none %}
+                            {% if revenue_change_yesterday >= 0 %}
+                                <span class="badge bg-success">+{{ revenue_change_yesterday }}%</span>
+                            {% else %}
+                                <span class="badge bg-danger">{{ revenue_change_yesterday }}%</span>
+                            {% endif %}
+                        {% endif %}
                     </div>
-                    <div class="text-5xl font-semibold tracking-tighter mt-3">{{ sales_today }}</div>
-                </div>
-                <div class="text-blue-500 bg-blue-100 p-3 rounded-2xl">
-                    <i data-lucide="shopping-bag" class="w-8 h-8"></i>
-                </div>
-            </div>
-        </div>
-
-        <div class="card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
-            <div class="flex justify-between items-start">
-                <div>
-                    <div class="flex items-center gap-2 text-zinc-500 text-sm font-medium">
-                        <i data-lucide="target" class="w-4 h-4"></i>
-                        План на день
-                    </div>
-                    <div class="text-5xl font-semibold tracking-tighter mt-3">{{ "{:,}".format(plan_amount) }} ₽</div>
-                </div>
-                <div class="text-amber-500 bg-amber-100 p-3 rounded-2xl">
-                    <i data-lucide="bullseye" class="w-8 h-8"></i>
-                </div>
-            </div>
-        </div>
-
-        <div class="card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
-            <div class="flex justify-between items-start">
-                <div>
-                    <div class="flex items-center gap-2 text-zinc-500 text-sm font-medium">
-                        <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
-                        Выполнение
-                    </div>
-                    <div class="text-5xl font-semibold tracking-tighter mt-3">{{ ((revenue_today / plan_amount * 100) | round(1)) if plan_amount > 0 else 0 }}%</div>
-                </div>
-                <div class="text-cyan-500 bg-cyan-100 p-3 rounded-2xl">
-                    <i data-lucide="activity" class="w-8 h-8"></i>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <!-- Chart -->
-        <div class="lg:col-span-8 card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-xl font-semibold">Продажи и выручка за 7 дней</h2>
-            </div>
-            <div class="h-80">
-                <canvas id="salesChart"></canvas>
+    <!-- Продажи -->
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted">Продажи сегодня</h6>
+                        <h3 class="mb-0">{{ sales_today }}</h3>
+                    </div>
+                    <div class="text-end">
+                        {% if sales_change_yesterday is not none %}
+                            {% if sales_change_yesterday >= 0 %}
+                                <span class="badge bg-success">+{{ sales_change_yesterday }}%</span>
+                            {% else %}
+                                <span class="badge bg-danger">{{ sales_change_yesterday }}%</span>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                </div>
             </div>
         </div>
+    </div>
 
-        <!-- Sellers -->
-        <div class="lg:col-span-4 card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm flex flex-col">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-semibold">Продавцы сегодня</h2>
-                <span class="px-4 py-1 bg-emerald-100 text-emerald-700 text-sm font-medium rounded-3xl">{{ sellers | selectattr('present') | list | length }} / {{ sellers | length }}</span>
+    <!-- План -->
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="text-muted">План на день</h6>
+                <h3 class="mb-0">{{ "{:,.0f}".format(plan_amount) }} ₽</h3>
             </div>
-            <div class="flex-1 space-y-3 overflow-auto">
+        </div>
+    </div>
+
+    <!-- Выполнение -->
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="text-muted">Выполнение плана</h6>
+                <h3 class="mb-0">
+                    {% if plan_amount > 0 %}
+                        {{ ((revenue_today / plan_amount) * 100) | round(1) }}%
+                    {% else %}
+                        —
+                    {% endif %}
+                </h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Разбивка платежей -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <strong>Разбивка по типам оплаты</strong>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    {% for type, amount in payments.items() %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>{{ type|capitalize }}</span>
+                        <strong>{{ "{:,.0f}".format(amount) }} ₽</strong>
+                    </li>
+                    {% endfor %}
+                    <li class="list-group-item d-flex justify-content-between bg-light">
+                        <strong>Итого</strong>
+                        <strong>{{ "{:,.0f}".format(revenue_today) }} ₽</strong>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Продавцы -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>Продавцы сегодня</strong>
+                <span class="badge bg-secondary">{{ sellers | selectattr('present') | list | length }} / {{ sellers | length }}</span>
+            </div>
+            <div class="card-body">
                 {% for seller in sellers %}
-                <div class="flex items-center justify-between p-4 bg-zinc-50 rounded-3xl">
-                    <span class="font-medium text-zinc-700">{{ seller.name }}</span>
-                    <button onclick="toggleSellerDay({{ seller.id }}, '{{ target_date_iso }}', this)" 
-                            class="px-6 py-2 rounded-3xl text-sm font-medium transition-all {% if seller.present %}bg-emerald-500 text-white{% else %}bg-white border border-zinc-200 text-zinc-500 hover:border-zinc-300{% endif %}">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>{{ seller.name }}</span>
+                    <button 
+                        class="btn btn-sm {% if seller.present %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                        onclick="toggleSeller({{ seller.id }})">
                         {% if seller.present %}На смене{% else %}Отметить{% endif %}
                     </button>
                 </div>
@@ -107,69 +139,85 @@
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Payments breakdown -->
-    <div class="mt-8 card bg-white rounded-3xl p-6 border border-zinc-100 shadow-sm">
-        <h2 class="text-xl font-semibold mb-6">Разбивка по типам оплаты</h2>
-        <div class="grid grid-cols-3 gap-6">
-            {% for type, amount in payments.items() %}
-            <div class="text-center">
-                <div class="text-3xl font-semibold text-zinc-900">{{ "{:,}".format(amount | int) }} ₽</div>
-                <div class="text-sm text-zinc-500 mt-1">{{ type|capitalize }}</div>
+<!-- Графики -->
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <strong>Продажи за последние 7 дней</strong>
             </div>
-            {% endfor %}
+            <div class="card-body">
+                <canvas id="salesChart" height="120"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <strong>Выручка за последние 7 дней</strong>
+            </div>
+            <div class="card-body">
+                <canvas id="revenueChart" height="120"></canvas>
+            </div>
         </div>
     </div>
 </div>
 
+{% endblock %}
+
+{% block extra_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    lucide.createIcons();
+    // Данные из Python
+    const chartDates = {{ chart_dates | tojson }};
+    const chartSales = {{ chart_sales | tojson }};
+    const chartRevenue = {{ chart_revenue | tojson }};
 
-    const ctx = document.getElementById('salesChart');
-    new Chart(ctx, {
+    // График продаж
+    new Chart(document.getElementById('salesChart'), {
         type: 'line',
         data: {
-            labels: {{ chart_dates | tojson }},
+            labels: chartDates,
             datasets: [{
                 label: 'Продажи',
-                data: {{ chart_sales | tojson }},
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                tension: 0.4,
-                borderWidth: 3
-            }, {
-                label: 'Выручка (тыс. ₽)',
-                data: {{ chart_revenue | tojson }},
-                borderColor: '#10b981',
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                tension: 0.4,
-                borderWidth: 3
+                data: chartSales,
+                borderColor: '#0d6efd',
+                tension: 0.3,
+                fill: false
             }]
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'top', labels: { usePointStyle: true, padding: 20 } }
-            },
-            scales: {
-                y: { grid: { color: '#f1f5f9' } }
-            }
-        }
+        options: { responsive: true, maintainAspectRatio: false }
     });
 
-    function toggleSellerDay(sellerId, date, btn) {
-        // existing logic...
-        fetch('/admin/dashboard/toggle_seller_day', {
+    // График выручки
+    new Chart(document.getElementById('revenueChart'), {
+        type: 'line',
+        data: {
+            labels: chartDates,
+            datasets: [{
+                label: 'Выручка (₽)',
+                data: chartRevenue,
+                borderColor: '#198754',
+                tension: 0.3,
+                fill: false
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    // Функция отметки продавца
+    async function toggleSeller(sellerId) {
+        const targetDate = "{{ target_date_iso }}";
+        const response = await fetch('/admin/dashboard/toggle_seller_day', {
             method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: `seller_id=${sellerId}&target_date=${date}`
-        }).then(r => r.json()).then(data => {
-            if (data.success) {
-                location.reload();
-            }
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `seller_id=${sellerId}&target_date=${targetDate}`
         });
+        if (response.ok) {
+            location.reload();
+        }
     }
 </script>
 {% endblock %}
