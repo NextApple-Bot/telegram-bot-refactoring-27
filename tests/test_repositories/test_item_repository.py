@@ -21,6 +21,7 @@ async def test_get_or_create_category_existing():
 async def test_get_or_create_category_new():
     mock_conn = AsyncMock()
     mock_conn.fetchrow.side_effect = [None, {'id': 10}]
+    mock_conn.fetchval.return_value = 0
 
     with patch('bot.repositories.item.get_pool') as mock_pool:
         mock_pool.return_value.acquire.return_value.__aenter__.return_value = mock_conn
