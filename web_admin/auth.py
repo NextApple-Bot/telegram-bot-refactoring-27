@@ -1,61 +1,25 @@
-from datetime import datetime, timedelta
+from passlib.context import CryptContext
 from starlette.requests import Request
 
-from bot.config import config
+from bot import config
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password(plain_password: str) -> bool:
-    """Проверяет пароль."""
-    if not config.ADMIN_PASSWORD:
-        return False
-    return plain_password == config.ADMIN_PASSWORD
-
-
-def is_authenticated(request: Request) -> bool:
-    """Проверяет авторизацию. Более устойчивая версия."""
-    try:
-        # Пытаемся получить сессию разными способами
-        session = getattr(request, 'session', None)
-        if session is None:
-            # Пробуем через scope
-            scope = getattr(request, 'scope', {})
-            session = scope.get('session', {})
-
-        if not session or not session.get("authenticated"):
-            return False
-
-        login_time_str = session.get("login_time")
-        if login_time_str:
-            try:
-                login_time = datetime.fromisoformat(login_time_str)
-                if datetime.utcnow() - login_time > timedelta(days=7):
-                    session.clear()
-                    return False
-            except Exception:
-                if hasattr(session, 'clear'):
-                    session.clear()
-                return False
-
+    if config.ADMIN_PASSWORD and plain_password == config.ADMIN_PASSWORD:
         return True
-    except Exception:
-        return False
-
-
-def login_user(request: Request, password: str) -> bool:
-    """Выполняет вход."""
-    if verify_password(password):
-        try:
-            request.session["authenticated"] = True
-            request.session["login_time"] = datetime.utcnow().isoformat()
-            return True
-        except Exception:
-            return False
+    if config.ADMIN_PASSWORD_HASH:
+        return pwd_context.verify(plain_password, config.ADMIN_PASSWORD_HASH)
     return False
 
+def is_authenticated(request: Request) -> bool:
+    return request.session.get("authenticated", False)
 
-def logout_user(request: Request):
-    """Выход из системы."""
-    try:
-        request.session.clear()
-    except Exception:
-        pass
+def login(request: Request, password: str) -> bool:
+    if verify_password(password):
+        request.session["authenticated"] = True
+        return True
+    return False
+
+def logout(request: Request) -> None:
+    request.session.clear()
