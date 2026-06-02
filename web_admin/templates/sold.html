@@ -3,16 +3,19 @@
 {% block page_title %}Проданные товары{% endblock %}
 
 {% block content %}
+<div class="alert alert-warning">
+    Проданные товары хранятся в системе 7 дней.
+</div>
+
 <div class="card">
-    <div class="card-body">
-        <p class="text-muted">Товары хранятся 7 дней после продажи.</p>
-        
+    <div class="table-responsive">
         <table class="table table-hover">
             <thead>
                 <tr>
                     <th>ID</th>
                     <th>Товар</th>
-                    <th>Серийный</th>
+                    <th>Серийный номер</th>
+                    <th>Категория</th>
                     <th>Дата продажи</th>
                     <th>Действие</th>
                 </tr>
@@ -23,16 +26,19 @@
                     <td>{{ item.id }}</td>
                     <td>{{ item.text }}</td>
                     <td><code>{{ item.serial or '—' }}</code></td>
+                    <td>{{ item.category_id }}</td>
                     <td>{{ item.deleted_at|format_date }}</td>
                     <td>
                         <form action="/admin/sold/restore/{{ item.id }}" method="post">
-                            <button type="submit" class="btn btn-sm btn-success">Восстановить</button>
+                            <button type="submit" class="btn btn-sm btn-success">
+                                Восстановить
+                            </button>
                         </form>
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="5" class="text-center text-muted">Проданных товаров нет</td>
+                    <td colspan="6" class="text-center text-muted py-4">Проданных товаров нет</td>
                 </tr>
                 {% endfor %}
             </tbody>
