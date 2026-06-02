@@ -1,36 +1,35 @@
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+try:
+    import uvloop
+    uvloop.install = lambda: None
+except ImportError:
+    pass
 
-@pytest.fixture(scope="function", autouse=True)   # <--- ИСПРАВЛЕНО: session -> function
-def set_test_environment(monkeypatch: pytest.MonkeyPatch):
-    """Чистая настройка тестового окружения."""
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/testdb")
-    monkeypatch.setenv("REDIS_URL", "")
-    monkeypatch.setenv("SCALING_ENABLED", "false")
-    monkeypatch.setenv("BOT_TOKEN", "test_token")
-    monkeypatch.setenv("ADMIN_ID", "123")
-    monkeypatch.setenv("MAIN_GROUP_ID", "-100123")
-    monkeypatch.setenv("THREAD_SALES", "1")
-    monkeypatch.setenv("THREAD_ASSORTMENT", "2")
-    monkeypatch.setenv("THREAD_ARRIVAL", "3")
-    monkeypatch.setenv("THREAD_PREORDER", "4")
-    monkeypatch.setenv("SECRET_KEY", "dummy_secret_key_for_testing_only_min_32_chars")
-    monkeypatch.setenv("ADMIN_PASSWORD", "testpass")
+os.environ["DATABASE_URL"] = "postgresql://user:pass@localhost/db"
+os.environ.setdefault("REDIS_URL", "")
+os.environ["SCALING_ENABLED"] = "false"
+os.environ["BOT_TOKEN"] = "test_token"
+os.environ["ADMIN_ID"] = "123"
+os.environ["MAIN_GROUP_ID"] = "-100123"
+os.environ["THREAD_SALES"] = "1"
+os.environ["THREAD_ASSORTMENT"] = "2"
+os.environ["THREAD_ARRIVAL"] = "3"
+os.environ["THREAD_PREORDER"] = "4"
+os.environ["SECRET_KEY"] = "dummy_secret_key_for_testing_only_min_32_chars"
+os.environ["ADMIN_PASSWORD"] = "testpass"
 
 
 class AsyncSessionMock:
     def __init__(self):
-        self.execute = AsyncMock(return_value=MagicMock(
-            all=MagicMock(return_value=[]),
-            scalar=MagicMock(return_value=None),
-            scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
-        ))
+        self.execute = AsyncMock(return_value=MagicMock(all=MagicMock(), scalar=MagicMock(), scalars=MagicMock()))
         self.commit = AsyncMock()
         self.rollback = AsyncMock()
         self.close = AsyncMock()
-        self.get = AsyncMock(return_value=None)
+        self.get = AsyncMock()
         self.add = MagicMock()
         self.delete = AsyncMock()
         self.begin = MagicMock()
@@ -58,7 +57,7 @@ def mock_db_session():
 
 @pytest.fixture(scope="session", autouse=True)
 def mock_db_health():
-    """Мок healthcheck'ов."""
+    """Мок healthcheck'ов, чтобы они не обращались к реальным сервисам."""
     with patch('bot.db.check_db_health', new_callable=AsyncMock) as mock_health, \
          patch('bot.db.check_redis_health', new_callable=AsyncMock) as mock_redis:
         mock_health.return_value = True
