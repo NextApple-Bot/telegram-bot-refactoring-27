@@ -10,6 +10,7 @@ from web_admin.routes.assortment import views as assortment_views
 app = FastAPI(title="Telegram Bot Admin Panel")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
+# === Роутеры ===
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(clients.router, prefix="/clients", tags=["clients"])
@@ -24,13 +25,17 @@ app.include_router(debug.router, prefix="/admin", tags=["debug"])
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    if request.url.path.startswith("/admin/auth/login") or request.url.path.startswith("/admin/static"):
+    # Разрешаем доступ к странице логина и статическим файлам
+    if request.url.path.startswith("/auth/login"):
         return await call_next(request)
+
+    # Если пользователь не авторизован — отправляем на логин
     if not is_authenticated(request):
-        return RedirectResponse(url="/admin/auth/login")
+        return RedirectResponse(url="/auth/login")
+
     return await call_next(request)
 
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/admin/dashboard")
+    return RedirectResponse(url="/dashboard")
