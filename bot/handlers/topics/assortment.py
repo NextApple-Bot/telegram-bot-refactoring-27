@@ -1,3 +1,4 @@
+# bot/handlers/topics/assortment.py
 import logging
 import os
 
@@ -10,11 +11,13 @@ from bot import config
 from bot.handlers.states import AssortmentConfirmState
 from bot.repositories.item import ItemRepository
 from bot.services.assortment import AssortmentService
+from bot.utils.helpers import send_and_clean
 from bot.utils.sort import sort_assortment_to_categories
 
 logger = logging.getLogger(__name__)
+
 router = Router()
-MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 МБ
 
 
 @router.message(
@@ -23,90 +26,131 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
     (F.text | F.caption | F.document)
 )
 async def handle_assortment_upload(message: Message, state: FSMContext):
-    logger.info(f"🔔 ПОЛУЧЕНО СООБЩЕНИЕ В АССОРТИМЕНТ: chat_id={message.chat.id}, thread_id={message.message_thread_id}")
+    """Обработчик полной замены ассортимента через топик «Ассортимент»."""
+    logger.info(f"📥 Получено сообщение в ассортимент от {message.from_user.id if message.from_user else 'unknown'}")
+
+    # Защита от повторного подтверждения
+    if await state.get_state() == AssortmentConfirmState.waiting_for_confirm.state:
+        await send_and_clean(
+            bot=message.bot,
+            chat_id=message.chat.id,
+            text="⚠️ Сначала подтвердите или отмените предыдущую загрузку ассортимента.",
+            reply_to_message_id=message.message_id,
+            message_thread_id=config.THREAD_ASSORTMENT,
+            delete_after=60
+        )
+        return
 
     content = None
 
     if message.document:
         document = message.document
         if document.file_size and document.file_size > MAX_FILE_SIZE:
-            await message.reply("❌ Файл слишком большой (макс. 10 МБ).")
+            await send_and_clean(
+                bot=message.bot,
+                chat_id=message.chat.id,
+                text="❌ Файл слишком большой (максимум 10 МБ).",
+                reply_to_message_id=message.message_id,
+                message_thread_id=config.THREAD_ASSORTMENT,
+                delete_after=60
+            )
             return
+
         if not (document.mime_type == 'text/plain' or document.file_name.endswith('.txt')):
-            await message.reply("⚠️ Отправьте текстовый файл .txt")
+            await send_and_clean(
+                bot=message.bot,
+                chat_id=message.chat.id,
+                text="⚠️ Отправьте текстовый файл (.txt).",
+                reply_to_message_id=message.message_id,
+                message_thread_id=config.THREAD_ASSORTMENT,
+                delete_after=60
+            )
             return
 
         file_path = f"/tmp/{document.file_name}"
         await message.bot.download(document, destination=file_path)
+
         try:
             async with aiofiles.open(file_path, encoding='utf-8') as f:
                 content = await f.read()
-            if not content.strip():
-                await message.reply("❌ Файл пуст.")
-                return
         finally:
             if os.path.exists(file_path):
                 os.remove(file_path)
     else:
         content = message.text or message.caption
-        if not content:
-            await message.reply("⚠️ Отправьте текст или файл.")
-            return
-        content = content.strip()
+        if content:
+            content = content.strip()          # ← исправление по твоему замечанию
 
+        if not content:
+            await send_and_clean(
+                bot=message.bot,
+                chat_id=message.chat.id,
+                text="⚠️ Отправьте текст или .txt файл с ассортиментом.",
+                reply_to_message_id=message.message_id,
+                message_thread_id=config.THREAD_ASSORTMENT,
+                delete_after=60
+            )
+            return
+
+    if not content:
+        await send_and_clean(message.bot, message.chat.id, "❌ Получен пустой ассортимент.", delete_after=60)
+        return
+
+    # Парсинг (полностью из v26)
     categories = sort_assortment_to_categories(content)
 
     if not categories:
-        await message.reply(
-            "❌ Не удалось распознать ни одной категории.\n\n"
-            "Пример формата:\n"
-            "---\n"
-            "iPhone:\n"
-            "---\n"
-            "iPhone 15 (SN123456)\n"
-            "iPhone 16 (SN789012)\n"
-            "---"
+        await send_and_clean(
+            bot=message.bot,
+            chat_id=message.chat.id,
+            text="❌ Не удалось распознать категории.\n\nПример формата:\n---\niPhone:\n---\niPhone 16 (SN123456)",
+            reply_to_message_id=message.message_id,
+            message_thread_id=config.THREAD_ASSORTMENT,
+            delete_after=90
         )
         return
 
+    total_items = sum(len(cat.get('items', [])) for cat in categories)
+
+    logger.info(f"📦 Распознано: {len(categories)} категорий, {total_items} товаров")
+
+    # Сохраняем в FSM
     await state.update_data(temp_categories=categories)
     await state.set_state(AssortmentConfirmState.waiting_for_confirm)
 
-    total_items = sum(len(cat.get('items', [])) for cat in categories)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Подтвердить", callback_data="assort_confirm:yes"),
-            InlineKeyboardButton(text="❌ Отмена", callback_data="assort_confirm:no")
-        ]
-    ])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Подтвердить замену", callback_data="assort_confirm:yes"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="assort_confirm:no")
+    ]])
 
     await message.reply(
-        f"📦 Найдено категорий: **{len(categories)}**\n"
-        f"Всего позиций: **{total_items}**\n\n"
-        "⚠️ Это **полностью заменит** текущий ассортимент.\n"
-        "Подтверждаете?",
+        f"📦 **Ассортимент готов к замене**\n\n"
+        f"Категорий: **{len(categories)}**\n"
+        f"Товаров: **{total_items}**\n\n"
+        f"⚠️ Это **полностью заменит** текущий ассортимент в базе.\n"
+        f"Подтверждаете?",
         reply_markup=keyboard
     )
 
 
 @router.callback_query(AssortmentConfirmState.waiting_for_confirm, F.data.startswith("assort_confirm:"))
 async def process_assortment_confirm(callback: CallbackQuery, state: FSMContext):
+    """Подтверждение замены ассортимента."""
     await callback.answer()
     data = await state.get_data()
     categories = data.get("temp_categories", [])
-    action = callback.data.split(":")[1]
 
-    if action == "yes" and categories:
+    if callback.data.split(":")[1] == "yes" and categories:
         try:
-            logger.info(f"Начинаем массовую замену ассортимента: {len(categories)} категорий")
+            logger.info(f"🔄 Полная замена ассортимента: {len(categories)} категорий")
             await ItemRepository.bulk_replace_assortment(categories)
             await AssortmentService.invalidate_cache()
-            logger.info("Массовая замена успешно выполнена")
+            logger.info("✅ Ассортимент успешно заменён")
             await callback.message.edit_text("✅ Ассортимент успешно заменён.")
         except Exception as e:
-            logger.exception("Ошибка при замене ассортимента")
+            logger.exception("❌ Ошибка при замене ассортимента")
             await callback.message.edit_text(f"❌ Ошибка при сохранении: {e}")
     else:
-        await callback.message.edit_text("❌ Загрузка отменена.")
+        await callback.message.edit_text("❌ Замена ассортимента отменена.")
 
     await state.clear()
