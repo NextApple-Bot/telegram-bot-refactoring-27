@@ -7,7 +7,7 @@ from web_admin.routes import auth, clients, dashboard, debug, purchases, sellers
 from web_admin.routes.assortment import manage as assortment_manage
 from web_admin.routes.assortment import views as assortment_views
 
-app = FastAPI(title="Admin Panel")
+app = FastAPI(title="Telegram Bot Admin Panel")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -19,30 +19,18 @@ app.include_router(assortment_manage.router, prefix="/assortment", tags=["assort
 app.include_router(sold.router, prefix="/sold", tags=["sold"])
 app.include_router(stats.router, prefix="/stats", tags=["stats"])
 app.include_router(sellers.router, prefix="/sellers", tags=["sellers"])
-app.include_router(debug.router, prefix="", tags=["debug"])
+app.include_router(debug.router, prefix="/admin", tags=["debug"])
 
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-
-    # Разрешаем логин в любом виде
-    if path.endswith("/login") or "/auth/login" in path:
+    if request.url.path.startswith("/admin/auth/login") or request.url.path.startswith("/admin/static"):
         return await call_next(request)
-
     if not is_authenticated(request):
-        return RedirectResponse(url="/auth/login")
-
+        return RedirectResponse(url="/admin/auth/login")
     return await call_next(request)
 
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/dashboard")
-
-
-# Fallback на случай проблем с роутером
-@app.get("/auth/login")
-async def login_fallback(request: Request):
-    from web_admin.templates import templates
-    return templates.TemplateResponse("login.html", {"request": request})
+    return RedirectResponse(url="/admin/dashboard")
