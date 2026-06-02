@@ -1,10 +1,11 @@
 import logging
 from typing import Optional, List, Dict, Any
 
-from sqlalchemy import func, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
+from bot.db import get_async_session_factory
 from bot.models import Category, Item
 from bot.utils.validators import extract_serials
 
@@ -14,57 +15,51 @@ logger = logging.getLogger(__name__)
 class ItemRepository:
 
     @staticmethod
-    async def get_or_create_category(name: str, conn: Optional[AsyncSession] = None) -> int:
-        session = conn
-        own_session = False
-
-        if session is None:
-            from bot.db import get_async_session_factory
-            async_session = get_async_session_factory()
-            session = async_session()
-            own_session = True
-
-        try:
+    async def get_or_create_category(name: str, conn=None) -> int:
+        """Возвращает ID категории, создаёт при отсутствии."""
+        norm_name = name.strip().lower().rstrip(':')
+        async def _impl(session):
             result = await session.execute(
-                select(Category).where(func.lower(Category.name) == func.lower(name.strip()))
+                select(Category.id).where(func.lower(Category.name) == norm_name)
             )
-            category = result.scalar_one_or_none()
+            cat_id = result.scalar_one_or_none()
+            if cat_id:
+                return cat_id
 
-            if category:
-                return category.id
-
-            max_order_result = await session.execute(
+            max_order = await session.execute(
                 select(func.coalesce(func.max(Category.sort_order), 0))
             )
-            max_order = max_order_result.scalar() or 0
+            new_order = (max_order.scalar() or 0) + 1
 
-            new_category = Category(name=name.strip(), sort_order=max_order + 1)
-            session.add(new_category)
-            await session.flush()
-            return new_category.id
+            new_cat = Category(name=name.strip(), sort_order=new_order)
+            session.add(new_cat)
+            try:
+                await session.flush()
+                return new_cat.id
+            except IntegrityError:
+                await session.rollback()
+                result = await session.execute(
+                    select(Category.id).where(func.lower(Category.name) == norm_name)
+                )
+                return result.scalar_one()
 
-        finally:
-            if own_session:
-                await session.close()
+        if conn is not None:
+            return await _impl(conn)
+        else:
+            async_session = get_async_session_factory()
+            async with async_session() as session, session.begin():
+                return await _impl(session)
 
     @staticmethod
     async def add_item(
         text: str,
-        serial: Optional[str],
-        category_id: int,
+        serial: Optional[str] = None,
+        category_id: Optional[int] = None,
         is_booked: bool = False,
-        conn: Optional[AsyncSession] = None
+        conn=None
     ):
-        session = conn
-        own_session = False
-
-        if session is None:
-            from bot.db import get_async_session_factory
-            async_session = get_async_session_factory()
-            session = async_session()
-            own_session = True
-
-        try:
+        """Добавляет товар."""
+        async def _impl(session):
             item = Item(
                 text=text.strip(),
                 serial=serial.strip().upper() if serial else None,
@@ -73,23 +68,18 @@ class ItemRepository:
             )
             session.add(item)
             await session.flush()
-        finally:
-            if own_session:
-                await session.commit()
-                await session.close()
+
+        if conn is not None:
+            await _impl(conn)
+        else:
+            async_session = get_async_session_factory()
+            async with async_session() as session, session.begin():
+                await _impl(session)
 
     @staticmethod
-    async def get_all_categories_with_items(conn: Optional[AsyncSession] = None) -> List[Dict[str, Any]]:
-        session = conn
-        own_session = False
-
-        if session is None:
-            from bot.db import get_async_session_factory
-            async_session = get_async_session_factory()
-            session = async_session()
-            own_session = True
-
-        try:
+    async def get_all_categories_with_items(conn=None) -> List[Dict[str, Any]]:
+        """Возвращает все категории с товарами (для кэша и отображения)."""
+        async def _impl(session):
             result = await session.execute(
                 select(Category)
                 .options(selectinload(Category.items))
@@ -101,32 +91,27 @@ class ItemRepository:
             for cat in categories:
                 if cat.name == "__SYSTEM__":
                     continue
-                items = [{"text": item.text, "serial": item.serial} for item in getattr(cat, "items", [])]
+                items = [{"text": item.text, "serial": item.serial} for item in cat.items]
                 data.append({"header": cat.name, "items": items})
             return data
-        finally:
-            if own_session:
-                await session.close()
+
+        if conn is not None:
+            return await _impl(conn)
+        else:
+            async_session = get_async_session_factory()
+            async with async_session() as session:
+                return await _impl(session)
 
     @staticmethod
-    async def bulk_replace_assortment(categories: list, conn: Optional[AsyncSession] = None):
-        session = conn
-        own_session = False
-
-        if session is None:
-            from bot.db import get_async_session_factory
-            async_session = get_async_session_factory()
-            session = async_session()
-            own_session = True
-
-        try:
-            if own_session:
-                await session.begin()
-
+    async def bulk_replace_assortment(categories: list, conn=None):
+        """Полная замена ассортимента."""
+        async def _impl(session):
+            # Удаляем все товары кроме системных
             await session.execute(
-                text("DELETE FROM items WHERE category_id NOT IN (SELECT id FROM categories WHERE name = '__SYSTEM__')")
+                "DELETE FROM items WHERE category_id NOT IN "
+                "(SELECT id FROM categories WHERE name = '__SYSTEM__')"
             )
-            await session.execute(text("DELETE FROM categories WHERE name != '__SYSTEM__'"))
+            await session.execute("DELETE FROM categories WHERE name != '__SYSTEM__'")
 
             for cat_data in categories:
                 header = cat_data.get("header", "").strip()
@@ -140,7 +125,7 @@ class ItemRepository:
                         continue
                     serials = extract_serials(item_text)
                     serial = serials[0] if serials else None
-                    is_booked = "Бронь от" in item_text or "БРОНЬ" in item_text.upper()
+                    is_booked = "Бронь" in item_text.upper()
 
                     await ItemRepository.add_item(
                         text=item_text.strip(),
@@ -150,33 +135,27 @@ class ItemRepository:
                         conn=session
                     )
 
-            if own_session:
-                await session.commit()
-
-        except Exception as e:
-            if own_session:
-                await session.rollback()
-            raise e
-        finally:
-            if own_session:
-                await session.close()
+        if conn is not None:
+            await _impl(conn)
+        else:
+            async_session = get_async_session_factory()
+            async with async_session() as session, session.begin():
+                await _impl(session)
 
     @staticmethod
-    async def get_item_id_by_serial(serial: str, conn: Optional[AsyncSession] = None) -> Optional[int]:
-        session = conn
-        own_session = False
-
-        if session is None:
-            from bot.db import get_async_session_factory
-            async_session = get_async_session_factory()
-            session = async_session()
-            own_session = True
-
-        try:
+    async def get_item_id_by_serial(serial: str, conn=None) -> Optional[int]:
+        if not serial:
+            return None
+        normalized = serial.strip().upper()
+        async def _impl(session):
             result = await session.execute(
-                select(Item.id).where(Item.serial == serial.strip().upper())
+                select(Item.id).where(func.upper(Item.serial) == normalized)
             )
             return result.scalar_one_or_none()
-        finally:
-            if own_session:
-                await session.close()
+
+        if conn is not None:
+            return await _impl(conn)
+        else:
+            async_session = get_async_session_factory()
+            async with async_session() as session:
+                return await _impl(session)
