@@ -5,4 +5,7 @@ router = APIRouter()
 
 @router.get("/")
 async def debug_info(request: Request):
-    return {"message": "Debug endpoint"}
+    return {
+        "message": "Debug endpoint",
+        "status": "ok"
+    }
