@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 
-from bot.db import get_async_session_factory  # <--- ПРАВИЛЬНО
+from bot.db import get_async_session_factory
 from bot.models import DeletedItem, Item
 from bot.services.assortment import AssortmentService
 from web_admin.templates import templates
@@ -19,12 +19,18 @@ async def list_sold(
     async_session = get_async_session_factory()
     async with async_session() as session:
         offset = (page - 1) * per_page
+
         count_q = select(func.count()).select_from(DeletedItem).where(DeletedItem.reason == 'sale_from_admin')
         total = (await session.execute(count_q)).scalar()
         total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
-        q = select(DeletedItem).where(DeletedItem.reason == 'sale_from_admin') \
-            .order_by(DeletedItem.deleted_at.desc()).limit(per_page).offset(offset)
+        q = (
+            select(DeletedItem)
+            .where(DeletedItem.reason == 'sale_from_admin')
+            .order_by(DeletedItem.deleted_at.desc())
+            .limit(per_page)
+            .offset(offset)
+        )
         items = (await session.execute(q)).scalars().all()
 
     return templates.TemplateResponse("sold.html", {
@@ -50,5 +56,6 @@ async def restore_sold(item_id: int):
                 is_booked=False
             ))
             await session.delete(deleted)
+
     await AssortmentService.invalidate_cache()
     return RedirectResponse(url="/admin/sold", status_code=303)
