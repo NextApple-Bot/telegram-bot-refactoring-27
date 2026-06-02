@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from bot.db import get_async_session_factory
@@ -127,7 +127,7 @@ async def dashboard(request: Request, target_date: str | None = None):
 
 @router.post("/toggle_seller_day")
 async def toggle_seller_day(seller_id: int = Form(...), target_date: str = Form(...)):
-    """Переключение присутствия продавца."""
+    """Переключение присутствия продавца на дашборде."""
     try:
         date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
@@ -158,7 +158,8 @@ async def toggle_seller_day(seller_id: int = Form(...), target_date: str = Form(
 async def update_stats(request: Request):
     """
     Ручное редактирование статистики за день.
-    Полностью без хака с Item(id=0) и __SYSTEM__ категорией.
+    Полностью без хака с Item(id=0) и __SYSTEM__.
+    Использует отдельные delete() через SQLAlchemy.
     """
     try:
         data = await request.json()
@@ -178,18 +179,18 @@ async def update_stats(request: Request):
     async with async_session() as session:
         try:
             async with session.begin():
-                # Очистка старых данных за день
+                # === Очистка старых данных (через SQLAlchemy delete) ===
                 await session.execute(
-                    text("DELETE FROM daily_payments WHERE DATE(created_at) = :d"), {"d": target_date}
+                    delete(DailyPayment).where(func.date(DailyPayment.created_at) == target_date)
                 )
                 await session.execute(
-                    text("DELETE FROM sales WHERE DATE(sold_at) = :d"), {"d": target_date}
+                    delete(Sale).where(func.date(Sale.sold_at) == target_date)
                 )
                 await session.execute(
-                    text("DELETE FROM preorders WHERE DATE(created_at) = :d"), {"d": target_date}
+                    delete(Preorder).where(func.date(Preorder.created_at) == target_date)
                 )
                 await session.execute(
-                    text("DELETE FROM bookings WHERE DATE(booked_at) = :d"), {"d": target_date}
+                    delete(Booking).where(func.date(Booking.booked_at) == target_date)
                 )
 
                 # Платежи
@@ -197,34 +198,4 @@ async def update_stats(request: Request):
                     amount = float(data.get(pt, 0) or 0)
                     if amount > 0:
                         session.add(DailyPayment(
-                            type='sale',
-                            payment_type=pt,
-                            amount=amount,
-                            created_at=target_date
-                        ))
-
-                # Продажи
-                for _ in range(int(data.get("sales_count", 0) or 0)):
-                    session.add(Sale(sold_at=target_date))
-
-                # Предзаказы
-                for _ in range(int(data.get("preorders_count", 0) or 0)):
-                    session.add(Preorder(created_at=target_date))
-
-                # Брони — ЧИСТЫЙ ВАРИАНТ (без фейкового Item)
-                # item_id=None — требуется сделать поле nullable в модели Booking
-                for _ in range(int(data.get("bookings_count", 0) or 0)):
-                    session.add(Booking(item_id=None, booked_at=target_date))
-
-            logger.info(f"Статистика за {target_date} успешно обновлена вручную")
-            return JSONResponse({"success": True})
-
-        except SQLAlchemyError as e:
-            logger.error(f"Ошибка при обновлении статистики за {target_date}: {e}")
-            return JSONResponse({"success": False, "error": "Ошибка базы данных"}, status_code=500)
-
-
-@router.get("/top_models_data")
-async def top_models_data(request: Request, days: int = 7, target_date: str | None = None):
-    """Заглушка для топ-моделей (можно развить позже)."""
-    return JSONResponse({"labels": [], "counts": []})
+                            type='
