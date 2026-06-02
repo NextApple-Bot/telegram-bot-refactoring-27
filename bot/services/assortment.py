@@ -1,6 +1,11 @@
 import logging
-from typing import Any, List, Dict
+from datetime import date
 
+from sqlalchemy import select, update, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bot.models import Item
+from bot.repositories.item import ItemRepository
 from bot.services.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -9,90 +14,83 @@ logger = logging.getLogger(__name__)
 class AssortmentService:
     """Сервис для работы с ассортиментом."""
 
-    CACHE_KEY = "assortment:all"
-    CACHE_TTL = 300
-
     @staticmethod
-    async def invalidate_cache():
-        try:
-            await cache.delete(AssortmentService.CACHE_KEY)
-            logger.info("🗑 Кэш ассортимента очищен")
-        except Exception as e:
-            logger.warning(f"Ошибка очистки кэша: {e}")
+    async def remove_by_serial(serial: str, reason: str = "sale", conn: AsyncSession | None = None) -> bool:
+        """Удалить товар по серийному номеру (при продаже)."""
+        if not serial:
+            return False
 
-    @staticmethod
-    async def load_inventory() -> List[Dict[str, Any]]:
-        try:
-            cached = await cache.get(AssortmentService.CACHE_KEY)
-            if cached is not None:
-                return cached
-        except Exception:
-            pass
-
-        from bot.repositories.item import ItemRepository
-        categories = await ItemRepository.get_all_categories_with_items()
-
-        try:
-            await cache.set(AssortmentService.CACHE_KEY, categories, ttl=AssortmentService.CACHE_TTL)
-        except Exception:
-            pass
-
-        return categories
-
-    @staticmethod
-    async def remove_by_serial(serial: str, reason: str = "sale", conn=None) -> bool:
-        from bot.repositories.item import ItemRepository
-        from bot.db import get_async_session_factory
-        from bot.models import DeletedItem, Item
-        from sqlalchemy import select, func
-
-        normalized = serial.strip().upper()
-        async_session = get_async_session_factory()
-
-        if conn is not None:
-            session = conn
-            own = False
+        own_session = False
+        if conn is None:
+            from bot.db import get_async_session_factory
+            session = get_async_session_factory()()
+            own_session = True
         else:
-            session = async_session()
-            own = True
+            session = conn
 
         try:
-            if own:
+            if own_session:
                 await session.begin()
 
-            item = (await session.execute(
-                select(Item).where(func.upper(Item.serial) == normalized)
-            )).scalar_one_or_none()
+            item = await ItemRepository.get_item_by_serial(serial, session)
+            if not item:
+                logger.warning(f"Товар с серийным {serial} не найден для удаления")
+                return False
 
-            if item:
-                session.add(DeletedItem(
-                    item_id=item.id,
-                    text=item.text,
-                    serial=item.serial,
-                    category_id=item.category_id,
-                    reason=reason
-                ))
-                await session.delete(item)
-                await AssortmentService.invalidate_cache()
-                if own:
-                    await session.commit()
-                return True
-
-            if own:
+            deleted = await ItemRepository.delete_item(item.id, reason=reason, conn=session)
+            
+            if own_session:
                 await session.commit()
-            return False
+
+            await AssortmentService.invalidate_cache()
+            logger.info(f"Товар {serial} удалён (причина: {reason})")
+            return deleted
 
         except Exception as e:
-            if own:
+            if own_session:
                 await session.rollback()
-            logger.exception(f"Ошибка удаления товара {serial}")
-            return False
+            logger.exception(f"Ошибка при удалении товара {serial}")
+            raise
         finally:
-            if own:
+            if own_session:
                 await session.close()
 
     @staticmethod
-    async def save_inventory(categories: list[dict]):
-        from bot.repositories.item import ItemRepository
-        await ItemRepository.bulk_replace_assortment(categories)
-        await AssortmentService.invalidate_cache()
+    async def invalidate_cache() -> None:
+        """Сбросить кэш ассортимента."""
+        try:
+            await cache.delete("assortment:all")
+            await cache.delete_pattern("assortment:category:*")
+            logger.info("Кэш ассортимента сброшен")
+        except Exception as e:
+            logger.warning(f"Не удалось сбросить кэш ассортимента: {e}")
+
+    @staticmethod
+    async def load_inventory() -> list[dict]:
+        """Загрузить весь ассортимент (с кэшированием)."""
+        cache_key = "assortment:all"
+        cached = await cache.get(cache_key)
+        if cached:
+            return cached
+
+        from bot.db import get_async_session_factory
+        async with get_async_session_factory()() as session:
+            data = await ItemRepository.get_all_categories_with_items(session)
+
+        await cache.set(cache_key, data, ttl=300)
+        return data
+
+    @staticmethod
+    async def get_item_by_serial(serial: str) -> dict | None:
+        from bot.db import get_async_session_factory
+        async with get_async_session_factory()() as session:
+            item = await ItemRepository.get_item_by_serial(serial, session)
+            if item:
+                return {
+                    "id": item.id,
+                    "text": item.text,
+                    "serial": item.serial,
+                    "category_id": item.category_id,
+                    "is_booked": item.is_booked,
+                }
+        return None
