@@ -17,7 +17,6 @@ async def stats_page(
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    # Заглушка – в реальном коде здесь будет логика, но для устранения ошибки импорта достаточно заглушки
     return templates.TemplateResponse("stats.html", {
         "request": request,
         "mode": mode,
