@@ -6,22 +6,6 @@ from bot import config
 
 logger = logging.getLogger(__name__)
 
-_notification_bot: Bot | None = None
-
-
-def get_notification_bot() -> Bot:
-    global _notification_bot
-    if _notification_bot is None:
-        _notification_bot = Bot(token=config.BOT_TOKEN)
-    return _notification_bot
-
-
-async def close_notification_bot():
-    global _notification_bot
-    if _notification_bot:
-        await _notification_bot.session.close()
-        _notification_bot = None
-
 
 def format_number(value: float) -> str:
     if value is None:
@@ -40,21 +24,17 @@ async def send_booking_notification(
     payment_type: str = None,
     birth_date: str = None,
     bonus: float = None,
-    bonus_reason: str = None,
     is_cancel: bool = False
 ):
     try:
-        bot = get_notification_bot()
-
+        bot = Bot(token=config.BOT_TOKEN)
         if is_cancel:
             message_text = f"❌ Отмена Брони:\n\n{item_text}"
         else:
             lines = ["БРОНЬ:\n", f"{item_text}"]
-
             if price is not None:
                 if bonus:
-                    reason_str = f" ({bonus_reason})" if bonus_reason else ""
-                    lines.append(f"Стоимость – {format_number(price)} (Скидка {format_number(bonus)}{reason_str})")
+                    lines.append(f"Стоимость – {format_number(price)} (Скидка бонусы {format_number(bonus)})")
                 else:
                     lines.append(f"Стоимость – {format_number(price)}")
             lines.append("")
@@ -93,8 +73,8 @@ async def send_booking_notification(
             text=message_text,
             message_thread_id=config.THREAD_PREORDER
         )
+        await bot.session.close()
         logger.info(f"✅ Уведомление о брони отправлено: {item_text}")
-
     except Exception as e:
         logger.error(f"❌ Ошибка при отправке уведомления о брони: {e}")
 
@@ -110,15 +90,13 @@ async def send_sale_notification(
     phone: str = None,
     birth_date: str = None,
     bonus: float = None,
-    bonus_reason: str = None,
     change: float = None,
     change_type: str = None,
     accessories: list = None,
     accessories_total: float = 0.0
 ):
     try:
-        bot = get_notification_bot()
-
+        bot = Bot(token=config.BOT_TOKEN)
         payment_type_ru = {
             'cash': 'Наличными', 'terminal': 'Терминал', 'qr': 'QR-код',
             'transfer': 'Перевод', 'invoice': 'Оплата по счету', 'installment': 'Рассрочка',
@@ -126,15 +104,12 @@ async def send_sale_notification(
         }
 
         lines = [item_text]
-
         if bonus:
-            reason_str = f" ({bonus_reason})" if bonus_reason else ""
-            lines.append(f"Стоимость – {format_number(price)} (Скидка {format_number(bonus)}{reason_str})")
+            lines.append(f"Стоимость – {format_number(price)} (Скидка бонусы {format_number(bonus)})")
         else:
             lines.append(f"Стоимость – {format_number(price)}")
         lines.append("")
 
-        # Аксессуары
         if accessories:
             for acc in accessories:
                 lines.append(acc['text'])
@@ -144,7 +119,6 @@ async def send_sale_notification(
         else:
             lines.append("")
 
-        # Платежи
         payments = {}
         if payment_type != "paid" and payment_amount and payment_amount > 0:
             payments[payment_type] = payments.get(payment_type, 0) + payment_amount
@@ -172,7 +146,6 @@ async def send_sale_notification(
                     lines.append(line)
                     lines.append("")
 
-        # Итоговая сумма
         total = price + accessories_total - (bonus or 0)
         lines.append(f"Общая – {format_number(total)}")
         lines.append("")
@@ -195,6 +168,7 @@ async def send_sale_notification(
             text=message_text,
             message_thread_id=config.THREAD_SALES
         )
+        await bot.session.close()
         logger.info(f"✅ Уведомление о продаже отправлено: {item_text}")
 
     except Exception as e:
