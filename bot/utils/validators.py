@@ -1,59 +1,57 @@
 import re
+from typing import List, Optional
 
 
-def extract_serials(text: str) -> list[str]:
-    """Улучшенная версия с защитой от цветов и несерийных слов."""
-    if not isinstance(text, str):
+def normalize_serial(serial: str | None) -> Optional[str]:
+    """Нормализация серийного номера (убирает пробелы, приводит к верхнему регистру)."""
+    if not serial:
+        return None
+    return serial.strip().upper().replace(" ", "").replace("-", "")
+
+
+def extract_serials(text: str) -> List[str]:
+    """
+    Извлекает серийные номера из текста.
+    Ищет паттерны типа: (ABC123), W42VYXRV96, FFXGQJHF0F11 и т.д.
+    """
+    if not text:
         return []
 
-    # Слова, которые точно не являются серийными номерами
-    COLOR_WORDS = {
-        "BLUE", "YELLOW", "INDIGO", "CITRUS", "LAVENDER", "PURPLE",
-        "BLACK", "WHITE", "RED", "GREEN", "ORANGE", "PINK", "GRAY", "GREY",
-        "SPACE", "STARLIGHT", "MIDNIGHT", "SILVER", "GOLD", "GRAPHITE"
-    }
+    # Ищем серийные номера в скобках или standalone
+    pattern = r'\(([A-Z0-9]{8,})\)|([A-Z0-9]{8,})'
+    matches = re.findall(pattern, text, re.IGNORECASE)
 
-    serials = set()
-    matches = re.finditer(r'\(([^)]+)\)', text)
-
+    serials = []
     for match in matches:
-        candidate = match.group(1).strip()
-        if not candidate:
-            continue
+        serial = match[0] or match[1]
+        if serial:
+            normalized = normalize_serial(serial)
+            if normalized and normalized not in serials:
+                serials.append(normalized)
 
-        upper_candidate = candidate.upper()
-
-        # Пропускаем цвета
-        if upper_candidate in COLOR_WORDS:
-            continue
-        if any(color in upper_candidate for color in COLOR_WORDS):
-            continue
-
-        # Вариант с символом №
-        if '№' in candidate:
-            serials.add(upper_candidate)
-            continue
-
-        # Чисто цифровой серийник (≥10 цифр)
-        if candidate.isdigit() and len(candidate) >= 10:
-            serials.add(candidate)
-            continue
-
-        # С дефисом
-        if '-' in candidate and re.fullmatch(r'[A-Za-z0-9\-]{6,30}', candidate):
-            serials.add(upper_candidate)
-            continue
-
-        # Смешанный формат (буквы + цифры) — основной случай
-        if re.fullmatch(r'[A-Za-z0-9]{6,30}', candidate):
-            if any(char.isdigit() for char in candidate):
-                serials.add(upper_candidate)
-
-    return list(serials)
+    return serials
 
 
-def normalize_serial(serial: str) -> str:
-    """Нормализует серийный номер (убирает пробелы и приводит к верхнему регистру)."""
-    if not serial:
-        return ""
-    return re.sub(r'\s+', '', serial).upper()
+def parse_arrival_text(text: str) -> List[dict]:
+    """
+    Парсит текст прибытия товаров.
+    Возвращает список словарей с text и serial.
+    """
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    items = []
+
+    for line in lines:
+        serials = extract_serials(line)
+        serial = serials[0] if serials else None
+
+        # Убираем серийный номер из текста
+        clean_text = re.sub(r'\s*\([A-Z0-9]{8,}\)\s*', ' ', line, flags=re.IGNORECASE).strip()
+        clean_text = re.sub(r'\s+[A-Z0-9]{8,}\s*$', '', clean_text).strip()
+
+        if clean_text:
+            items.append({
+                "text": clean_text,
+                "serial": serial
+            })
+
+    return items
