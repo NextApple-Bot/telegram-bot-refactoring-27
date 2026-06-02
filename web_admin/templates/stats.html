@@ -3,31 +3,21 @@
 {% block page_title %}Статистика{% endblock %}
 
 {% block content %}
-
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4>Статистика</h4>
-</div>
-
-<div class="row g-3 mb-4">
-    <div class="col-md-4">
-        <div class="card text-center">
-            <div class="card-body">
+<div class="card mb-4">
+    <div class="card-header">
+        <strong>Общая статистика</strong>
+    </div>
+    <div class="card-body">
+        <div class="row text-center">
+            <div class="col-md-4">
                 <h6 class="text-muted">Продажи</h6>
                 <h2>{{ sales_count }}</h2>
             </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card text-center">
-            <div class="card-body">
+            <div class="col-md-4">
                 <h6 class="text-muted">Предзаказы</h6>
                 <h2>{{ preorders_count }}</h2>
             </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card text-center">
-            <div class="card-body">
+            <div class="col-md-4">
                 <h6 class="text-muted">Брони</h6>
                 <h2>{{ bookings_count }}</h2>
             </div>
@@ -35,56 +25,22 @@
     </div>
 </div>
 
-<div class="row g-3">
-    <!-- Структура оплат -->
-    <div class="col-md-6">
+<div class="row">
+    <div class="col-lg-6">
         <div class="card">
-            <div class="card-header"><strong>Структура оплат</strong></div>
+            <div class="card-header">Структура оплат</div>
             <div class="card-body">
-                <canvas id="paymentChart" height="200"></canvas>
+                <canvas id="paymentChart"></canvas>
             </div>
         </div>
     </div>
-
-    <!-- Выручка по дням -->
-    <div class="col-md-6">
+    <div class="col-lg-6">
         <div class="card">
-            <div class="card-header"><strong>Выручка по дням</strong></div>
+            <div class="card-header">Выручка по дням</div>
             <div class="card-body">
-                <canvas id="revenueChart" height="200"></canvas>
+                <canvas id="revenueChart"></canvas>
             </div>
         </div>
     </div>
 </div>
-
-{% endblock %}
-
-{% block extra_scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-    // Пример графиков (можно доработать позже)
-    new Chart(document.getElementById('paymentChart'), {
-        type: 'doughnut',
-        data: {
-            labels: ['Наличные', 'Терминал', 'QR', 'Перевод'],
-            datasets: [{
-                data: [120000, 85000, 45000, 30000],
-                backgroundColor: ['#198754', '#0d6efd', '#ffc107', '#6c757d']
-            }]
-        }
-    });
-
-    new Chart(document.getElementById('revenueChart'), {
-        type: 'line',
-        data: {
-            labels: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
-            datasets: [{
-                label: 'Выручка',
-                data: [85000, 92000, 78000, 105000, 120000, 95000, 110000],
-                borderColor: '#0d6efd',
-                tension: 0.3
-            }]
-        }
-    });
-</script>
 {% endblock %}
