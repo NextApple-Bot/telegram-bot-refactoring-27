@@ -36,15 +36,10 @@ async def handle_sale_from_form(
     accessories: list = None,
     sale_birth_date: str = None,
     sale_bonus: float = None,
-    sale_bonus_reason: str = None,
     sale_change: float = None,
     sale_change_type: str = None,
     conn=None
 ):
-    """
-    Обработка продажи товара из веб-админки.
-    Поддерживает аксессуары, создание клиента, сохранение платежей и уведомления.
-    """
     try:
         if not sale_price or sale_price <= 0:
             return {"error": "Укажите стоимость продажи"}
@@ -69,7 +64,7 @@ async def handle_sale_from_form(
             if own_session:
                 await session.begin()
 
-            # === Создаём/получаем клиента ===
+            # Создаём/получаем клиента
             client_id = None
             if sale_phone or sale_full_name:
                 client_id = await ClientRepository.get_or_create_client(
@@ -80,7 +75,7 @@ async def handle_sale_from_form(
                     conn=session
                 )
 
-            # === Обрабатываем аксессуары ===
+            # Обрабатываем аксессуары
             if accessories:
                 for acc in accessories:
                     acc_price = acc.get('price', 0)
@@ -90,7 +85,6 @@ async def handle_sale_from_form(
                     accessories_total += acc_price
                     display_text = acc.get('name', '')
 
-                    # Если у аксессуара есть серийник — пытаемся найти и удалить его
                     if acc.get('serial'):
                         q = select(Item).where(func.upper(Item.serial) == acc['serial'].strip().upper())
                         item_info = (await session.execute(q)).scalar_one_or_none()
@@ -117,7 +111,7 @@ async def handle_sale_from_form(
                     if pay_type and pay_type != "paid" and acc_price > 0:
                         accessories_payments[pay_type] = accessories_payments.get(pay_type, 0) + acc_price
 
-            # === Считаем все платежи ===
+            # Считаем все платежи
             all_payments = dict(accessories_payments)
             if sale_payment_type != "paid" and sale_payment_amount > 0:
                 all_payments[sale_payment_type] = all_payments.get(sale_payment_type, 0) + sale_payment_amount
@@ -133,7 +127,7 @@ async def handle_sale_from_form(
                     )
                     session.add(payment)
 
-            # === Сохраняем покупку клиента ===
+            # Сохраняем покупку клиента
             if client_id:
                 items_list = [{"item_text": text, "price": sale_price, "serial": serial}]
                 for acc in processed_accessories:
@@ -148,7 +142,7 @@ async def handle_sale_from_form(
                     conn=session
                 )
 
-            # === Удаляем основной товар ===
+            # Удаляем основной товар
             main_item = await session.get(Item, item_id)
             if main_item:
                 deleted = DeletedItem(
@@ -162,7 +156,7 @@ async def handle_sale_from_form(
                 session.add(deleted)
                 await session.delete(main_item)
 
-            # === Сохраняем запись о продаже ===
+            # Сохраняем запись о продаже
             sale = Sale(
                 count=1,
                 cash=all_payments.get('cash', 0),
@@ -179,7 +173,7 @@ async def handle_sale_from_form(
             if own_session:
                 await session.commit()
 
-            # === Отправляем уведомление ===
+            # Отправляем уведомление
             from .notifications import send_sale_notification
             asyncio.create_task(send_sale_notification(
                 item_text=text,
@@ -192,7 +186,6 @@ async def handle_sale_from_form(
                 phone=sale_phone,
                 birth_date=sale_birth_date,
                 bonus=sale_bonus,
-                bonus_reason=sale_bonus_reason,
                 change=sale_change,
                 change_type=sale_change_type,
                 accessories=processed_accessories,
