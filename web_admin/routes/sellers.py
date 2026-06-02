@@ -14,7 +14,11 @@ async def seller_manage(request: Request):
     async_session = get_async_session_factory()
     async with async_session() as session:
         sellers = (await session.execute(select(Seller).order_by(Seller.name))).scalars().all()
-    return templates.TemplateResponse("sellers_manage.html", {"request": request, "sellers": sellers})
+
+    return templates.TemplateResponse("sellers_manage.html", {
+        "request": request,
+        "sellers": sellers
+    })
 
 
 @router.post("/add")
@@ -41,9 +45,6 @@ async def seller_stats(
     target_date: str | None = None,
     days: int = Query(7, ge=1, le=365),
     mode: str = Query("preset"),
-    month: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
 ):
     return templates.TemplateResponse("sellers_stats.html", {
         "request": request,
