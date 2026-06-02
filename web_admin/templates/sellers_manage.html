@@ -3,30 +3,40 @@
 {% block page_title %}Управление продавцами{% endblock %}
 
 {% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Продавцы</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSellerModal">
+        + Добавить продавца
+    </button>
+</div>
+
 <div class="card">
-    <div class="card-header d-flex justify-content-between">
-        <span>Список продавцов</span>
-        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addSellerModal">+ Добавить</button>
-    </div>
-    <div class="card-body">
-        <table class="table">
-            <thead>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
                 <tr>
-                    <th>ID</th>
-                    <th>Имя</th>
-                    <th>Действия</th>
+                    <th style="width: 80px;">ID</th>
+                    <th>Имя продавца</th>
+                    <th class="text-end" style="width: 140px;">Действия</th>
                 </tr>
             </thead>
             <tbody>
-                {% for seller in sellers %}
+                {% for s in sellers %}
                 <tr>
-                    <td>{{ seller.id }}</td>
-                    <td>{{ seller.name }}</td>
-                    <td>
-                        <form action="/admin/sellers/delete/{{ seller.id }}" method="post">
-                            <button type="submit" class="btn btn-sm btn-outline-danger">Удалить</button>
+                    <td>{{ s.id }}</td>
+                    <td><strong>{{ s.name }}</strong></td>
+                    <td class="text-end">
+                        <form action="/admin/sellers/delete/{{ s.id }}" method="post"
+                              onsubmit="return confirm('Удалить продавца «{{ s.name }}»?');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                Удалить
+                            </button>
                         </form>
                     </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" class="text-center py-4 text-muted">Продавцов пока нет</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -34,27 +44,27 @@
     </div>
 </div>
 
-<!-- Модалка добавления продавца -->
-<div class="modal fade" id="addSellerModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <form action="/admin/sellers/add" method="post">
-        <div class="modal-header">
-          <h5 class="modal-title">Добавить продавца</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+<!-- Модальное окно добавления -->
+<div class="modal fade" id="addSellerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="/admin/sellers/add" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title">Добавить продавца</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Имя продавца</label>
+                        <input type="text" name="name" class="form-control" placeholder="Иван Иванов" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Добавить</button>
+                </div>
+            </form>
         </div>
-        <div class="modal-body">
-          <div class="mb-3">
-            <label>Имя продавца</label>
-            <input type="text" name="name" class="form-control" required>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-          <button type="submit" class="btn btn-primary">Добавить</button>
-        </div>
-      </form>
     </div>
-  </div>
 </div>
 {% endblock %}
