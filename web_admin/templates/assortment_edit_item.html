@@ -3,79 +3,69 @@
 {% block page_title %}Редактировать товар #{{ item.id }}{% endblock %}
 
 {% block content %}
-<form method="post" action="/admin/assortment/edit/{{ item.id }}">
-    <div class="card mb-4">
-        <div class="card-header">
-            <strong>Основная информация</strong>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-8">
-                    <div class="mb-3">
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Редактировать товар #{{ item.id }}</h2>
+        <a href="/admin/assortment" class="btn btn-outline-secondary">← Назад к ассортименту</a>
+    </div>
+
+    <form method="post" action="/admin/assortment/edit/{{ item.id }}" id="editItemForm">
+        <!-- Основная информация -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <strong>Основная информация</strong>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
                         <label class="form-label">Текст товара</label>
-                        <textarea name="text" class="form-control" rows="2" required>{{ item.text }}</textarea>
+                        <input type="text" name="text" class="form-control" value="{{ item.text }}" required>
                     </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="mb-3">
+                    <div class="col-md-3 mb-3">
                         <label class="form-label">Серийный номер</label>
                         <input type="text" name="serial" class="form-control" value="{{ item.serial or '' }}">
                     </div>
-                </div>
-            </div>
-
-            <div class="row">
-                <div class="col-md-6">
-                    <div class="mb-3">
+                    <div class="col-md-3 mb-3">
                         <label class="form-label">Категория</label>
-                        <select name="category_id" class="form-select">
+                        <select name="category_id" class="form-select" required>
                             {% for cat in categories %}
-                                <option value="{{ cat.id }}" {% if cat.id == item.category_id %}selected{% endif %}>
-                                    {{ cat.name }}
-                                </option>
+                            <option value="{{ cat.id }}" {% if cat.id == item.category_id %}selected{% endif %}>
+                                {{ cat.name }}
+                            </option>
                             {% endfor %}
                         </select>
                     </div>
                 </div>
-                <div class="col-md-6 d-flex align-items-end">
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" name="is_booked" value="true"
-                               {% if item.is_booked %}checked{% endif %}>
-                        <label class="form-check-label">Забронирован</label>
-                    </div>
-                </div>
             </div>
         </div>
-    </div>
 
-    <!-- Блок продажи -->
-    <div class="card border-danger mb-4">
-        <div class="card-header bg-danger text-white">
-            <strong>Продажа товара</strong>
-        </div>
-        <div class="card-body">
-            <div class="form-check form-switch mb-3">
-                <input class="form-check-input" type="checkbox" name="is_sold" value="true" id="isSoldCheck">
-                <label class="form-check-label text-danger" for="isSoldCheck">
-                    Продать этот товар
-                </label>
+        <!-- Блок продажи -->
+        <div class="card mb-4 border-danger">
+            <div class="card-header bg-danger text-white">
+                <strong>Продажа товара</strong>
             </div>
-
-            <div id="saleFields" style="display: none;">
-                <div class="row g-3">
-                    <div class="col-md-3">
-                        <label class="form-label">Стоимость</label>
-                        <input type="number" step="0.01" name="sale_price" class="form-control">
+            <div class="card-body">
+                <div class="row">
+                    <!-- Стоимость -->
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Стоимость *</label>
+                        <input type="number" step="0.01" name="sale_price" class="form-control" placeholder="0.00" required>
                     </div>
-                    <div class="col-md-3">
+
+                    <!-- П/О -->
+                    <div class="col-md-3 mb-3">
                         <label class="form-label">П/О</label>
-                        <input type="number" step="0.01" name="sale_prepayment" class="form-control">
+                        <input type="number" step="0.01" name="sale_prepayment" class="form-control" placeholder="0.00">
                     </div>
-                    <div class="col-md-3">
+
+                    <!-- Сумма оплаты -->
+                    <div class="col-md-3 mb-3">
                         <label class="form-label">Сумма оплаты</label>
-                        <input type="number" step="0.01" name="sale_payment_amount" class="form-control">
+                        <input type="number" step="0.01" name="sale_payment_amount" class="form-control" placeholder="0.00">
                     </div>
-                    <div class="col-md-3">
+
+                    <!-- Способ оплаты -->
+                    <div class="col-md-3 mb-3">
                         <label class="form-label">Способ оплаты</label>
                         <select name="sale_payment_type" class="form-select">
                             <option value="cash">Наличные</option>
@@ -84,27 +74,167 @@
                             <option value="transfer">Перевод</option>
                             <option value="invoice">По счёту</option>
                             <option value="installment">Рассрочка</option>
+                            <option value="paid">Оплачен</option>
                         </select>
                     </div>
                 </div>
 
-                <!-- Здесь можно расширить поля под клиента, бонус, аксессуары -->
-                <div class="mt-3">
-                    <small class="text-muted">Полная форма продажи с клиентом и аксессуарами доступна в расширенной версии.</small>
+                <!-- Данные клиента -->
+                <div class="row mt-2">
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Площадка</label>
+                        <input type="text" name="sale_platform" class="form-control" placeholder="Avito / Telegram / ...">
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">ФИО</label>
+                        <input type="text" name="sale_full_name" class="form-control">
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Телефон</label>
+                        <input type="text" name="sale_phone" class="form-control" placeholder="+7XXXXXXXXXX">
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Дата рождения</label>
+                        <input type="text" name="sale_birth_date" class="form-control" placeholder="дд.мм.гггг">
+                    </div>
+                </div>
+
+                <!-- Бонус -->
+                <div class="row mt-2">
+                    <div class="col-md-4 mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="applyBonus" name="apply_bonus">
+                            <label class="form-check-label" for="applyBonus">Применить бонус (скидку)</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Сумма бонуса (₽)</label>
+                        <input type="number" step="0.01" name="sale_bonus" class="form-control" id="saleBonus" disabled>
+                    </div>
+                </div>
+
+                <!-- Сдача -->
+                <div class="row mt-2">
+                    <div class="col-md-4 mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="hasChange" name="has_change">
+                            <label class="form-check-label" for="hasChange">Есть сдача</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Сумма сдачи (₽)</label>
+                        <input type="number" step="0.01" name="sale_change" class="form-control" id="saleChange" disabled>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Способ сдачи</label>
+                        <select name="sale_change_type" class="form-select" id="saleChangeType" disabled>
+                            <option value="cash">Наличными</option>
+                            <option value="transfer">Переводом</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <div class="d-flex justify-content-between">
-        <a href="/admin/assortment" class="btn btn-secondary">Отмена</a>
-        <button type="submit" class="btn btn-primary">Сохранить изменения</button>
-    </div>
-</form>
+        <!-- Дополнительные товары / аксессуары -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>Дополнительные товары / аксессуары</strong>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="addAccessoryBtn">
+                    + Добавить позицию
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="accessoriesContainer">
+                    <!-- Динамические строки аксессуаров будут добавляться сюда через JS -->
+                </div>
+                <small class="text-muted">При вводе серийного номера (от 3 символов) происходит автопоиск (если настроено).</small>
+            </div>
+        </div>
+
+        <!-- Скрытые поля -->
+        <input type="hidden" name="is_sold" value="true">
+        <input type="hidden" name="is_booked" value="false">
+
+        <!-- Кнопки -->
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success btn-lg">Сохранить и продать</button>
+            <a href="/admin/assortment" class="btn btn-outline-secondary btn-lg">Отмена</a>
+        </div>
+    </form>
+</div>
 
 <script>
-document.getElementById('isSoldCheck').addEventListener('change', function() {
-    document.getElementById('saleFields').style.display = this.checked ? 'block' : 'none';
+document.addEventListener('DOMContentLoaded', function() {
+    const container = document.getElementById('accessoriesContainer');
+    const addBtn = document.getElementById('addAccessoryBtn');
+
+    let accessoryIndex = 0;
+
+    function createAccessoryRow() {
+        const row = document.createElement('div');
+        row.className = 'row g-2 mb-2 accessory-row';
+        row.innerHTML = `
+            <div class="col-md-4">
+                <input type="text" name="accessory_name" class="form-control" placeholder="Название аксессуара">
+            </div>
+            <div class="col-md-2">
+                <input type="text" name="accessory_serial" class="form-control" placeholder="Серийный номер">
+            </div>
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="accessory_price" class="form-control" placeholder="Цена">
+            </div>
+            <div class="col-md-2">
+                <select name="accessory_payment_type" class="form-select">
+                    <option value="">Способ оплаты</option>
+                    <option value="cash">Наличные</option>
+                    <option value="terminal">Терминал</option>
+                    <option value="qr">QR-код</option>
+                    <option value="transfer">Перевод</option>
+                    <option value="invoice">По счёту</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="button" class="btn btn-outline-danger btn-sm remove-accessory">×</button>
+            </div>
+        `;
+
+        // Удаление строки
+        row.querySelector('.remove-accessory').addEventListener('click', function() {
+            row.remove();
+        });
+
+        container.appendChild(row);
+        accessoryIndex++;
+    }
+
+    // Кнопка добавления новой строки
+    addBtn.addEventListener('click', function() {
+        createAccessoryRow();
+    });
+
+    // Добавляем одну пустую строку по умолчанию
+    createAccessoryRow();
+
+    // Активация/деактивация полей бонуса и сдачи
+    const applyBonus = document.getElementById('applyBonus');
+    const saleBonus = document.getElementById('saleBonus');
+    const hasChange = document.getElementById('hasChange');
+    const saleChange = document.getElementById('saleChange');
+    const saleChangeType = document.getElementById('saleChangeType');
+
+    applyBonus.addEventListener('change', function() {
+        saleBonus.disabled = !this.checked;
+        if (!this.checked) saleBonus.value = '';
+    });
+
+    hasChange.addEventListener('change', function() {
+        saleChange.disabled = !this.checked;
+        saleChangeType.disabled = !this.checked;
+        if (!this.checked) {
+            saleChange.value = '';
+        }
+    });
 });
 </script>
 {% endblock %}
