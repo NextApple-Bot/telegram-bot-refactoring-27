@@ -10,8 +10,27 @@ async def test_add_sale():
     mock_conn = AsyncMock()
     with patch('bot.repositories.stats.get_pool') as mock_pool:
         mock_pool.return_value.acquire.return_value.__aenter__.return_value = mock_conn
-        await StatsRepository.add_sale(item_id=1, count=1, cash=10000)
+        await StatsRepository.add_sale(
+            item_id=1, count=1, cash=10000, is_accessory=False, message_id=999
+        )
+    mock_conn.execute.assert_called_once()
 
+
+@pytest.mark.asyncio
+async def test_add_preorder():
+    mock_conn = AsyncMock()
+    with patch('bot.repositories.stats.get_pool') as mock_pool:
+        mock_pool.return_value.acquire.return_value.__aenter__.return_value = mock_conn
+        await StatsRepository.add_preorder(cash=5000)
+    mock_conn.execute.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_add_booking():
+    mock_conn = AsyncMock()
+    with patch('bot.repositories.stats.get_pool') as mock_pool:
+        mock_pool.return_value.acquire.return_value.__aenter__.return_value = mock_conn
+        await StatsRepository.add_booking(item_id=1, total_amount=20000)
     mock_conn.execute.assert_called_once()
 
 
@@ -19,11 +38,10 @@ async def test_add_sale():
 async def test_get_today_stats():
     mock_conn = AsyncMock()
     mock_conn.fetchrow.side_effect = [
-        {'cash': 1000, 'terminal': 200, 'qr': 300, 'transfer': 0, 'invoice': 0, 'installment': 0, 'sales_count': 3},
+        {'cash': 1000, 'terminal': 2000, 'qr': 3000, 'transfer': 0, 'invoice': 0, 'installment': 0, 'sales_count': 3},
         {'cash': 500, 'terminal': 100, 'qr': 0, 'transfer': 0, 'invoice': 0, 'installment': 0, 'preorders_count': 1},
         {'total': 40000, 'bookings_count': 2},
     ]
-
     with patch('bot.repositories.stats.get_pool') as mock_pool:
         mock_pool.return_value.acquire.return_value.__aenter__.return_value = mock_conn
         stats = await StatsRepository.get_today_stats()
