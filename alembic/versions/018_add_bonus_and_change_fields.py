@@ -3,12 +3,10 @@
 Revision ID: 018
 Revises: 017
 Create Date: 2026-05-11 10:00:00.000000
-
 """
 from alembic import op
 import sqlalchemy as sa
 
-# revision identifiers, used by Alembic.
 revision = '018'
 down_revision = '017'
 branch_labels = None
@@ -28,11 +26,13 @@ def upgrade() -> None:
     op.add_column('items', sa.Column('sale_phone', sa.String(), nullable=True))
     op.add_column('items', sa.Column('is_sold', sa.Boolean(), nullable=False, server_default='false'))
 
-    # Поля для брони (дополнительные)
+    # Поля для брони
     op.add_column('items', sa.Column('booking_bonus', sa.Numeric(12,2), nullable=True))
-    # booking_price, booking_prepayment уже были добавлены в миграции 003
+    op.add_column('items', sa.Column('booking_bonus_reason', sa.String(), nullable=True))
 
 def downgrade() -> None:
+    op.drop_column('items', 'booking_bonus_reason')
+    op.drop_column('items', 'booking_bonus')
     op.drop_column('items', 'is_sold')
     op.drop_column('items', 'sale_phone')
     op.drop_column('items', 'sale_full_name')
@@ -44,4 +44,3 @@ def downgrade() -> None:
     op.drop_column('items', 'sale_payment_amount')
     op.drop_column('items', 'sale_prepayment')
     op.drop_column('items', 'sale_price')
-    op.drop_column('items', 'booking_bonus')
