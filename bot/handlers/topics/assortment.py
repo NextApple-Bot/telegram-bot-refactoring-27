@@ -79,7 +79,7 @@ async def handle_assortment_upload(message: Message, state: FSMContext):
     else:
         content = message.text or message.caption
         if content:
-            content = content.strip()          # ← исправление по твоему замечанию
+            content = content.strip()
 
         if not content:
             await send_and_clean(
@@ -96,7 +96,7 @@ async def handle_assortment_upload(message: Message, state: FSMContext):
         await send_and_clean(message.bot, message.chat.id, "❌ Получен пустой ассортимент.", delete_after=60)
         return
 
-    # Парсинг (полностью из v26)
+    # Парсинг
     categories = sort_assortment_to_categories(content)
 
     if not categories:
