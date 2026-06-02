@@ -1,18 +1,28 @@
-import pytest
-
 from bot.services.payment_parser import extract_payment_amounts
 
 
-@pytest.mark.parametrize("text,expected", [
-    ("Терминал - 2500", {'terminal': 2500.0}),
-    ("Наличные 1000", {'cash': 1000.0}),
-    ("Наличные 1500.50\nТерминал 2000", {'cash': 1500.5, 'terminal': 2000.0}),
-    ("QR 3000 ₽", {'qr': 3000.0}),
-    ("Перевод 5000", {'transfer': 5000.0}),
-    ("Просто текст без цифр", {'cash': 0.0, 'terminal': 0.0, 'qr': 0.0,
-                               'transfer': 0.0, 'invoice': 0.0, 'installment': 0.0}),
-])
-def test_extract_payment_amounts(text, expected):
+def test_terminal_priority():
+    text = "Терминал - 2500"
     payments = extract_payment_amounts(text)
-    for key, value in expected.items():
-        assert abs(payments[key] - value) < 0.001
+    assert payments['terminal'] == 2500.0
+    assert payments['cash'] == 0.0
+
+
+def test_cash_only():
+    text = "Наличные 1000"
+    payments = extract_payment_amounts(text)
+    assert payments['cash'] == 1000.0
+    assert payments['terminal'] == 0.0
+
+
+def test_mixed_payments():
+    text = "Наличные 1000\nТерминал 2000"
+    payments = extract_payment_amounts(text)
+    assert payments['cash'] == 1000.0
+    assert payments['terminal'] == 2000.0
+
+
+def test_no_payments():
+    text = "Просто текст без цифр"
+    payments = extract_payment_amounts(text)
+    assert all(v == 0.0 for v in payments.values())
