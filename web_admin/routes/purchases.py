@@ -1,49 +1,23 @@
-{% extends "base.html" %}
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import RedirectResponse
+from sqlalchemy import func, select
 
-{% block page_title %}Покупки{% endblock %}
+from bot.db import get_async_session_factory
+from bot.models import Client, Purchase
+from web_admin.templates import templates
 
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <form method="get" class="d-flex">
-        <input type="text" name="client_search" class="form-control me-2" placeholder="Поиск по клиенту" value="{{ client_search }}">
-        <button class="btn btn-primary" type="submit">Найти</button>
-    </form>
-</div>
+router = APIRouter()
 
-<div class="card">
-    <div class="table-responsive">
-        <table class="table table-hover">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Клиент</th>
-                    <th>Дата</th>
-                    <th>Сумма</th>
-                    <th>Тип</th>
-                    <th>Действия</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for p in purchases %}
-                <tr>
-                    <td>{{ p.id }}</td>
-                    <td>{{ p.client_name or '—' }}</td>
-                    <td>{{ p.created_at|format_date }}</td>
-                    <td>{{ "{:,.0f}".format(p.total_amount or 0) }} ₽</td>
-                    <td>{{ p.purchase_type }}</td>
-                    <td>
-                        <form action="/admin/purchases/delete/{{ p.id }}" method="post">
-                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить покупку?')">Удалить</button>
-                        </form>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="6" class="text-center text-muted">Покупок не найдено</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endblock %}
+
+@router.get("/")
+async def list_purchases(
+    request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=10, le=200),
+    client_search: str | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    payment_type: str = Query("all"),
+    purchase_type: str = Query("all"),
+    sort_by: str = Query("id", pattern="^(id|client_name|created_at|total_amount|purchase_type)$"),
+   
