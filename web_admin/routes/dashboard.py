@@ -19,7 +19,7 @@ router = APIRouter()
 
 @router.get("/")
 async def dashboard(request: Request, target_date: str | None = None):
-    """Главная страница дашборда с реальными метриками."""
+    """Главная страница дашборда."""
     try:
         today = date.today() if not target_date else datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
@@ -28,12 +28,10 @@ async def dashboard(request: Request, target_date: str | None = None):
     async_session = get_async_session_factory()
     async with async_session() as session:
         try:
-            # === Продажи за день ===
             sales_count = (await session.execute(
                 select(func.count(Sale.id)).where(func.date(Sale.sold_at) == today)
             )).scalar() or 0
 
-            # === Платежи ===
             payment_rows = (await session.execute(
                 select(
                     func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'cash'), 0).label('cash'),
@@ -56,7 +54,6 @@ async def dashboard(request: Request, target_date: str | None = None):
             total_revenue = sum(payments.values())
             plan_amount = 600000
 
-            # === Предзаказы и брони ===
             preorders_count = (await session.execute(
                 select(func.count(Preorder.id)).where(func.date(Preorder.created_at) == today)
             )).scalar() or 0
@@ -65,32 +62,23 @@ async def dashboard(request: Request, target_date: str | None = None):
                 select(func.count(Booking.id)).where(func.date(Booking.booked_at) == today)
             )).scalar() or 0
 
-            # === Графики за 7 дней ===
-            dates_labels: list[str] = []
-            sales_chart: list[int] = []
-            revenue_chart: list[float] = []
-
+            # Графики
+            dates_labels, sales_chart, revenue_chart = [], [], []
             for i in range(6, -1, -1):
                 d = today - timedelta(days=i)
                 dates_labels.append(d.strftime("%d.%m"))
-
-                cnt = (await session.execute(
+                sales_chart.append((await session.execute(
                     select(func.count(Sale.id)).where(func.date(Sale.sold_at) == d)
-                )).scalar() or 0
-                sales_chart.append(cnt)
-
-                rev = (await session.execute(
+                )).scalar() or 0)
+                revenue_chart.append(float((await session.execute(
                     select(func.coalesce(func.sum(DailyPayment.amount), 0)).where(func.date(DailyPayment.created_at) == d)
-                )).scalar() or 0
-                revenue_chart.append(float(rev))
+                )).scalar() or 0))
 
-            # === Продавцы дня ===
             sellers_rows = (await session.execute(
                 select(Seller.id, Seller.name, SellerDay.id.isnot(None).label('present'))
                 .outerjoin(SellerDay, (Seller.id == SellerDay.seller_id) & (SellerDay.date == today))
                 .order_by(Seller.name)
             )).all()
-
             sellers = [{"id": r.id, "name": r.name, "present": bool(r.present)} for r in sellers_rows]
 
             return templates.TemplateResponse("dashboard.html", {
@@ -99,10 +87,6 @@ async def dashboard(request: Request, target_date: str | None = None):
                 "target_date_iso": today.isoformat(),
                 "sales_today": sales_count,
                 "revenue_today": total_revenue,
-                "sales_change_yesterday": 0,
-                "sales_change_week": 0,
-                "revenue_change_yesterday": 0,
-                "revenue_change_week": 0,
                 "payments": payments,
                 "total_revenue": total_revenue,
                 "plan_amount": plan_amount,
@@ -115,19 +99,15 @@ async def dashboard(request: Request, target_date: str | None = None):
                 "chart_dates": dates_labels,
                 "chart_sales": sales_chart,
                 "chart_revenue": revenue_chart,
-                "top_labels": [],
-                "top_counts": [],
-                "days": 7,
             })
 
         except SQLAlchemyError as e:
-            logger.error(f"Ошибка при загрузке дашборда: {e}")
+            logger.error(f"Ошибка загрузки дашборда: {e}")
             raise
 
 
 @router.post("/toggle_seller_day")
 async def toggle_seller_day(seller_id: int = Form(...), target_date: str = Form(...)):
-    """Переключение присутствия продавца на дашборде."""
     try:
         date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
@@ -140,27 +120,20 @@ async def toggle_seller_day(seller_id: int = Form(...), target_date: str = Form(
                 existing = (await session.execute(
                     select(SellerDay).where(SellerDay.seller_id == seller_id, SellerDay.date == date_obj)
                 )).scalar_one_or_none()
-
                 if existing:
                     await session.delete(existing)
                     status = "removed"
                 else:
                     session.add(SellerDay(seller_id=seller_id, date=date_obj))
                     status = "added"
-
             return {"success": True, "status": status}
         except SQLAlchemyError as e:
             logger.error(f"Ошибка toggle_seller_day: {e}")
-            return JSONResponse({"success": False, "error": "Ошибка базы данных"}, status_code=500)
+            return JSONResponse({"success": False, "error": "Ошибка БД"}, status_code=500)
 
 
 @router.post("/update_stats")
 async def update_stats(request: Request):
-    """
-    Ручное редактирование статистики за день.
-    Полностью без хака с Item(id=0) и __SYSTEM__.
-    Использует отдельные delete() через SQLAlchemy.
-    """
     try:
         data = await request.json()
     except Exception:
@@ -173,29 +146,4 @@ async def update_stats(request: Request):
     try:
         target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
     except ValueError:
-        return JSONResponse({"success": False, "error": "Неверный формат даты"}, status_code=400)
-
-    async_session = get_async_session_factory()
-    async with async_session() as session:
-        try:
-            async with session.begin():
-                # === Очистка старых данных (через SQLAlchemy delete) ===
-                await session.execute(
-                    delete(DailyPayment).where(func.date(DailyPayment.created_at) == target_date)
-                )
-                await session.execute(
-                    delete(Sale).where(func.date(Sale.sold_at) == target_date)
-                )
-                await session.execute(
-                    delete(Preorder).where(func.date(Preorder.created_at) == target_date)
-                )
-                await session.execute(
-                    delete(Booking).where(func.date(Booking.booked_at) == target_date)
-                )
-
-                # Платежи
-                for pt in ['cash', 'terminal', 'qr', 'transfer', 'invoice', 'installment']:
-                    amount = float(data.get(pt, 0) or 0)
-                    if amount > 0:
-                        session.add(DailyPayment(
-                            type='
+        return JSONResponse({"success": False
