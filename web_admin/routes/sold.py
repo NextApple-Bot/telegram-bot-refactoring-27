@@ -1,48 +1,56 @@
-{% extends "base.html" %}
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import RedirectResponse
+from sqlalchemy import func, select
 
-{% block page_title %}Проданные товары{% endblock %}
+from bot.db import get_async_session_factory
+from bot.models import DeletedItem
+from bot.services.assortment import AssortmentService
+from web_admin.templates import templates
 
-{% block content %}
-<div class="alert alert-warning">
-    Проданные товары хранятся в системе 7 дней после продажи.
-</div>
+router = APIRouter()
 
-<div class="card">
-    <div class="table-responsive">
-        <table class="table table-hover">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Товар</th>
-                    <th>Серийный номер</th>
-                    <th>Категория</th>
-                    <th>Дата продажи</th>
-                    <th>Действие</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in items %}
-                <tr>
-                    <td>{{ item.id }}</td>
-                    <td>{{ item.text }}</td>
-                    <td><code>{{ item.serial or '—' }}</code></td>
-                    <td>{{ item.category_id }}</td>
-                    <td>{{ item.deleted_at|format_date }}</td>
-                    <td>
-                        <form action="/admin/sold/restore/{{ item.id }}" method="post">
-                            <button type="submit" class="btn btn-sm btn-success">
-                                Восстановить
-                            </button>
-                        </form>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="6" class="text-center text-muted py-4">Проданных товаров нет</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endblock %}
+
+@router.get("/")
+async def list_sold(
+    request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=10, le=200),
+):
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        offset = (page - 1) * per_page
+        count_q = select(func.count()).select_from(DeletedItem).where(DeletedItem.reason == 'sale_from_admin')
+        total = (await session.execute(count_q)).scalar()
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+
+        q = select(DeletedItem)\
+            .where(DeletedItem.reason == 'sale_from_admin')\
+            .order_by(DeletedItem.deleted_at.desc())\
+            .limit(per_page).offset(offset)
+        items = (await session.execute(q)).scalars().all()
+
+    return templates.TemplateResponse("sold.html", {
+        "request": request,
+        "items": items,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "total_pages": total_pages,
+    })
+
+
+@router.post("/restore/{item_id}")
+async def restore_sold(item_id: int):
+    async_session = get_async_session_factory()
+    async with async_session() as session, session.begin():
+        deleted = await session.get(DeletedItem, item_id)
+        if deleted:
+            session.add(Item(
+                text=deleted.text,
+                serial=deleted.serial,
+                category_id=deleted.category_id,
+                is_booked=False
+            ))
+            await session.delete(deleted)
+    await AssortmentService.invalidate_cache()
+    return RedirectResponse(url="/admin/sold", status_code=303)
