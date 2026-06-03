@@ -27,8 +27,8 @@ app.include_router(debug.router, prefix="/admin", tags=["debug"])
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Разрешаем доступ к логину
-    if path.startswith("/auth/login"):
+    # Разрешаем доступ к странице логина
+    if path == "/auth/login" or path.startswith("/auth/login"):
         return await call_next(request)
 
     # Если не авторизован — редирект на полный путь
