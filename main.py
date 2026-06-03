@@ -15,7 +15,7 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
 
 # ============================================================
-# Sentry (только если задан DSN, иначе не загружаем)
+# Sentry
 # ============================================================
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 if SENTRY_DSN:
@@ -32,41 +32,13 @@ if SENTRY_DSN:
     logging.info("✅ Sentry инициализирован")
 
 # ============================================================
-# Настройка логирования (JSON или текст)
+# Логирование
 # ============================================================
-log_format = os.getenv("LOG_FORMAT", "text").lower()
-if log_format == "json":
-    from pythonjsonlogger import jsonlogger
-    handler = logging.StreamHandler()
-    formatter = jsonlogger.JsonFormatter('%(asctime)s %(name)s %(levelname)s %(message)s')
-    handler.setFormatter(formatter)
-    logging.getLogger().handlers = [handler]
-    logging.getLogger().setLevel(logging.INFO)
-else:
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# Мониторинг памяти (опционально, для отладки)
-# ============================================================
-try:
-    import psutil
-    MEMORY_LOGGING = True
-except ImportError:
-    MEMORY_LOGGING = False
-    logger.warning("⚠️ psutil не установлен, мониторинг памяти отключён")
-
-
-def log_memory():
-    if MEMORY_LOGGING:
-        process = psutil.Process()
-        mem_mb = process.memory_info().rss / 1024 / 1024
-        logger.debug(f"📊 Память процесса: {mem_mb:.1f} MB")
-
-
-# ============================================================
-# Основной класс приложения
+# Основной класс
 # ============================================================
 class Application:
     def __init__(self):
@@ -121,7 +93,7 @@ class Application:
 
     async def _setup_webhook(self, max_retries=5, base_delay=3):
         if not self.config.RENDER_URL:
-            logger.error("❌ RENDER_URL не задан — вебхук не будет установлен.")
+            logger.error("❌ RENDER_URL не задан")
             return
         webhook_url = f"{self.config.RENDER_URL}/webhook"
         for attempt in range(1, max_retries + 1):
@@ -129,150 +101,82 @@ class Application:
                 await self.bot.delete_webhook(drop_pending_updates=True)
                 allowed_updates = self.dp.resolve_used_update_types()
                 await self.bot.set_webhook(url=webhook_url, allowed_updates=allowed_updates)
-                logger.info(f"✅ Вебхук установлен на {webhook_url} (попытка {attempt})")
+                logger.info(f"✅ Вебхук установлен на {webhook_url}")
                 return
             except Exception as e:
-                logger.warning(f"⚠️ Попытка {attempt}/{max_retries} не удалась: {e}")
+                logger.warning(f"⚠️ Попытка {attempt} не удалась: {e}")
                 if attempt < max_retries:
                     await asyncio.sleep(base_delay * attempt)
-                else:
-                    logger.error(f"❌ Не удалось установить вебхук после {max_retries} попыток")
 
     async def shutdown(self):
         logger.info("🛑 Завершение работы...")
         if self.bot:
-            try:
-                await self.bot.delete_webhook()
-                await self.bot.session.close()
-                logger.info("✅ Бот закрыт")
-            except Exception as e:
-                logger.error(f"Ошибка при закрытии бота: {e}")
+            await self.bot.session.close()
         if self._redis_client:
-            try:
-                await self._redis_client.aclose()
-                logger.info("✅ Redis-клиент закрыт")
-            except Exception as e:
-                logger.debug(f"Redis закрыт (нормально при shutdown): {e}")
-        try:
-            from bot.db import dispose_engine
-            await dispose_engine()
-            logger.info("✅ Пул БД закрыт")
-        except Exception as e:
-            logger.warning(f"⚠️ Ошибка при закрытии БД (не критично): {e}")
+            await self._redis_client.aclose()
 
     async def webhook(self, request: Request) -> Response:
         if not self.bot or not self.dp:
             return Response(status_code=503)
         try:
             from aiogram.types import Update
-            update_data = await request.json()
-            update = Update(**update_data)
+            update = Update(**(await request.json()))
             await self.dp.feed_update(self.bot, update)
             return Response(status_code=200)
         except Exception:
-            logger.exception("❌ Ошибка обработки вебхука")
+            logger.exception("❌ Ошибка вебхука")
             return Response(status_code=500)
 
     async def health(self, _: Request) -> Response:
-        from bot.db import check_db_health, check_redis_health
-        db_ok = await check_db_health()
-        redis_ok = await check_redis_health()
-        if db_ok and redis_ok:
-            return PlainTextResponse("OK")
-        status = {}
-        if not db_ok:
-            status["database"] = "unhealthy"
-        if not redis_ok:
-            status["redis"] = "unhealthy"
-        return JSONResponse(status, status_code=503)
-
-    async def health_detailed(self, _: Request) -> Response:
-        from bot.db import check_db_health, check_redis_health
-        start = time.monotonic()
-        db_ok = await check_db_health()
-        db_time = time.monotonic() - start
-        start = time.monotonic()
-        redis_ok = await check_redis_health()
-        redis_time = time.monotonic() - start
-        overall = db_ok and redis_ok
-        return JSONResponse({
-            "status": "healthy" if overall else "unhealthy",
-            "database": {"status": "up" if db_ok else "down", "response_time_ms": round(db_time*1000, 2) if db_ok else None},
-            "redis": {"status": "up" if redis_ok else "down", "response_time_ms": round(redis_time*1000, 2) if redis_ok else None},
-        }, status_code=200 if overall else 503)
+        return PlainTextResponse("OK")
 
 
 # ============================================================
-# Сборка Starlette приложения с админкой
+# Starlette + Админка
 # ============================================================
 def create_starlette_app(app_instance):
     routes = [
         Route("/webhook", app_instance.webhook, methods=["POST"]),
         Route("/health", app_instance.health, methods=["GET"]),
-        Route("/health/detailed", app_instance.health_detailed, methods=["GET"]),
     ]
-    starlette_app = Starlette(routes=routes, on_startup=[lambda: None], on_shutdown=[lambda: None])
-
-    Instrumentator().instrument(starlette_app).expose(starlette_app, endpoint="/metrics")
-
-    if SENTRY_DSN:
-        starlette_app = SentryAsgiMiddleware(starlette_app)
+    starlette_app = Starlette(routes=routes)
 
     if app_instance.config.SECRET_KEY:
         starlette_app.add_middleware(SessionMiddleware, secret_key=app_instance.config.SECRET_KEY)
         logger.info("✅ SessionMiddleware добавлена")
-    else:
-        logger.warning("⚠️ SECRET_KEY не задан")
 
-    if app_instance.config.ADMIN_PASSWORD and app_instance.config.SECRET_KEY:
-        try:
-            from web_admin.main import app as admin_app
-            starlette_app.mount("/admin", admin_app)
-            logger.info("✅ Веб-админка смонтирована на /admin")
-        except Exception as e:
-            logger.error(f"❌ Не удалось смонтировать веб-админку: {e}")
-    else:
-        logger.info("ℹ️ Веб-админка не настроена")
+    # Монтируем админку
+    try:
+        from web_admin.main import app as admin_app
+        starlette_app.mount("/admin", admin_app)
+        logger.info("✅ Веб-админка смонтирована на /admin")
+    except Exception as e:
+        logger.error(f"❌ Не удалось смонтировать веб-админку: {e}")
 
     return starlette_app
 
 
 # ============================================================
-# Точка входа
+# Запуск
 # ============================================================
 async def main_entry():
     app = Application()
-    try:
-        await app.initialize()
-    except Exception:
-        logger.critical("Не удалось инициализировать приложение.\n" + traceback.format_exc())
-        sys.exit(1)
+    await app.initialize()
 
     starlette_app = create_starlette_app(app)
 
-    port = int(os.getenv("PORT", "8000"))
+    port = int(os.getenv("PORT", "10000"))
     logger.info(f"🚀 Запуск сервера на порту {port}")
 
-    # Запускаем uvicorn с минимальными настройками
     config = uvicorn.Config(
         starlette_app,
         host="0.0.0.0",
         port=port,
         log_level="info",
-        timeout_graceful_shutdown=30,
-        timeout_keep_alive=30,
-        # Ограничиваем количество процессов – для экономии памяти
         workers=1,
-        limit_concurrency=100,
     )
     server = uvicorn.Server(config)
     await server.serve()
-
-    # Если uvicorn остановился (по сигналу), то блокируем завершение main_entry,
-    # чтобы процесс не завершился и Render не перезапускал контейнер.
-    # Это поможет избежать ложных перезапусков из-за временных проблем.
-    logger.warning("⚠️ Uvicorn остановлен, но процесс остаётся в ожидании...")
-    await asyncio.Future()  # бесконечное ожидание
 
 
 if __name__ == "__main__":
