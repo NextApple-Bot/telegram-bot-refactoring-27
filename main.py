@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import sys
-import time
 import traceback
 
 import uvicorn
@@ -14,32 +13,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
 
-# ============================================================
-# Sentry
-# ============================================================
-SENTRY_DSN = os.getenv("SENTRY_DSN")
-if SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
-    from sentry_sdk.integrations.fastapi import FastApiIntegration
-    from sentry_sdk.integrations.starlette import StarletteIntegration
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        traces_sample_rate=1.0,
-        environment=os.getenv("ENVIRONMENT", "production"),
-        integrations=[StarletteIntegration(), FastApiIntegration()],
-    )
-    logging.info("✅ Sentry инициализирован")
-
-# ============================================================
-# Логирование
-# ============================================================
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# Основной класс
-# ============================================================
+
 class Application:
     def __init__(self):
         self.bot = None
@@ -69,7 +46,6 @@ class Application:
             logger.info("✅ RedisStorage для FSM")
         else:
             storage = MemoryStorage()
-            logger.warning("⚠️ MemoryStorage (без Redis)")
 
         self.dp = Dispatcher(storage=storage)
         self.dp.update.middleware(ErrorHandlerMiddleware())
@@ -91,29 +67,17 @@ class Application:
         await self._setup_webhook()
         return self
 
-    async def _setup_webhook(self, max_retries=5, base_delay=3):
+    async def _setup_webhook(self):
         if not self.config.RENDER_URL:
-            logger.error("❌ RENDER_URL не задан")
             return
         webhook_url = f"{self.config.RENDER_URL}/webhook"
-        for attempt in range(1, max_retries + 1):
-            try:
-                await self.bot.delete_webhook(drop_pending_updates=True)
-                allowed_updates = self.dp.resolve_used_update_types()
-                await self.bot.set_webhook(url=webhook_url, allowed_updates=allowed_updates)
-                logger.info(f"✅ Вебхук установлен на {webhook_url}")
-                return
-            except Exception as e:
-                logger.warning(f"⚠️ Попытка {attempt} не удалась: {e}")
-                if attempt < max_retries:
-                    await asyncio.sleep(base_delay * attempt)
-
-    async def shutdown(self):
-        logger.info("🛑 Завершение работы...")
-        if self.bot:
-            await self.bot.session.close()
-        if self._redis_client:
-            await self._redis_client.aclose()
+        try:
+            await self.bot.delete_webhook(drop_pending_updates=True)
+            allowed_updates = self.dp.resolve_used_update_types()
+            await self.bot.set_webhook(url=webhook_url, allowed_updates=allowed_updates)
+            logger.info(f"✅ Вебхук установлен на {webhook_url}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка установки вебхука: {e}")
 
     async def webhook(self, request: Request) -> Response:
         if not self.bot or not self.dp:
@@ -156,9 +120,6 @@ def create_starlette_app(app_instance):
     return starlette_app
 
 
-# ============================================================
-# Запуск
-# ============================================================
 async def main_entry():
     app = Application()
     await app.initialize()
