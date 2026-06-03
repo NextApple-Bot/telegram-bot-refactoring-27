@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from bot.db import get_async_session_factory
@@ -28,10 +28,12 @@ async def dashboard(request: Request, target_date: str | None = None):
     async_session = get_async_session_factory()
     async with async_session() as session:
         try:
+            # Продажи
             sales_count = (await session.execute(
                 select(func.count(Sale.id)).where(func.date(Sale.sold_at) == today)
             )).scalar() or 0
 
+            # Платежи
             payment_rows = (await session.execute(
                 select(
                     func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == 'cash'), 0).label('cash'),
@@ -54,6 +56,7 @@ async def dashboard(request: Request, target_date: str | None = None):
             total_revenue = sum(payments.values())
             plan_amount = 600000
 
+            # Предзаказы и брони
             preorders_count = (await session.execute(
                 select(func.count(Preorder.id)).where(func.date(Preorder.created_at) == today)
             )).scalar() or 0
@@ -62,8 +65,10 @@ async def dashboard(request: Request, target_date: str | None = None):
                 select(func.count(Booking.id)).where(func.date(Booking.booked_at) == today)
             )).scalar() or 0
 
-            # Графики
-            dates_labels, sales_chart, revenue_chart = [], [], []
+            # Графики за 7 дней
+            dates_labels = []
+            sales_chart = []
+            revenue_chart = []
             for i in range(6, -1, -1):
                 d = today - timedelta(days=i)
                 dates_labels.append(d.strftime("%d.%m"))
@@ -74,6 +79,7 @@ async def dashboard(request: Request, target_date: str | None = None):
                     select(func.coalesce(func.sum(DailyPayment.amount), 0)).where(func.date(DailyPayment.created_at) == d)
                 )).scalar() or 0))
 
+            # Продавцы дня
             sellers_rows = (await session.execute(
                 select(Seller.id, Seller.name, SellerDay.id.isnot(None).label('present'))
                 .outerjoin(SellerDay, (Seller.id == SellerDay.seller_id) & (SellerDay.date == today))
@@ -146,4 +152,39 @@ async def update_stats(request: Request):
     try:
         target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
     except ValueError:
-        return JSONResponse({"success": False
+        return JSONResponse({"success": False, "error": "Неверный формат даты"}, status_code=400)
+
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        try:
+            async with session.begin():
+                await session.execute(delete(DailyPayment).where(func.date(DailyPayment.created_at) == target_date))
+                await session.execute(delete(Sale).where(func.date(Sale.sold_at) == target_date))
+                await session.execute(delete(Preorder).where(func.date(Preorder.created_at) == target_date))
+                await session.execute(delete(Booking).where(func.date(Booking.booked_at) == target_date))
+
+                for pt in ['cash', 'terminal', 'qr', 'transfer', 'invoice', 'installment']:
+                    amount = float(data.get(pt, 0) or 0)
+                    if amount > 0:
+                        session.add(DailyPayment(type='sale', payment_type=pt, amount=amount, created_at=target_date))
+
+                for _ in range(int(data.get("sales_count", 0) or 0)):
+                    session.add(Sale(sold_at=target_date))
+
+                for _ in range(int(data.get("preorders_count", 0) or 0)):
+                    session.add(Preorder(created_at=target_date))
+
+                for _ in range(int(data.get("bookings_count", 0) or 0)):
+                    session.add(Booking(item_id=None, booked_at=target_date))
+
+            logger.info(f"✅ Статистика за {target_date} обновлена")
+            return JSONResponse({"success": True})
+
+        except SQLAlchemyError as e:
+            logger.error(f"Ошибка update_stats: {e}")
+            return JSONResponse({"success": False, "error": "Ошибка базы данных"}, status_code=500)
+
+
+@router.get("/top_models_data")
+async def top_models_data(request: Request, days: int = 7):
+    return JSONResponse({"labels": [], "counts": []})
