@@ -77,7 +77,7 @@ class Application:
             await self.bot.set_webhook(url=webhook_url, allowed_updates=allowed_updates)
             logger.info(f"✅ Вебхук установлен на {webhook_url}")
         except Exception as e:
-            logger.error(f"❌ Ошибка установки вебхука: {e}")
+            logger.error(f"❌ Ошибка вебхука: {e}")
 
     async def webhook(self, request: Request) -> Response:
         if not self.bot or not self.dp:
