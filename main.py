@@ -1,144 +1,170 @@
-import asyncio
 import logging
 import os
-import sys
-import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Any
 
-import uvicorn
-from prometheus_fastapi_instrumentator import Instrumentator
-from sqlalchemy import text
-from starlette.applications import Starlette
+from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.types import Update
+from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, Response
-from starlette.routing import Route
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from bot import config
+from bot.background import start_background_tasks
+from bot.db import dispose_engine, get_async_session_factory, init_db
+from bot.handlers.topics import topics_router
+from bot.middleware.error_handler import ErrorHandlerMiddleware
+from bot.webhook_utils import check_and_set_webhook
+
+from web_admin.main import app as admin_app
+
 logger = logging.getLogger(__name__)
 
 
-class Application:
-    def __init__(self):
-        self.bot = None
-        self.dp = None
-        self.config = None
-        self._redis_client = None
+# ============================================================
+# FSM Storage
+# ============================================================
 
-    async def initialize(self):
-        import redis.asyncio as redis
-        from aiogram import Bot, Dispatcher
-        from aiogram.fsm.storage.memory import MemoryStorage
-        from aiogram.fsm.storage.redis import RedisStorage
-
-        from bot.config import config as bot_config
-        from bot.db import get_async_session_factory
-        from bot.middleware.error_handler import ErrorHandlerMiddleware
-
-        self.config = bot_config
-        logger.info("✅ Конфигурация загружена")
-
-        self.bot = Bot(token=bot_config.BOT_TOKEN)
-        logger.info("✅ Экземпляр Bot создан")
-
-        if bot_config.REDIS_URL:
-            self._redis_client = redis.from_url(bot_config.REDIS_URL, decode_responses=True)
-            storage = RedisStorage(redis=self._redis_client)
-            logger.info("✅ RedisStorage для FSM")
-        else:
-            storage = MemoryStorage()
-
-        self.dp = Dispatcher(storage=storage)
-        self.dp.update.middleware(ErrorHandlerMiddleware())
-        logger.info("✅ Диспетчер создан")
-
-        from bot.handlers import router
-        self.dp.include_router(router)
-        logger.info("✅ Роутер подключён")
-
-        async_session = get_async_session_factory()
-        async with async_session() as session:
-            await session.execute(text("SELECT 1"))
-        logger.info("✅ Подключение к БД подтверждено")
-
-        from bot.background import start_background_tasks
-        asyncio.create_task(start_background_tasks(self.bot, self.dp))
-        logger.info("✅ Фоновые задачи запущены")
-
-        await self._setup_webhook()
-        return self
-
-    async def _setup_webhook(self):
-        if not self.config.RENDER_URL:
-            return
-        webhook_url = f"{self.config.RENDER_URL}/webhook"
-        try:
-            await self.bot.delete_webhook(drop_pending_updates=True)
-            allowed_updates = self.dp.resolve_used_update_types()
-            await self.bot.set_webhook(url=webhook_url, allowed_updates=allowed_updates)
-            logger.info(f"✅ Вебхук установлен на {webhook_url}")
-        except Exception as e:
-            logger.error(f"❌ Ошибка вебхука: {e}")
-
-    async def webhook(self, request: Request) -> Response:
-        if not self.bot or not self.dp:
-            return Response(status_code=503)
-        try:
-            from aiogram.types import Update
-            update = Update(**(await request.json()))
-            await self.dp.feed_update(self.bot, update)
-            return Response(status_code=200)
-        except Exception:
-            logger.exception("❌ Ошибка вебхука")
-            return Response(status_code=500)
-
-    async def health(self, _: Request) -> Response:
-        return PlainTextResponse("OK")
+def get_storage():
+    """Выбор хранилища FSM в зависимости от режима масштабирования."""
+    if os.getenv("SCALING_ENABLED", "false").lower() == "true" and config.REDIS_URL:
+        logger.info("🔄 Используется RedisStorage для FSM (SCALING_ENABLED=true)")
+        return RedisStorage.from_url(config.REDIS_URL)
+    logger.info("📦 Используется MemoryStorage для FSM")
+    return MemoryStorage()
 
 
 # ============================================================
-# Starlette + Админка
+# Bot и Dispatcher
 # ============================================================
-def create_starlette_app(app_instance):
-    routes = [
-        Route("/webhook", app_instance.webhook, methods=["POST"]),
-        Route("/health", app_instance.health, methods=["GET"]),
-    ]
-    starlette_app = Starlette(routes=routes)
 
-    if app_instance.config.SECRET_KEY:
-        starlette_app.add_middleware(SessionMiddleware, secret_key=app_instance.config.SECRET_KEY)
-        logger.info("✅ SessionMiddleware добавлена")
+bot = Bot(token=config.BOT_TOKEN)
+storage = get_storage()
+dp = Dispatcher(storage=storage)
 
-    # Монтируем админку
+# Глобальный обработчик ошибок
+dp.message.middleware(ErrorHandlerMiddleware())
+dp.callback_query.middleware(ErrorHandlerMiddleware())
+dp.inline_query.middleware(ErrorHandlerMiddleware())
+
+# Подключение роутеров
+dp.include_router(topics_router)
+
+
+# ============================================================
+# Lifespan
+# ============================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # === STARTUP ===
+    logger.info("🚀 Запуск приложения...")
+
+    # 1. Инициализация БД
+    await init_db()
+
+    # 2. Проверка подключения к БД
     try:
-        from web_admin.main import app as admin_app
-        starlette_app.mount("/admin", admin_app)
-        logger.info("✅ Веб-админка смонтирована на /admin")
+        session_factory = get_async_session_factory()
+        async with session_factory() as session:
+            await session.execute("SELECT 1")
+        logger.info("✅ База данных доступна")
     except Exception as e:
-        logger.error(f"❌ Не удалось смонтировать веб-админку: {e}")
+        logger.error(f"❌ Ошибка подключения к БД при старте: {e}")
+        raise
 
-    return starlette_app
+    # 3. Запуск фоновых задач
+    await start_background_tasks(bot, dp)
+
+    # 4. Настройка вебхука
+    if config.RENDER_URL:
+        await check_and_set_webhook(bot, dp)
+    else:
+        logger.warning("⚠️ RENDER_URL не задан — webhook не будет установлен")
+
+    logger.info("✅ Приложение успешно запущено")
+    yield
+
+    # === SHUTDOWN ===
+    logger.info("🛑 Остановка приложения...")
+    await dispose_engine()
+    logger.info("✅ Ресурсы освобождены")
 
 
-async def main_entry():
-    app = Application()
-    await app.initialize()
+# ============================================================
+# FastAPI приложение
+# ============================================================
 
-    starlette_app = create_starlette_app(app)
+app = FastAPI(
+    title="Telegram Bot + Admin Panel",
+    lifespan=lifespan,
+)
 
-    port = int(os.getenv("PORT", "10000"))
-    logger.info(f"🚀 Запуск сервера на порту {port}")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=config.SECRET_KEY,
+    max_age=3600 * 24 * 30,
+)
 
-    config = uvicorn.Config(
-        starlette_app,
-        host="0.0.0.0",
-        port=port,
-        log_level="info",
-        workers=1,
-    )
-    server = uvicorn.Server(config)
-    await server.serve()
+app.mount("/admin", admin_app)
 
+
+# ============================================================
+# Эндпоинты
+# ============================================================
+
+@app.get("/health")
+async def health_check() -> dict[str, str]:
+    return {"status": "healthy"}
+
+
+@app.get("/health/db")
+async def db_health_check() -> dict[str, Any]:
+    try:
+        session_factory = get_async_session_factory()
+        async with session_factory() as session:
+            await session.execute("SELECT 1")
+        return {"database": "healthy"}
+    except Exception as e:
+        return {"database": "unhealthy", "error": str(e)}
+
+
+@app.post("/webhook")
+async def telegram_webhook(update: dict[str, Any]) -> dict[str, bool]:
+    """
+    Обработчик обновлений от Telegram.
+    Всегда возвращает 200 OK, чтобы Telegram не повторял запрос при ошибках.
+    """
+    try:
+        telegram_update = Update.model_validate(update)
+        await dp.feed_update(bot, telegram_update)
+
+    except TelegramBadRequest as e:
+        logger.warning(f"TelegramBadRequest при обработке обновления: {e}")
+
+    except TelegramAPIError as e:
+        logger.error(f"TelegramAPIError при обработке обновления: {e}")
+
+    except Exception as e:
+        logger.exception(f"Необработанная ошибка в webhook: {e}")
+
+    return {"ok": True}
+
+
+# ============================================================
+# Локальный запуск
+# ============================================================
 
 if __name__ == "__main__":
-    asyncio.run(main_entry())
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=config.PORT,
+        reload=False,
+        log_level="info",
+    )
