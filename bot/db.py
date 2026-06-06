@@ -2,16 +2,20 @@ import asyncio
 import logging
 import os
 from functools import lru_cache, wraps
+from typing import Optional
 
 import asyncpg
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from bot import config
 
 logger = logging.getLogger(__name__)
 
 
-def retry_on_db_error(retries=3, delay=1, backoff=2):
+def retry_on_db_error(retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
+    """Декоратор для повторных попыток при ошибках подключения к БД."""
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -25,10 +29,13 @@ def retry_on_db_error(retries=3, delay=1, backoff=2):
                     last_exception = e
                     if attempt < retries - 1:
                         wait = delay * (backoff ** attempt)
-                        logger.warning(f"Ошибка БД (попытка {attempt+1}/{retries}): {e}. Повтор через {wait}с")
+                        logger.warning(
+                            f"Ошибка подключения к БД (попытка {attempt + 1}/{retries}): {e}. "
+                            f"Повтор через {wait:.1f}с"
+                        )
                         await asyncio.sleep(wait)
                     else:
-                        logger.error(f"Все попытки исчерпаны: {e}")
+                        logger.error(f"Все попытки подключения исчерпаны: {e}")
                         raise
                 except Exception:
                     raise
@@ -37,55 +44,47 @@ def retry_on_db_error(retries=3, delay=1, backoff=2):
     return decorator
 
 
-_pool = None
+# ============================================================
+# Asyncpg пул (для старых репозиториев)
+# ============================================================
+
+_pool: Optional[asyncpg.Pool] = None
 
 
-async def get_pool():
+@retry_on_db_error(retries=5, delay=2.0)
+async def get_pool() -> asyncpg.Pool:
+    """Возвращает пул соединений asyncpg."""
     global _pool
     if _pool is None:
         min_size = int(os.getenv("DB_POOL_MIN_SIZE", "1"))
-        max_size = int(os.getenv("DB_POOL_MAX_SIZE", "5"))
+        max_size = int(os.getenv("DB_POOL_MAX_SIZE", "10"))
 
-        # Нормализуем DSN для asyncpg (убираем +asyncpg)
         dsn = config.DATABASE_URL
         if dsn.startswith("postgresql+asyncpg://"):
             dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
-        elif dsn.startswith("postgres+asyncpg://"):
-            dsn = dsn.replace("postgres+asyncpg://", "postgres://", 1)
 
-        last_exception = None
-        for attempt in range(5):
-            try:
-                _pool = await asyncpg.create_pool(
-                    dsn,
-                    min_size=min_size,
-                    max_size=max_size,
-                    command_timeout=60,
-                    max_inactive_connection_lifetime=300
-                )
-                logger.info(f"✅ Пул соединений создан (min={min_size}, max={max_size})")
-                break
-            except Exception as e:
-                last_exception = e
-                wait = 2 ** attempt
-                logger.warning(f"Не удалось создать пул (попытка {attempt+1}/5): {e}. Повтор через {wait}с")
-                await asyncio.sleep(wait)
-        else:
-            logger.error("Все попытки создания пула провалились")
-            raise last_exception
+        _pool = await asyncpg.create_pool(
+            dsn,
+            min_size=min_size,
+            max_size=max_size,
+            command_timeout=60,
+            max_inactive_connection_lifetime=300,
+        )
+        logger.info(f"✅ Asyncpg пул создан (min={min_size}, max={max_size})")
     return _pool
 
 
 async def close_pool():
+    """Закрывает пул asyncpg."""
     global _pool
     if _pool:
         await _pool.close()
         _pool = None
-        logger.info("✅ Пул соединений закрыт")
+        logger.info("✅ Asyncpg пул закрыт")
 
 
 # ============================================================
-# SQLAlchemy async session factory (для main.py)
+# SQLAlchemy 2.0 async (основной способ)
 # ============================================================
 
 _engine = None
@@ -93,6 +92,7 @@ _async_session_factory = None
 
 
 def get_async_engine():
+    """Создаёт SQLAlchemy async engine."""
     global _engine
     if _engine is None:
         database_url = config.DATABASE_URL
@@ -103,6 +103,7 @@ def get_async_engine():
             database_url,
             pool_pre_ping=True,
             echo=False,
+            poolclass=NullPool,
         )
         logger.info("✅ SQLAlchemy async engine создан")
     return _engine
@@ -110,6 +111,7 @@ def get_async_engine():
 
 @lru_cache
 def get_async_session_factory() -> async_sessionmaker:
+    """Фабрика асинхронных сессий SQLAlchemy 2.0."""
     global _async_session_factory
     if _async_session_factory is None:
         engine = get_async_engine()
@@ -122,45 +124,52 @@ def get_async_session_factory() -> async_sessionmaker:
 
 
 async def dispose_engine():
-    global _engine
+    """Закрывает SQLAlchemy engine."""
+    global _engine, _async_session_factory
     if _engine:
         await _engine.dispose()
         _engine = None
+        _async_session_factory = None
         logger.info("✅ SQLAlchemy engine закрыт")
 
 
 # ============================================================
-# Инициализация БД
+# Инициализация и healthcheck
 # ============================================================
 
 async def init_db():
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        # Создание таблиц, индексов и колонок (твой текущий код)
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS categories (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                sort_order INTEGER DEFAULT 0
-            )
-        ''')
-        # ... (остальной код создания таблиц оставь как у тебя)
-        # Если нужно — могу скинуть полный init_db отдельно
-
-    logger.info("✅ Инициализация БД завершена")
-
-
-async def check_db_health() -> bool:
+    """
+    Инициализация подключения к БД.
+    В текущей архитектуре миграции выполняются через Alembic,
+    поэтому здесь только проверка подключения.
+    """
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            await conn.execute('SELECT 1')
+            await conn.execute("SELECT 1")
+        logger.info("✅ Подключение к PostgreSQL успешно установлено")
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации БД: {e}")
+        raise
+
+
+async def check_db_health() -> bool:
+    """
+    Проверка здоровья подключения к БД через SQLAlchemy.
+    Это более единообразно с основной частью приложения (v27).
+    """
+    try:
+        session_factory = get_async_session_factory()
+        async with session_factory() as session:
+            await session.execute(text("SELECT 1"))
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(f"DB healthcheck failed: {e}")
         return False
 
 
 async def check_redis_health() -> bool:
+    """Проверка здоровья Redis (если настроен)."""
     if not config.REDIS_URL:
         return True
     try:
@@ -169,5 +178,6 @@ async def check_redis_health() -> bool:
         await r.ping()
         await r.aclose()
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(f"Redis healthcheck failed: {e}")
         return False
