@@ -10,7 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import Update
 from fastapi import FastAPI
-from sqlalchemy import text  # ← добавлен импорт
+from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
 from bot import config
@@ -32,9 +32,9 @@ logger = logging.getLogger(__name__)
 def get_storage():
     """Выбор хранилища FSM в зависимости от режима масштабирования."""
     if os.getenv("SCALING_ENABLED", "false").lower() == "true" and config.REDIS_URL:
-        logger.info("🔄 Используется RedisStorage для FSM (SCALING_ENABLED=true)")
+        logger.info("Используется RedisStorage для FSM (SCALING_ENABLED=true)")
         return RedisStorage.from_url(config.REDIS_URL)
-    logger.info("📦 Используется MemoryStorage для FSM")
+    logger.info("Используется MemoryStorage для FSM")
     return MemoryStorage()
 
 
@@ -50,55 +50,66 @@ dp = Dispatcher(storage=storage)
 dp.message.middleware(ErrorHandlerMiddleware())
 dp.callback_query.middleware(ErrorHandlerMiddleware())
 dp.inline_query.middleware(ErrorHandlerMiddleware())
+dp.my_chat_member.middleware(ErrorHandlerMiddleware())
+dp.chat_member.middleware(ErrorHandlerMiddleware())
 
-# ============================================================
-# Подключение роутеров (с защитой от повторного подключения)
-# ============================================================
+# Защита от повторного подключения роутера
 if topics_router.parent_router is None:
     dp.include_router(topics_router)
 else:
     logger.warning(
-        f"topics_router уже привязан к {topics_router.parent_router!r}, "
-        "повторное подключение пропущено"
+        f"topics_router уже привязан к {topics_router.parent_router!r}. "
+        "Повторное подключение пропущено."
     )
 
 
 # ============================================================
-# Lifespan
+# Lifespan (Startup / Shutdown)
 # ============================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # === STARTUP ===
+    """Управление жизненным циклом приложения."""
     logger.info("🚀 Запуск приложения...")
 
-    # 1. Инициализация БД
-    await init_db()
-
-    # 2. Проверка подключения к БД
+    # === STARTUP ===
     try:
+        # 1. Инициализация базы данных
+        await init_db()
+        logger.info("✅ Инициализация БД завершена")
+
+        # 2. Проверка подключения к БД
         session_factory = get_async_session_factory()
         async with session_factory() as session:
-            await session.execute(text("SELECT 1"))  # ← обёрнуто в text()
+            await session.execute(text("SELECT 1"))
         logger.info("✅ База данных доступна")
+
+        # 3. Запуск фоновых задач
+        await start_background_tasks(bot, dp)
+        logger.info("✅ Фоновые задачи запущены")
+
+        # 4. Настройка вебхука
+        if config.RENDER_URL:
+            await check_and_set_webhook(bot, dp)
+        else:
+            logger.warning("RENDER_URL не задан — webhook не будет установлен")
+
+        logger.info("✅ Приложение успешно запущено")
+
     except Exception as e:
-        logger.error(f"❌ Ошибка подключения к БД при старте: {e}")
+        logger.exception("❌ Критическая ошибка при запуске приложения")
         raise
 
-    # 3. Запуск фоновых задач
-    await start_background_tasks(bot, dp)
-
-    # 4. Настройка вебхука
-    if config.RENDER_URL:
-        await check_and_set_webhook(bot, dp)
-    else:
-        logger.warning("⚠️ RENDER_URL не задан — webhook не будет установлен")
-
-    logger.info("✅ Приложение успешно запущено")
-    yield
+    yield  # Приложение работает
 
     # === SHUTDOWN ===
     logger.info("🛑 Остановка приложения...")
+    try:
+        await bot.session.close()
+        logger.info("✅ Сессия бота закрыта")
+    except Exception as e:
+        logger.warning(f"Ошибка при закрытии сессии бота: {e}")
+
     await dispose_engine()
     logger.info("✅ Ресурсы освобождены")
 
@@ -135,9 +146,10 @@ async def db_health_check() -> dict[str, Any]:
     try:
         session_factory = get_async_session_factory()
         async with session_factory() as session:
-            await session.execute(text("SELECT 1"))  # ← обёрнуто в text()
+            await session.execute(text("SELECT 1"))
         return {"database": "healthy"}
     except Exception as e:
+        logger.error(f"DB healthcheck failed: {e}")
         return {"database": "unhealthy", "error": str(e)}
 
 
@@ -145,17 +157,17 @@ async def db_health_check() -> dict[str, Any]:
 async def telegram_webhook(update: dict[str, Any]) -> dict[str, bool]:
     """
     Обработчик обновлений от Telegram.
-    Всегда возвращает 200 OK, чтобы Telegram не повторял запрос при ошибках.
+    Всегда возвращает 200, чтобы Telegram не повторял запрос.
     """
     try:
         telegram_update = Update.model_validate(update)
         await dp.feed_update(bot, telegram_update)
 
     except TelegramBadRequest as e:
-        logger.warning(f"TelegramBadRequest при обработке обновления: {e}")
+        logger.warning(f"TelegramBadRequest: {e}")
 
     except TelegramAPIError as e:
-        logger.error(f"TelegramAPIError при обработке обновления: {e}")
+        logger.error(f"TelegramAPIError: {e}")
 
     except Exception as e:
         logger.exception(f"Необработанная ошибка в webhook: {e}")
