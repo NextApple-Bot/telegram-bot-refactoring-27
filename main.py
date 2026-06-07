@@ -50,8 +50,16 @@ dp.message.middleware(ErrorHandlerMiddleware())
 dp.callback_query.middleware(ErrorHandlerMiddleware())
 dp.inline_query.middleware(ErrorHandlerMiddleware())
 
-# Подключение роутеров
-dp.include_router(topics_router)
+# ============================================================
+# Подключение роутеров (с защитой от повторного подключения)
+# ============================================================
+if topics_router.parent_router is None:
+    dp.include_router(topics_router)
+else:
+    logger.warning(
+        f"topics_router уже привязан к {topics_router.parent_router!r}, "
+        "повторное подключение пропущено"
+    )
 
 
 # ============================================================
