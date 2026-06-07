@@ -1,105 +1,124 @@
 import logging
 from typing import Any
 
+from bot.db import get_async_session_factory, get_pool
+from bot.repositories.item import ItemRepository
+from bot.repositories.stats import StatsRepository
+from bot.services.assortment import AssortmentService
 from bot.utils.validators import extract_serials
 
 logger = logging.getLogger(__name__)
 
 
 class SaleService:
+    """
+    Сервис обработки продаж из топика Sales.
+    Отвечает за:
+    - Поиск товаров по серийным номерам
+    - Удаление проданных товаров из ассортимента
+    - Сохранение статистики продаж
+    - Определение, является ли сообщение аксессуаром (без серийника)
+    """
 
     @staticmethod
     async def process_sale(
         content: str,
         chat_id: int,
         message_id: int,
-        payments: dict
+        payments: dict[str, float]
     ) -> dict[str, Any]:
+        """
+        Основная функция обработки продажи.
 
-        from bot.db import get_async_session_factory
-        from bot.repositories.item import ItemRepository
-        from bot.repositories.stats import StatsRepository
-        from bot.services.assortment import AssortmentService
+        Args:
+            content: Текст сообщения с продажей
+            chat_id: ID чата
+            message_id: ID сообщения (для статистики)
+            payments: Извлечённые суммы платежей (не используются здесь напрямую)
 
-        serials = list(set(extract_serials(content)))
-        is_accessory = len(serials) == 0
+        Returns:
+            dict с ключами:
+                - sold_items: список кортежей (item_id, serial)
+                - not_found: список серийников, которых нет в БД
+                - is_accessory: True, если в сообщении нет серийников
+                - skip_sale_stats: нужно ли пропустить сохранение статистики
+                - skip_payments: нужно ли пропустить сохранение платежей
+        """
+        serials = extract_serials(content)
 
-        if is_accessory:
-            logger.info("Аксессуар: сохраняем только платежи, статистика продаж не обновляется.")
+        # === Случай: сообщение без серийных номеров (аксессуар) ===
+        if not serials:
+            logger.info(
+                f"Сообщение {message_id} не содержит серийных номеров — "
+                f"считаем аксессуаром. Платежи сохраняем, статистику продаж — нет."
+            )
             return {
                 "sold_items": [],
                 "not_found": [],
-                "payments": payments,
                 "is_accessory": True,
                 "skip_sale_stats": True,
                 "skip_payments": False
             }
 
-        async_session = get_async_session_factory()
-        async with async_session() as session, session.begin():
-            sold_items = []
-            not_found = []
+        sold_items: list[tuple[int, str]] = []
+        not_found: list[str] = []
 
-            for serial in serials:
-                try:
-                    item_id = await ItemRepository.get_item_id_by_serial(serial, conn=session)
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for serial in serials:
+                    try:
+                        # Ищем товар по серийному номеру
+                        item_id = await ItemRepository.get_item_id_by_serial(serial, conn=conn)
 
-                    if not item_id:
-                        logger.warning(f"Товар с серийным номером {serial} не найден в ассортименте.")
-                        not_found.append(serial)
-                        continue
+                        if item_id:
+                            # Удаляем товар из ассортимента
+                            await AssortmentService.remove_by_serial(
+                                serial,
+                                reason="sale",
+                                conn=conn
+                            )
 
-                    # Удаляем товар из ассортимента
-                    removed = await AssortmentService.remove_by_serial(
-                        serial, reason='sale', conn=session
-                    )
+                            # Сохраняем статистику продажи
+                            await StatsRepository.add_sale(
+                                item_id=item_id,
+                                count=1,
+                                cash=0,           # суммы платежей сохраняются отдельно в handler
+                                terminal=0,
+                                qr=0,
+                                transfer=0,
+                                invoice=0,
+                                installment=0,
+                                is_accessory=False,
+                                message_id=message_id,
+                                conn=conn
+                            )
 
-                    if removed:
-                        sold_items.append((item_id, serial))
-                        logger.info(f"Товар продан и удалён из ассортимента: {serial}")
-                    else:
-                        not_found.append(serial)
-                        logger.warning(f"Не удалось удалить товар {serial} из ассортимента.")
+                            sold_items.append((item_id, serial))
+                            logger.info(f"✅ Продажа: item_id={item_id}, serial={serial}")
 
-                except Exception as e:
-                    logger.exception(f"Ошибка при обработке серийного номера {serial}")
-                    not_found.append(serial)
+                        else:
+                            not_found.append(serial)
+                            logger.warning(f"❌ Серийный номер не найден в ассортименте: {serial}")
 
-            if not sold_items:
-                logger.info(f"Ни один товар не был продан. Серийники: {serials}")
-                return {
-                    "sold_items": [],
-                    "not_found": serials,
-                    "payments": payments,
-                    "is_accessory": False,
-                    "skip_sale_stats": True,
-                    "skip_payments": True
-                }
+                    except Exception as e:
+                        logger.exception(
+                            f"Ошибка при обработке серийника {serial} в сообщении {message_id}: {e}"
+                        )
+                        # При ошибке в одном товаре — откатываем всю транзакцию
+                        raise
 
-            # Сохраняем статистику продаж
-            try:
-                await StatsRepository.add_sale(
-                    count=len(sold_items),
-                    cash=payments.get('cash', 0),
-                    terminal=payments.get('terminal', 0),
-                    qr=payments.get('qr', 0),
-                    transfer=payments.get('transfer', 0),
-                    invoice=payments.get('invoice', 0),
-                    installment=payments.get('installment', 0),
-                    is_accessory=False,
-                    message_id=message_id,
-                    conn=session
-                )
-            except Exception as e:
-                logger.exception("Ошибка при сохранении статистики продажи")
+        # === Итоговый результат ===
+        if not_found:
+            logger.info(
+                f"Сообщение {message_id}: продано {len(sold_items)} товаров, "
+                f"не найдено {len(not_found)} серийников."
+            )
 
-            logger.info(f"Успешно обработано продаж: {len(sold_items)}. Не найдено: {len(not_found)}")
-
-            return {
-                "sold_items": sold_items,
-                "not_found": not_found,
-                "payments": payments,
-                "is_accessory": False,
-                "skip_sale_stats": False,
-                "skip_payments": False
-            }
+        return {
+            "sold_items": sold_items,
+            "not_found": not_found,
+            "is_accessory": False,
+            "skip_sale_stats": False,
+            "skip_payments": False
+        }
