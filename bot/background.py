@@ -1,6 +1,9 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from typing import Optional
+
+from aiogram import Bot, Dispatcher          # ← добавлен импорт
 
 from bot import config
 from bot.db import get_async_session_factory
@@ -92,14 +95,13 @@ async def cleanup_sold_items() -> None:
 # Healthcheck вебхука
 # ============================================================
 
-async def webhook_healthcheck() -> None:
+async def webhook_healthcheck(bot: Bot, dp: Dispatcher) -> None:
     """Периодическая проверка и восстановление вебхука при необходимости."""
     from bot.webhook_utils import check_and_set_webhook
 
     try:
-        # Здесь можно передать bot и dp, если они доступны глобально
-        # Для простоты вызываем без параметров (функция сама проверит)
-        await check_and_set_webhook()
+        # Передаём bot и dp в функцию проверки вебхука
+        await check_and_set_webhook(bot, dp)
     except Exception as e:
         logger.exception(f"Ошибка при healthcheck вебхука: {e}")
 
@@ -112,7 +114,9 @@ async def _run_periodic_task(
     task_name: str,
     task_func,
     interval_seconds: int,
-    lock_key: str | None = None,
+    lock_key: Optional[str] = None,
+    *args,
+    **kwargs,
 ) -> None:
     """Универсальный цикл для периодического выполнения задачи."""
     logger.info(f"▶️ Запущена фоновая задача: {task_name} (интервал: {interval_seconds}s)")
@@ -120,16 +124,16 @@ async def _run_periodic_task(
     while True:
         try:
             if lock_key:
-                await run_with_lock(lock_key, task_func)
+                await run_with_lock(lock_key, lambda: task_func(*args, **kwargs))
             else:
-                await task_func()
+                await task_func(*args, **kwargs)
         except Exception as e:
             logger.exception(f"Ошибка в фоновой задаче {task_name}: {e}")
 
         await asyncio.sleep(interval_seconds)
 
 
-async def start_background_tasks(bot: Bot | None = None, dp: Dispatcher | None = None) -> None:
+async def start_background_tasks(bot: Optional[Bot] = None, dp: Optional[Dispatcher] = None) -> None:
     """
     Запуск всех фоновых задач приложения.
     """
@@ -156,13 +160,18 @@ async def start_background_tasks(bot: Bot | None = None, dp: Dispatcher | None =
     )
 
     # Задача 3: Healthcheck вебхука (каждые 5 минут)
-    asyncio.create_task(
-        _run_periodic_task(
-            task_name="webhook_healthcheck",
-            task_func=webhook_healthcheck,
-            interval_seconds=300,  # раз в 5 минут
-            lock_key=WEBHOOK_HEALTHCHECK_LOCK_KEY,
+    if bot and dp:
+        asyncio.create_task(
+            _run_periodic_task(
+                task_name="webhook_healthcheck",
+                task_func=webhook_healthcheck,
+                interval_seconds=300,  # раз в 5 минут
+                lock_key=WEBHOOK_HEALTHCHECK_LOCK_KEY,
+                bot=bot,
+                dp=dp,
+            )
         )
-    )
+    else:
+        logger.warning("⚠️ Healthcheck вебхука не запущен: не переданы bot и dp")
 
     logger.info("✅ Все фоновые задачи успешно запущены")
