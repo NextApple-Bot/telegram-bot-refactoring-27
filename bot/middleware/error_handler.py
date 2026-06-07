@@ -1,10 +1,14 @@
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
+
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
+
 logger = logging.getLogger(__name__)
-class ErrorHandlerMiddleware(BaseMiddleware[TelegramObject, dict[str, Any]]):
+
+
+class ErrorHandlerMiddleware(BaseMiddleware):  # ← убрали [TelegramObject, dict[str, Any]]
     """
     Глобальный middleware для обработки ошибок в aiogram 3.
     Перехватывает все необработанные исключения, возникающие в хендлерах
@@ -14,6 +18,7 @@ class ErrorHandlerMiddleware(BaseMiddleware[TelegramObject, dict[str, Any]]):
     - Не ломает работу бота — возвращает None при возникновении ошибки.
     - Готов к интеграции с Sentry / другими системами мониторинга.
     """
+
     async def __call__(
         self,
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
@@ -49,6 +54,7 @@ class ErrorHandlerMiddleware(BaseMiddleware[TelegramObject, dict[str, Any]]):
             # sentry_sdk.capture_exception(exc)
             # Возвращаем None, чтобы не прерывать обработку других middleware/хендлеров
             return None
+
     @staticmethod
     def _extract_update_id(event: TelegramObject, data: dict[str, Any]) -> int | None:
         """
