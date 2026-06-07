@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import Update
 from fastapi import FastAPI
+from sqlalchemy import text  # ← добавлен импорт
 from starlette.middleware.sessions import SessionMiddleware
 
 from bot import config
@@ -78,7 +79,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         session_factory = get_async_session_factory()
         async with session_factory() as session:
-            await session.execute("SELECT 1")
+            await session.execute(text("SELECT 1"))  # ← обёрнуто в text()
         logger.info("✅ База данных доступна")
     except Exception as e:
         logger.error(f"❌ Ошибка подключения к БД при старте: {e}")
@@ -134,7 +135,7 @@ async def db_health_check() -> dict[str, Any]:
     try:
         session_factory = get_async_session_factory()
         async with session_factory() as session:
-            await session.execute("SELECT 1")
+            await session.execute(text("SELECT 1"))  # ← обёрнуто в text()
         return {"database": "healthy"}
     except Exception as e:
         return {"database": "unhealthy", "error": str(e)}
