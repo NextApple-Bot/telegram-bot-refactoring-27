@@ -3,7 +3,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from aiogram import Bot, Dispatcher          # ← добавлен импорт
+from aiogram import Bot, Dispatcher
+from sqlalchemy import text  # ← добавлен импорт
 
 from bot import config
 from bot.db import get_async_session_factory
@@ -57,11 +58,11 @@ async def cleanup_old_records() -> None:
         async with async_session() as session, session.begin():
             # Удаляем обработанные сообщения старше 30 дней
             result1 = await session.execute(
-                "DELETE FROM processed_messages WHERE processed_at < NOW() - INTERVAL '30 days'"
+                text("DELETE FROM processed_messages WHERE processed_at < NOW() - INTERVAL '30 days'")
             )
             # Удаляем старые ежедневные платежи (храним 180 дней)
             result2 = await session.execute(
-                "DELETE FROM daily_payments WHERE created_at < NOW() - INTERVAL '180 days'"
+                text("DELETE FROM daily_payments WHERE created_at < NOW() - INTERVAL '180 days'")
             )
 
             logger.info(
@@ -79,11 +80,11 @@ async def cleanup_sold_items() -> None:
         async_session = get_async_session_factory()
         async with async_session() as session, session.begin():
             result = await session.execute(
-                """
-                DELETE FROM deleted_items 
-                WHERE reason = 'sale_from_admin' 
-                  AND deleted_at < :cutoff
-                """,
+                text("""
+                    DELETE FROM deleted_items 
+                    WHERE reason = 'sale_from_admin' 
+                      AND deleted_at < :cutoff
+                """),
                 {"cutoff": cutoff},
             )
             logger.info(f"🧹 Очищено {result.rowcount} старых записей о продажах из админки")
@@ -100,7 +101,6 @@ async def webhook_healthcheck(bot: Bot, dp: Dispatcher) -> None:
     from bot.webhook_utils import check_and_set_webhook
 
     try:
-        # Передаём bot и dp в функцию проверки вебхука
         await check_and_set_webhook(bot, dp)
     except Exception as e:
         logger.exception(f"Ошибка при healthcheck вебхука: {e}")
