@@ -1,0 +1,91 @@
+name: Grok Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  grok-review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get diff
+        id: diff
+        run: |
+          echo "diff<<EOF" >> $GITHUB_OUTPUT
+          git diff origin/${{ github.base_ref }}...HEAD >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install openai
+        run: pip install openai
+
+      - name: Run Grok Review
+        id: review
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        run: |
+          python3 - << 'PYEOF'
+          import os
+          from openai import OpenAI
+
+          client = OpenAI(
+              api_key=os.environ["XAI_API_KEY"],
+              base_url="https://api.x.ai/v1"
+          )
+
+          diff_content = """${{ steps.diff.outputs.diff }}"""
+
+          system_prompt = """Ты — эксперт по разработке и отладке Telegram-ботов.
+
+          ЖЁСТКИЕ ПРАВИЛА (обязательно соблюдай):
+          1. НИКОГДА не предлагай удалять, комментировать или упрощать существующие обработчики, состояния (FSM), middleware и любую работающую логику.
+          2. Сохраняй 100% текущее поведение бота.
+          3. Делай только минимальные targeted изменения.
+          4. Если есть проблема — объясни root cause и предложи safest fix.
+          5. Всегда указывай точные файлы и строки.
+          6. В конце предлагай тестовые сценарии.
+
+          Отвечай структурировано на русском:
+          ## Анализ изменений
+          ## Потенциальные риски
+          ## Рекомендации (с сохранением функциональности)
+          ## Тестовые сценарии для проверки
+          """
+
+          response = client.chat.completions.create(
+              model="grok-build-0.1",
+              messages=[
+                  {"role": "system", "content": system_prompt},
+                  {"role": "user", "content": f"Вот diff Pull Request:\n\n{diff_content}"}
+              ],
+              max_tokens=3500,
+              temperature=0.2
+          )
+
+          print(response.choices[0].message.content)
+          PYEOF
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reviewText = `${{ steps.review.outputs.stdout || 'Grok не смог дать отзыв' }}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🤖 Grok Code Review\n\n${reviewText}\n\n---\n*Сгенерировано Grok (grok-build-0.1) • Правила сохранения функциональности включены*`
+            });
