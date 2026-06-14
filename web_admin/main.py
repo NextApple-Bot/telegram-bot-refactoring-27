@@ -33,7 +33,8 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     if not is_authenticated(request):
-        return RedirectResponse(url="/auth/login")
+        # Редирект на правильный внешний путь
+        return RedirectResponse(url="/admin/auth/login")
 
     return await call_next(request)
 
@@ -43,7 +44,7 @@ async def root():
     return RedirectResponse(url="/dashboard")
 
 
-# ====================== ДИАГНОСТИКА (можно оставить) ======================
+# ====================== ДИАГНОСТИЧЕСКИЙ ЭНДПОИНТ ======================
 @app.get("/debug/routes")
 async def debug_routes():
     routes_info = []
