@@ -6,7 +6,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
-    """Базовая модель."""
+    """Базальная модель."""
     pass
 
 
@@ -70,7 +70,7 @@ class Client(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     full_name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
-    phones: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)   # ← ДОБАВЛЕНО
+    phones: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     telegram_username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     social_network: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     referral_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -191,3 +191,25 @@ class SellerDay(Base):
 
 
 Seller.days = relationship("SellerDay", back_populates="seller", cascade="all, delete-orphan")
+
+
+# ====================== НОВАЯ МОДЕЛЬ ======================
+class DailyStats(Base):
+    __tablename__ = "daily_stats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[datetime] = mapped_column(Date, unique=True, nullable=False, index=True)
+
+    sales_count: Mapped[int] = mapped_column(Integer, default=0)
+    preorders_count: Mapped[int] = mapped_column(Integer, default=0)
+    bookings_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    cash: Mapped[float] = mapped_column(default=0)
+    terminal: Mapped[float] = mapped_column(default=0)
+    qr: Mapped[float] = mapped_column(default=0)
+    transfer: Mapped[float] = mapped_column(default=0)
+    invoice: Mapped[float] = mapped_column(default=0)
+    installment: Mapped[float] = mapped_column(default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
