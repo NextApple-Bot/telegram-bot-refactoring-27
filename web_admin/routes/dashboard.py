@@ -2,10 +2,9 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db import get_async_session_factory
 from bot.models import DailyPayment, Sale, Seller, SellerDay
@@ -18,40 +17,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ============================================================
-# Вспомогательные функции
-# ============================================================
-
 async def get_dashboard_data(target_date: date) -> dict[str, Any]:
-    """Собирает все данные для дашборда за указанную дату."""
+    """Собирает данные дашборда."""
     async_session = get_async_session_factory()
 
     async with async_session() as session:
-        # === Статистика за день ===
-        # Убрали target_date, так как метод его не поддерживает
         stats = await StatsRepository.get_today_stats()
 
-        # === Выручка и план ===
         revenue_today = stats.get("revenue", 0)
         plan_amount = int(stats.get("plan_amount", 600000))
         fulfillment = round((revenue_today / plan_amount * 100), 1) if plan_amount > 0 else 0
 
-        # === Платежи за день ===
         payments = stats.get("payments", {
             "cash": 0, "terminal": 0, "qr": 0,
             "transfer": 0, "invoice": 0, "installment": 0
         })
 
-        # === Продавцы дня ===
+        # === Продавцы дня (убрали phone, которого нет в модели) ===
         sellers_query = (
-            select(Seller)
+            select(Seller.id, Seller.name)
             .join(SellerDay, Seller.id == SellerDay.seller_id)
             .where(SellerDay.date == target_date)
         )
         sellers_result = await session.execute(sellers_query)
-        sellers = sellers_result.scalars().all()
+        sellers = sellers_result.all()
 
-        # === Данные для графиков (7 дней) ===
+        # Графики за 7 дней
         seven_days_ago = target_date - timedelta(days=6)
         chart_query = (
             select(
@@ -77,20 +68,12 @@ async def get_dashboard_data(target_date: date) -> dict[str, Any]:
     }
 
 
-# ============================================================
-# Основные эндпоинты
-# ============================================================
-
 @router.get("/", response_class=HTMLResponse)
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, target_date: str | None = None):
-    """Главная страница дашборда."""
     try:
-        if target_date:
-            selected_date = datetime.strptime(target_date, "%Y-%m-%d").date()
-        else:
-            selected_date = date.today()
-    except ValueError:
+        selected_date = datetime.strptime(target_date, "%Y-%m-%d").date() if target_date else date.today()
+    except (ValueError, TypeError):
         selected_date = date.today()
 
     try:
@@ -101,11 +84,7 @@ async def dashboard(request: Request, target_date: str | None = None):
 
     return templates.TemplateResponse(
         "dashboard.html",
-        {
-            "request": request,
-            **data,
-            "today": date.today(),
-        },
+        {"request": request, **data, "today": date.today()},
     )
 
 
@@ -123,7 +102,6 @@ async def edit_stats(
     invoice: float = Form(0),
     installment: float = Form(0),
 ):
-    """Редактирование статистики за день."""
     try:
         edit_date = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
@@ -141,7 +119,6 @@ async def edit_stats(
 
 @router.post("/sellers/add")
 async def add_seller_day(seller_id: int = Form(...), target_date: str = Form(...)):
-    """Добавить продавца на день."""
     try:
         work_date = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
@@ -164,7 +141,6 @@ async def add_seller_day(seller_id: int = Form(...), target_date: str = Form(...
 
 @router.post("/sellers/remove")
 async def remove_seller_day(seller_id: int = Form(...), target_date: str = Form(...)):
-    """Убрать продавца с дня."""
     try:
         work_date = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
