@@ -81,7 +81,6 @@ class Application:
         self.dp.update.middleware(ErrorHandlerMiddleware())
         logger.info("✅ Диспетчер создан")
 
-        # === ГЛАВНОЕ ИЗМЕНЕНИЕ ===
         from bot.handlers import router
         self.dp.include_router(router)
         logger.info("✅ Роутер подключён")
@@ -168,6 +167,9 @@ class Application:
 
 
 def create_starlette_app(app_instance):
+    from starlette.routing import Route
+    from starlette.responses import PlainTextResponse, JSONResponse
+
     routes = [
         Route("/webhook", app_instance.webhook, methods=["POST"]),
         Route("/health", app_instance.health, methods=["GET"]),
@@ -177,11 +179,13 @@ def create_starlette_app(app_instance):
 
     Instrumentator().instrument(starlette_app).expose(starlette_app, endpoint="/metrics")
 
-    if SENTRY_DSN:
-        starlette_app = SentryAsgiMiddleware(starlette_app)
-
     if app_instance.config.SECRET_KEY:
-        starlette_app.add_middleware(SessionMiddleware, secret_key=app_instance.config.SECRET_KEY)
+        starlette_app.add_middleware(
+            SessionMiddleware,
+            secret_key=app_instance.config.SECRET_KEY,
+            max_age=3600 * 24 * 7,
+        )
+        logger.info("✅ SessionMiddleware подключён")
 
     if app_instance.config.ADMIN_PASSWORD and app_instance.config.SECRET_KEY:
         try:
@@ -190,6 +194,8 @@ def create_starlette_app(app_instance):
             logger.info("✅ Веб-админка смонтирована на /admin")
         except Exception as e:
             logger.error(f"❌ Не удалось смонтировать веб-админку: {e}")
+    else:
+        logger.warning("⚠️ Веб-админка не смонтирована (нет ADMIN_PASSWORD или SECRET_KEY)")
 
     return starlette_app
 
