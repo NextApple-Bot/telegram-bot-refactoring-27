@@ -18,7 +18,6 @@ router = APIRouter()
 
 
 async def get_dashboard_data(target_date: date) -> dict[str, Any]:
-    """Собирает данные дашборда."""
     async_session = get_async_session_factory()
 
     async with async_session() as session:
@@ -101,7 +100,7 @@ async def edit_stats(
     invoice: float = Form(0),
     installment: float = Form(0),
 ):
-    """Редактирование статистики за день."""
+    """Редактирование статистики за день (все поля опциональные)."""
     try:
         edit_date = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
