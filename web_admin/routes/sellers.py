@@ -21,13 +21,14 @@ router = APIRouter()
 
 @router.get("/manage")
 async def seller_manage(request: Request):
-    """Страница управления списком продавцов (полный CRUD)."""
+    """Страница управления списком продавцов."""
     async_session = get_async_session_factory()
     async with async_session() as session:
         try:
+            # Убрали phone — колонки нет в БД
             sellers = (await session.execute(
-                select(Seller).order_by(Seller.name)
-            )).scalars().all()
+                select(Seller.id, Seller.name).order_by(Seller.name)
+            )).all()
 
             return templates.TemplateResponse(
                 "sellers_manage.html",
@@ -40,7 +41,7 @@ async def seller_manage(request: Request):
 
 @router.post("/add")
 async def add_seller(request: Request, name: str = Form(...)):
-    """Добавление нового продавца с валидацией."""
+    """Добавление нового продавца."""
     name = name.strip() if name else ""
     if not name:
         raise HTTPException(status_code=400, detail="Имя продавца не может быть пустым")
@@ -60,7 +61,7 @@ async def add_seller(request: Request, name: str = Form(...)):
 
 @router.post("/delete/{seller_id}")
 async def delete_seller(seller_id: int):
-    """Удаление продавца с проверкой существования."""
+    """Удаление продавца."""
     async_session = get_async_session_factory()
     async with async_session() as session:
         try:
@@ -83,12 +84,7 @@ async def seller_stats(
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    """
-    Реальная статистика продавцов.
-    days_worked — из SellerDay (distinct даты).
-    total_count / total_revenue — пока общие по проекту (требуется seller_id в Sale/DailyPayment).
-    """
-    # Определяем период
+    """Статистика продавцов."""
     try:
         if date_from and date_to:
             start_date = date.fromisoformat(date_from)
@@ -97,12 +93,11 @@ async def seller_stats(
             end_date = date.today()
             start_date = end_date - timedelta(days=days - 1)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Неверный формат даты (ожидается YYYY-MM-DD)")
+        raise HTTPException(status_code=400, detail="Неверный формат даты")
 
     async_session = get_async_session_factory()
     async with async_session() as session:
         try:
-            # Дни работы продавцов
             sellers_query = (
                 select(
                     Seller.id,
@@ -119,8 +114,6 @@ async def seller_stats(
             )
             sellers_rows = (await session.execute(sellers_query)).all()
 
-            # Общие продажи и выручка за период (пока не персональные)
-            # TODO: добавить seller_id в модели Sale и DailyPayment — тогда статистика станет личной
             total_sales = (
                 await session.execute(
                     select(func.count(Sale.id)).where(
