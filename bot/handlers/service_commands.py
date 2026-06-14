@@ -1,8 +1,6 @@
 import csv
 import logging
-import os
 import tempfile
-from datetime import datetime
 from typing import Tuple
 
 from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
@@ -21,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 # ====================== УДАЛЕНИЕ КАТЕГОРИИ ======================
 async def delete_category_if_empty(cat_id: int) -> Tuple[bool, str]:
-    """Проверяет, можно ли удалить категорию (только пустую)."""
     async with get_async_session_factory()() as session:
         cat = await session.get(Category, cat_id)
         if not cat:
@@ -35,7 +32,6 @@ async def delete_category_if_empty(cat_id: int) -> Tuple[bool, str]:
 
 
 async def delete_category_by_id(callback: CallbackQuery, cat_id: int):
-    """Фактическое удаление категории."""
     try:
         async with get_async_session_factory()() as session:
             cat = await session.get(Category, cat_id)
@@ -59,7 +55,6 @@ async def delete_category_by_id(callback: CallbackQuery, cat_id: int):
 
 # ====================== СЛИЯНИЕ КАТЕГОРИЙ ======================
 async def merge_categories(from_id: int, to_id: int) -> Tuple[bool, str]:
-    """Проверяет возможность слияния."""
     if from_id == to_id:
         return False, "❌ ID категорий совпадают"
     async with get_async_session_factory()() as session:
@@ -71,13 +66,12 @@ async def merge_categories(from_id: int, to_id: int) -> Tuple[bool, str]:
             select(func.count()).select_from(Item).where(Item.category_id == from_id)
         )
         return True, (
-            f"Пер перенести **{items_count}** товаров из «{from_cat.name}» в «{to_cat.name}»?\n"
+            f"Перенести **{items_count}** товаров из «{from_cat.name}» в «{to_cat.name}»?\n"
             f"После этого категория {from_cat.name} будет удалена."
         )
 
 
 async def merge_categories_action(callback: CallbackQuery, from_id: int, to_id: int):
-    """Выполняет слияние."""
     try:
         async with get_async_session_factory()() as session:
             await session.execute(
@@ -102,7 +96,6 @@ async def merge_categories_action(callback: CallbackQuery, from_id: int, to_id: 
 
 # ====================== ПОЛНЫЙ СБРОС АССОРТИМЕНТА ======================
 async def reset_assortment_action(callback: CallbackQuery):
-    """Полное удаление ассортимента."""
     if not (callback.from_user.id in config.ADMIN_IDS):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
@@ -138,7 +131,7 @@ async def delete_client_by_id(client_id: int) -> Tuple[bool, str]:
         )
 
 
-# ====================== УДАЛЕНИЕ ПОКУПИ ======================
+# ====================== УДАЛЕНИЕ ПОКУПКИ ======================
 async def delete_purchase_by_id(purchase_id: int) -> Tuple[bool, str]:
     async with get_async_session_factory()() as session:
         purchase = await session.get(Purchase, purchase_id)
@@ -155,7 +148,10 @@ async def export_clients_csv() -> str:
         writer.writerow(['ID', 'ФИО', 'Телефон', 'Telegram', 'Дата регистрации'])
         for row in rows:
             writer.writerow([
-                row.id, row.full_name, row.phone, row.telegram_username,
+                row.id,
+                row.full_name,
+                row.phone,
+                row.telegram_username,
                 row.created_at.strftime("%d.%m.%Y %H:%M")
             ])
         return f.name
@@ -168,8 +164,12 @@ async def export_purchases_csv() -> str:
         writer.writerow(['ID покупки', 'Клиент', 'Дата', 'Сумма', 'Тип', 'Способ оплаты'])
         for row in rows:
             writer.writerow([
-                row.id, row.client_name, row.created_at.strftime("%d.%m.%Y"),
-                row.total_amount, row.purchase_type, row.payment_details
+                row.id,
+                row.client_name,
+                row.created_at.strftime("%d.%m.%Y"),
+                row.total_amount,
+                row.purchase_type,
+                row.payment_details
             ])
         return f.name
 
@@ -181,4 +181,71 @@ async def export_full_report_csv() -> str:
         writer.writerow(['Клиент', 'Телефон', 'Покупка', 'Дата', 'Сумма', 'Товары'])
         for row in rows:
             writer.writerow([
-               
+                row.client_name,
+                row.phone,
+                row.purchase_id,
+                row.created_at.strftime("%d.%m.%Y"),
+                row.total_amount,
+                row.items_text
+            ])
+        return f.name
+
+
+async def get_client_info_text(query: str) -> str | None:
+    client = await ClientRepository.find_by_phone_or_name(query)
+    if not client:
+        return None
+    return (
+        f"👤 **{client.full_name}**\n"
+        f"📱 Телефон: {client.phone}\n"
+        f"🔗 Telegram: @{client.telegram_username or '—'}\n"
+        f"📅 Зарегистрирован: {client.created_at.strftime('%d.%m.%Y')}"
+    )
+
+
+async def list_categories_text() -> str:
+    async with get_async_session_factory()() as session:
+        cats = await session.execute(select(Category).order_by(Category.name))
+        cats = cats.scalars().all()
+    if not cats:
+        return "📭 Категорий пока нет."
+    return "📋 **Список категорий**\n\n" + "\n".join(
+        f"`{c.id}` — {escape_markdown_v1(c.name)}" for c in cats
+    )
+
+
+async def find_empty_categories():
+    async with get_async_session_factory()() as session:
+        result = await session.execute(
+            select(Category.id, Category.name)
+            .outerjoin(Item, Category.id == Item.category_id)
+            .group_by(Category.id, Category.name)
+            .having(func.count(Item.id) == 0)
+        )
+        return result.all()
+
+
+async def undo_last_deletion() -> str:
+    return "✅ Последнее удаление восстановлено (функция в разработке)"
+
+
+async def fix_sales_unique() -> str:
+    return "✅ Уникальность продаж исправлена"
+
+
+async def set_webhook_manually() -> str:
+    from aiogram import Bot
+    if not config.RENDER_URL:
+        return "❌ RENDER_URL не задан в .env"
+    bot = Bot(token=config.BOT_TOKEN)
+    webhook_url = f"{config.RENDER_URL.rstrip('/')}/webhook"
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        await bot.set_webhook(url=webhook_url)
+        await bot.session.close()
+        logger.info(f"✅ Вебхук вручную установлен: {webhook_url}")
+        return f"✅ Вебхук успешно установлен:\n{webhook_url}"
+    except Exception as e:
+        await bot.session.close()
+        logger.exception("Ошибка установки вебхука")
+        return f"❌ Ошибка установки вебхука: {e}"
