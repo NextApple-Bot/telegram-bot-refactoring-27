@@ -23,16 +23,19 @@ app.include_router(sellers.router, prefix="/sellers", tags=["sellers"])
 app.include_router(debug.router, prefix="/admin", tags=["debug"])
 
 
-# ====================== MIDDLEWARE (ВРЕМЕННО ОТКЛЮЧЁН) ======================
-# Закомментирован для диагностики. После починки раскомментируй.
-# @app.middleware("http")
-# async def auth_middleware(request: Request, call_next):
-#     path = request.url.path
-#     if path.startswith("/auth/login") or path.startswith("/debug/routes"):
-#         return await call_next(request)
-#     if not is_authenticated(request):
-#         return RedirectResponse(url="/auth/login")
-#     return await call_next(request)
+# ====================== MIDDLEWARE ======================
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+
+    # Разрешаем доступ к странице логина
+    if path.startswith("/auth/login"):
+        return await call_next(request)
+
+    if not is_authenticated(request):
+        return RedirectResponse(url="/auth/login")
+
+    return await call_next(request)
 
 
 @app.get("/")
@@ -40,7 +43,7 @@ async def root():
     return RedirectResponse(url="/dashboard")
 
 
-# ====================== ДИАГНОСТИЧЕСКИЙ ЭНДПОИНТ ======================
+# ====================== ДИАГНОСТИКА (можно оставить) ======================
 @app.get("/debug/routes")
 async def debug_routes():
     routes_info = []
