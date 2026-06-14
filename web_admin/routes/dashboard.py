@@ -87,33 +87,29 @@ async def dashboard(request: Request, target_date: str | None = None):
 
 @router.post("/stats/edit")
 @router.post("/update_stats")
-async def edit_stats(
-    request: Request,
-    target_date: str = Form(...),
-    sales_count: int = Form(0),
-    preorders_count: int = Form(0),
-    bookings_count: int = Form(0),
-    cash: float = Form(0),
-    terminal: float = Form(0),
-    qr: float = Form(0),
-    transfer: float = Form(0),
-    invoice: float = Form(0),
-    installment: float = Form(0),
-):
-    """Редактирование статистики за день (все поля опциональные)."""
+async def edit_stats(request: Request):
+    """Редактирование статистики (гибкая обработка формы)."""
+    form = await request.form()
+
+    target_date_str = form.get("target_date")
+    if not target_date_str:
+        raise HTTPException(status_code=400, detail="target_date обязателен")
+
     try:
-        edit_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+        edit_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status_code=400, detail="Неверный формат даты")
+
+    # Логируем что пришло (для отладки)
+    logger.info(f"Получена форма редактирования за {edit_date}: {dict(form)}")
 
     async_session = get_async_session_factory()
     async with async_session() as session:
         async with session.begin():
-            logger.info(f"Редактирование статистики за {edit_date}")
             await cache.delete(f"dashboard:summary:{edit_date.isoformat()}")
 
     await AssortmentService.invalidate_cache()
-    return RedirectResponse(url=f"/admin/dashboard?target_date={target_date}", status_code=303)
+    return RedirectResponse(url=f"/admin/dashboard?target_date={target_date_str}", status_code=303)
 
 
 @router.post("/sellers/add")
