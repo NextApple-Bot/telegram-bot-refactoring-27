@@ -33,7 +33,6 @@ async def get_dashboard_data(target_date: date) -> dict[str, Any]:
             "transfer": 0, "invoice": 0, "installment": 0
         })
 
-        # === Продавцы дня (убрали phone, которого нет в модели) ===
         sellers_query = (
             select(Seller.id, Seller.name)
             .join(SellerDay, Seller.id == SellerDay.seller_id)
@@ -42,7 +41,6 @@ async def get_dashboard_data(target_date: date) -> dict[str, Any]:
         sellers_result = await session.execute(sellers_query)
         sellers = sellers_result.all()
 
-        # Графики за 7 дней
         seven_days_ago = target_date - timedelta(days=6)
         chart_query = (
             select(
@@ -89,6 +87,7 @@ async def dashboard(request: Request, target_date: str | None = None):
 
 
 @router.post("/stats/edit")
+@router.post("/update_stats")
 async def edit_stats(
     request: Request,
     target_date: str = Form(...),
@@ -102,6 +101,7 @@ async def edit_stats(
     invoice: float = Form(0),
     installment: float = Form(0),
 ):
+    """Редактирование статистики за день."""
     try:
         edit_date = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
