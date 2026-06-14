@@ -10,7 +10,7 @@ from web_admin.routes.assortment import views as assortment_views
 app = FastAPI(title="Telegram Bot Admin Panel")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
-# Роутеры
+# ====================== РОУТЕРЫ ======================
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(clients.router, prefix="/clients", tags=["clients"])
@@ -23,18 +23,16 @@ app.include_router(sellers.router, prefix="/sellers", tags=["sellers"])
 app.include_router(debug.router, prefix="/admin", tags=["debug"])
 
 
-@app.middleware("http")
-async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-
-    # Разрешаем доступ к логину и debug (для диагностики)
-    if path.startswith("/auth/login") or path.startswith("/debug/routes"):
-        return await call_next(request)
-
-    if not is_authenticated(request):
-        return RedirectResponse(url="/auth/login")
-
-    return await call_next(request)
+# ====================== MIDDLEWARE (ВРЕМЕННО ОТКЛЮЧЁН) ======================
+# Закомментирован для диагностики. После починки раскомментируй.
+# @app.middleware("http")
+# async def auth_middleware(request: Request, call_next):
+#     path = request.url.path
+#     if path.startswith("/auth/login") or path.startswith("/debug/routes"):
+#         return await call_next(request)
+#     if not is_authenticated(request):
+#         return RedirectResponse(url="/auth/login")
+#     return await call_next(request)
 
 
 @app.get("/")
@@ -42,6 +40,7 @@ async def root():
     return RedirectResponse(url="/dashboard")
 
 
+# ====================== ДИАГНОСТИЧЕСКИЙ ЭНДПОИНТ ======================
 @app.get("/debug/routes")
 async def debug_routes():
     routes_info = []
