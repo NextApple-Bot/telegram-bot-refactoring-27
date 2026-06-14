@@ -15,11 +15,14 @@ async def login_form(request: Request):
 @router.post("/login")
 async def login_submit(request: Request, password: str = Form(...)):
     if login(request, password):
-        return RedirectResponse(url="/admin/dashboard", status_code=303)
+        # Правильный редирект (без /admin, потому что приложение смонтировано под /admin)
+        return RedirectResponse(url="/dashboard", status_code=303)
+    
     return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
 
 @router.get("/logout")
 async def logout_user(request: Request):
     logout(request)
-    return RedirectResponse(url="/admin/auth/login")
+    # Правильный редирект на логин
+    return RedirectResponse(url="/auth/login", status_code=303)
