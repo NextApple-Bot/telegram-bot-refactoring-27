@@ -27,17 +27,17 @@ app.include_router(debug.router, prefix="/admin", tags=["debug"])
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Разрешаем доступ к странице логина
-    if path == "/auth/login" or path.startswith("/auth/login"):
+    # Разрешаем доступ к странице логина (без префикса /admin)
+    if path.startswith("/auth/login"):
         return await call_next(request)
 
-    # Если не авторизован — редирект на полный путь
+    # Если не авторизован — редирект на страницу логина (относительно приложения)
     if not is_authenticated(request):
-        return RedirectResponse(url="/admin/auth/login")
+        return RedirectResponse(url="/auth/login")
 
     return await call_next(request)
 
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/admin/dashboard")
+    return RedirectResponse(url="/dashboard")
