@@ -23,18 +23,18 @@ app.include_router(sellers.router, prefix="/sellers", tags=["sellers"])
 app.include_router(debug.router, prefix="/admin", tags=["debug"])
 
 
-# ====================== MIDDLEWARE ======================
+# ====================== MIDDLEWARE (ИСПРАВЛЕННЫЙ) ======================
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Разрешаем доступ к странице логина
-    if path.startswith("/auth/login"):
+    # Разрешаем страницу логина полностью (и GET, и POST)
+    if path == "/auth/login" or path.startswith("/auth/login"):
         return await call_next(request)
 
+    # Если не авторизован — редиректим на страницу логина
     if not is_authenticated(request):
-        # Редирект на правильный внешний путь
-        return RedirectResponse(url="/admin/auth/login")
+        return RedirectResponse(url="/admin/auth/login", status_code=303)
 
     return await call_next(request)
 
@@ -44,7 +44,7 @@ async def root():
     return RedirectResponse(url="/dashboard")
 
 
-# ====================== ДИАГНОСТИЧЕСКИЙ ЭНДПОИНТ ======================
+# ====================== ДИАГНОСТИКА ======================
 @app.get("/debug/routes")
 async def debug_routes():
     routes_info = []
