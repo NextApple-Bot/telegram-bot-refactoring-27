@@ -1,12 +1,27 @@
+# bot/handlers/__init__.py
+
 from aiogram import Router
 
-from .base import router as base_router
-from .topics import topics_router
+from .topics.sales import router as sales_router
+from .topics.preorder import router as preorder_router
+from .topics.arrival import router as arrival_router
+from .topics.assortment import router as assortment_router
+
+from .commands import router as commands_router
+from .service_commands import router as service_commands_router
+from .callbacks import router as callbacks_router
+from .admin_migration import router as admin_migration_router
 
 router = Router()
 
-# Подключаем базовые команды
-router.include_router(base_router)
+# Подключаем все роутеры один раз
+router.include_router(commands_router)
+router.include_router(service_commands_router)
+router.include_router(callbacks_router)
+router.include_router(admin_migration_router)
 
-# Подключаем все хендлеры по топикам
-router.include_router(topics_router)
+# Топик-роутеры
+router.include_router(sales_router)
+router.include_router(preorder_router)
+router.include_router(arrival_router)
+router.include_router(assortment_router)
