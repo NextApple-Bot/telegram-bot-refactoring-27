@@ -118,16 +118,24 @@ class Application:
 
     async def shutdown(self):
         logger.info("🛑 Завершение работы...")
-        if self.bot:
-            try:
-                await self.bot.delete_webhook()
-                await self.bot.session.close()
-            except Exception as e:
-                logger.error(f"Ошибка при закрытии бота: {e}")
-        if self._redis_client:
-            await self._redis_client.aclose()
-        from bot.db import dispose_engine
-        await dispose_engine()
+        try:
+            if self.bot:
+                try:
+                    await self.bot.delete_webhook()
+                    await self.bot.session.close()
+                except Exception as e:
+                    logger.error(f"Ошибка при закрытии бота: {e}")
+
+            if self._redis_client:
+                try:
+                    await self._redis_client.aclose()
+                except Exception as e:
+                    logger.error(f"Ошибка при закрытии Redis: {e}")
+
+            from bot.db import dispose_engine
+            await dispose_engine()
+        except Exception as e:
+            logger.error(f"Ошибка в shutdown: {e}")
 
     async def webhook(self, request: Request) -> Response:
         if not self.bot or not self.dp:
@@ -161,14 +169,13 @@ class Application:
         overall = db_ok and redis_ok
         return JSONResponse({
             "status": "healthy" if overall else "unhealthy",
-            "database": {"status": "up" if db_ok else "down", "response_time_ms": round(db_time*1000, 2) if db_ok else None},
-            "redis": {"status": "up" if redis_ok else "down", "response_time_ms": round(redis_time*1000, 2) if redis_ok else None},
+            "database": {"status": "up" if db_ok else "down", "response_time_ms": round(db_time * 1000, 2) if db_ok else None},
+            "redis": {"status": "up" if redis_ok else "down", "response_time_ms": round(redis_time * 1000, 2) if redis_ok else None},
         }, status_code=200 if overall else 503)
 
 
 def create_starlette_app(app_instance):
     from starlette.routing import Route
-    from starlette.responses import PlainTextResponse, JSONResponse
 
     routes = [
         Route("/webhook", app_instance.webhook, methods=["POST"]),
