@@ -1,13 +1,14 @@
 import logging
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db import get_async_session_factory
-from bot.models import DailyPayment, Sale, Seller, SellerDay
+from bot.models import DailyPayment, DailyStats, Sale, Seller, SellerDay
 from bot.repositories.stats import StatsRepository
 from bot.services.assortment import AssortmentService
 from bot.services.cache import cache
@@ -21,17 +22,48 @@ async def get_dashboard_data(target_date: date) -> dict[str, Any]:
     async_session = get_async_session_factory()
 
     async with async_session() as session:
-        stats = await StatsRepository.get_today_stats()
+        # Сначала проверяем, есть ли ручные данные в DailyStats
+        manual_stats = await session.execute(
+            select(DailyStats).where(DailyStats.date == target_date)
+        )
+        manual = manual_stats.scalar_one_or_none()
 
-        revenue_today = stats.get("revenue", 0)
-        plan_amount = int(stats.get("plan_amount", 600000))
-        fulfillment = round((revenue_today / plan_amount * 100), 1) if plan_amount > 0 else 0
+        if manual:
+            revenue_today = (
+                manual.cash + manual.terminal + manual.qr +
+                manual.transfer + manual.invoice + manual.installment
+            )
+            plan_amount = 600000  # можно вынести в конфиг
+            fulfillment = round((revenue_today / plan_amount * 100), 1) if plan_amount > 0 else 0
 
-        payments = stats.get("payments", {
-            "cash": 0, "terminal": 0, "qr": 0,
-            "transfer": 0, "invoice": 0, "installment": 0
-        })
+            payments = {
+                "cash": manual.cash,
+                "terminal": manual.terminal,
+                "qr": manual.qr,
+                "transfer": manual.transfer,
+                "invoice": manual.invoice,
+                "installment": manual.installment,
+            }
 
+            stats = {
+                "revenue": revenue_today,
+                "sales_count": manual.sales_count,
+                "preorders_count": manual.preorders_count,
+                "bookings_count": manual.bookings_count,
+                "payments": payments,
+            }
+        else:
+            # Если ручных данных нет — берём из StatsRepository
+            stats = await StatsRepository.get_today_stats()
+            revenue_today = stats.get("revenue", 0)
+            plan_amount = int(stats.get("plan_amount", 600000))
+            fulfillment = round((revenue_today / plan_amount * 100), 1) if plan_amount > 0 else 0
+            payments = stats.get("payments", {
+                "cash": 0, "terminal": 0, "qr": 0,
+                "transfer": 0, "invoice": 0, "installment": 0
+            })
+
+        # Продавцы дня
         sellers_query = (
             select(Seller.id, Seller.name)
             .join(SellerDay, Seller.id == SellerDay.seller_id)
@@ -40,6 +72,7 @@ async def get_dashboard_data(target_date: date) -> dict[str, Any]:
         sellers_result = await session.execute(sellers_query)
         sellers = sellers_result.all()
 
+        # Графики
         seven_days_ago = target_date - timedelta(days=6)
         chart_query = (
             select(
@@ -59,7 +92,7 @@ async def get_dashboard_data(target_date: date) -> dict[str, Any]:
         "revenue_today": revenue_today,
         "plan_amount": plan_amount,
         "fulfillment": fulfillment,
-        "payments": payments,
+        "payments": payments if 'payments' in locals() else stats.get("payments", {}),
         "sellers": sellers,
         "chart_data": chart_data,
     }
@@ -88,7 +121,6 @@ async def dashboard(request: Request, target_date: str | None = None):
 @router.post("/stats/edit")
 @router.post("/update_stats")
 async def edit_stats(request: Request):
-    """Редактирование статистики (возвращает JSON для JS)."""
     form = await request.form()
 
     target_date_str = form.get("target_date") or date.today().isoformat()
@@ -98,21 +130,38 @@ async def edit_stats(request: Request):
     except ValueError:
         edit_date = date.today()
 
-    logger.info(f"Редактирование статистики за {edit_date}")
-
     async_session = get_async_session_factory()
     async with async_session() as session:
         async with session.begin():
-            await cache.delete(f"dashboard:summary:{edit_date.isoformat()}")
+            existing = await session.execute(
+                select(DailyStats).where(DailyStats.date == edit_date)
+            )
+            stats_record = existing.scalar_one_or_none()
 
+            if not stats_record:
+                stats_record = DailyStats(date=edit_date)
+                session.add(stats_record)
+
+            # Обновляем значения из формы
+            stats_record.sales_count = int(form.get("sales_count", 0) or 0)
+            stats_record.preorders_count = int(form.get("preorders_count", 0) or 0)
+            stats_record.bookings_count = int(form.get("bookings_count", 0) or 0)
+            stats_record.cash = float(form.get("cash", 0) or 0)
+            stats_record.terminal = float(form.get("terminal", 0) or 0)
+            stats_record.qr = float(form.get("qr", 0) or 0)
+            stats_record.transfer = float(form.get("transfer", 0) or 0)
+            stats_record.invoice = float(form.get("invoice", 0) or 0)
+            stats_record.installment = float(form.get("installment", 0) or 0)
+
+    await cache.delete(f"dashboard:summary:{edit_date.isoformat()}")
     await AssortmentService.invalidate_cache()
 
-    # Возвращаем JSON, чтобы JavaScript не падал на редиректе
-    return {"success": True, "message": "Статистика обновлена", "target_date": edit_date.isoformat()}
+    return {"success": True, "message": "Статистика сохранена", "target_date": edit_date.isoformat()}
 
 
 @router.post("/sellers/add")
 async def add_seller_day(seller_id: int = Form(...), target_date: str = Form(...)):
+    # (код остаётся без изменений)
     try:
         work_date = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
@@ -135,6 +184,7 @@ async def add_seller_day(seller_id: int = Form(...), target_date: str = Form(...
 
 @router.post("/sellers/remove")
 async def remove_seller_day(seller_id: int = Form(...), target_date: str = Form(...)):
+    # (код остаётся без изменений)
     try:
         work_date = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
