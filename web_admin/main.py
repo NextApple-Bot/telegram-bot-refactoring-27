@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
 from web_admin.auth import is_authenticated
@@ -26,18 +26,26 @@ app.include_router(debug.router, prefix="/admin", tags=["debug"])
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-
-    # Разрешаем доступ к странице логина (без префикса /admin)
     if path.startswith("/auth/login"):
         return await call_next(request)
-
-    # Если не авторизован — редирект на страницу логина (относительно приложения)
     if not is_authenticated(request):
         return RedirectResponse(url="/auth/login")
-
     return await call_next(request)
 
 
 @app.get("/")
 async def root():
     return RedirectResponse(url="/dashboard")
+
+
+# ==================== ВРЕМЕННЫЙ ДИАГНОСТИЧЕСКИЙ ЭНДПОИНТ ====================
+@app.get("/debug/routes")
+async def debug_routes():
+    routes = []
+    for route in app.routes:
+        routes.append({
+            "path": getattr(route, "path", str(route)),
+            "methods": getattr(route, "methods", None),
+            "name": getattr(route, "name", None),
+        })
+    return JSONResponse(routes)
