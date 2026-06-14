@@ -28,7 +28,8 @@ async def get_dashboard_data(target_date: date) -> dict[str, Any]:
 
     async with async_session() as session:
         # === Статистика за день ===
-        stats = await StatsRepository.get_today_stats(target_date=target_date)
+        # Убрали target_date, так как метод его не поддерживает
+        stats = await StatsRepository.get_today_stats()
 
         # === Выручка и план ===
         revenue_today = stats.get("revenue", 0)
@@ -122,7 +123,7 @@ async def edit_stats(
     invoice: float = Form(0),
     installment: float = Form(0),
 ):
-    """Редактирование статистики за день (из модального окна)."""
+    """Редактирование статистики за день."""
     try:
         edit_date = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
@@ -131,12 +132,7 @@ async def edit_stats(
     async_session = get_async_session_factory()
     async with async_session() as session:
         async with session.begin():
-            # Здесь можно реализовать обновление/создание записи статистики
-            # Для примера — инвалидируем кэш и логируем
             logger.info(f"Редактирование статистики за {edit_date}")
-
-            # Пример: обновление ежедневных платежей (упрощённо)
-            # В реальном проекте здесь будет более сложная логика
             await cache.delete(f"dashboard:summary:{edit_date.isoformat()}")
 
     await AssortmentService.invalidate_cache()
@@ -154,7 +150,6 @@ async def add_seller_day(seller_id: int = Form(...), target_date: str = Form(...
     async_session = get_async_session_factory()
     async with async_session() as session:
         async with session.begin():
-            # Проверяем, есть ли уже такая запись
             existing = await session.execute(
                 select(SellerDay).where(
                     SellerDay.seller_id == seller_id,
