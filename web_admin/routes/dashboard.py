@@ -88,20 +88,17 @@ async def dashboard(request: Request, target_date: str | None = None):
 @router.post("/stats/edit")
 @router.post("/update_stats")
 async def edit_stats(request: Request):
-    """Редактирование статистики (максимально гибкая версия)."""
+    """Редактирование статистики (возвращает JSON для JS)."""
     form = await request.form()
 
-    # Пытаемся получить дату из формы, если нет — используем сегодняшнюю
-    target_date_str = form.get("target_date")
-    if not target_date_str:
-        target_date_str = date.today().isoformat()
+    target_date_str = form.get("target_date") or date.today().isoformat()
 
     try:
         edit_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
     except ValueError:
         edit_date = date.today()
 
-    logger.info(f"Редактирование статистики за {edit_date} | Данные формы: {dict(form)}")
+    logger.info(f"Редактирование статистики за {edit_date}")
 
     async_session = get_async_session_factory()
     async with async_session() as session:
@@ -109,7 +106,9 @@ async def edit_stats(request: Request):
             await cache.delete(f"dashboard:summary:{edit_date.isoformat()}")
 
     await AssortmentService.invalidate_cache()
-    return RedirectResponse(url=f"/admin/dashboard?target_date={edit_date.isoformat()}", status_code=303)
+
+    # Возвращаем JSON, чтобы JavaScript не падал на редиректе
+    return {"success": True, "message": "Статистика обновлена", "target_date": edit_date.isoformat()}
 
 
 @router.post("/sellers/add")
