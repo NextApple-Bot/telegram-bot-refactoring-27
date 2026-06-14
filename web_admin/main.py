@@ -38,14 +38,14 @@ async def root():
     return RedirectResponse(url="/dashboard")
 
 
-# ==================== ВРЕМЕННЫЙ ДИАГНОСТИЧЕСКИЙ ЭНДПОИНТ ====================
+# ==================== ДИАГНОСТИКА ====================
 @app.get("/debug/routes")
 async def debug_routes():
-    routes = []
+    routes_info = []
     for route in app.routes:
-        routes.append({
+        routes_info.append({
             "path": getattr(route, "path", str(route)),
-            "methods": getattr(route, "methods", None),
+            "methods": list(getattr(route, "methods", [])) if hasattr(route, "methods") else None,
             "name": getattr(route, "name", None),
         })
-    return JSONResponse(routes)
+    return JSONResponse(routes_info)
