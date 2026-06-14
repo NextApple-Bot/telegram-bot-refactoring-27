@@ -1,56 +1,49 @@
-from aiogram import Router
-from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+# bot/handlers/base.py
 
-from bot.utils.helpers import send_and_clean
+import logging
+from aiogram import Bot
+from aiogram.fsm.context import FSMContext
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-router = Router()
+logger = logging.getLogger(__name__)
+
+
+async def cancel_action(bot: Bot, chat_id: int, state: FSMContext):
+    """Отменяет текущее состояние FSM."""
+    current_state = await state.get_state()
+    if current_state is None:
+        await bot.send_message(chat_id, "Нет активного действия для отмены.")
+        return
+
+    await state.clear()
+    await bot.send_message(chat_id, "✅ Действие отменено.")
 
 
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
-    """Главное меню бота (как было раньше)."""
+    """Возвращает главное меню."""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="📦 Показать ассортимент", callback_data="menu:inventory"),
-            InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats"),
-        ],
-        [
-            InlineKeyboardButton(text="📤 Выгрузить ассортимент", callback_data="menu:export_assortment"),
-            InlineKeyboardButton(text="📦 Остатки", callback_data="menu:remains"),
-        ],
-        [
-            InlineKeyboardButton(text="👥 Клиенты по месяцам", callback_data="menu:clients_month"),
-            InlineKeyboardButton(text="🗑 Очистить ассортимент", callback_data="menu:clear"),
-        ],
-        [
-            InlineKeyboardButton(text="ℹ️ Помощь", callback_data="menu:help"),
-            InlineKeyboardButton(text="❌ Отмена", callback_data="menu:cancel"),
-        ],
+        [InlineKeyboardButton(text="📦 Ассортимент", callback_data="menu:assortment")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
+        [InlineKeyboardButton(text="👥 Клиенты", callback_data="menu:clients")],
+        [InlineKeyboardButton(text="❓ Помощь", callback_data="menu:help")],
     ])
     return keyboard
 
 
-@router.message(CommandStart())
-async def cmd_start(message: Message):
-    await send_and_clean(
-        bot=message.bot,
-        chat_id=message.chat.id,
-        text="👋 Добро пожаловать! Используйте кнопки ниже для управления.",
-        reply_markup=get_main_menu_keyboard(),
-        message_thread_id=message.message_thread_id,
-        delete_after=120,
+async def show_help(bot: Bot, chat_id: int):
+    """Показывает справку."""
+    text = (
+        "📖 <b>Справка по боту</b>\n\n"
+        "Основные команды:\n"
+        "/start — главное меню\n"
+        "/inventory — показать ассортимент\n"
+        "/cancel — отменить текущее действие\n"
+        "/help — эта справка\n\n"
+        "Административные команды доступны только админам."
     )
+    await bot.send_message(chat_id, text, parse_mode="HTML")
 
 
-@router.message(Command("help"))
-async def cmd_help(message: Message):
-    await send_and_clean(
-        bot=message.bot,
-        chat_id=message.chat.id,
-        text="📌 Доступные команды:\n"
-             "/start — главное меню\n"
-             "/inventory — показать ассортимент\n"
-             "/help — помощь",
-        message_thread_id=message.message_thread_id,
-        delete_after=60,
-    )
+async def show_inventory(bot: Bot, chat_id: int):
+    """Показывает текущий ассортимент (заглушка)."""
+    await bot.send_message(chat_id, "📦 Функция просмотра ассортимента пока в разработке.")
