@@ -23,13 +23,18 @@ app.include_router(sellers.router, prefix="/sellers", tags=["sellers"])
 app.include_router(debug.router, prefix="/admin", tags=["debug"])
 
 
-# ====================== MIDDLEWARE (НАДЁЖНЫЙ ВАРИАНТ) ======================
+# ====================== MIDDLEWARE ======================
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Разрешаем страницу логина (ловим и /auth/login, и /admin/auth/login)
-    if "/auth/login" in path or path == "/debug/routes":
+    # Разрешаем доступ к странице логина (явно добавлено /auth/login)
+    if (
+        path == "/auth/login"
+        or path.startswith("/auth/login")
+        or "/auth/login" in path
+        or path == "/debug/routes"
+    ):
         return await call_next(request)
 
     if not is_authenticated(request):
