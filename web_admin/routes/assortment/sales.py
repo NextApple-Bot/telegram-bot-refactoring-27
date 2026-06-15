@@ -44,9 +44,6 @@ async def handle_sale_from_form(
     accessories: Optional[list[dict[str, Any]]] = None,
     conn=None,
 ) -> dict[str, Any]:
-    """
-    Полноценная продажа товара из админ-панели (логика v26).
-    """
     accessories = accessories or []
 
     if not sale_price or sale_price <= 0:
@@ -167,4 +164,63 @@ async def handle_sale_from_form(
             installment=all_payments.get("installment", 0),
             is_accessory=False,
             message_id=sale_message_id,
-       
+        )
+        session.add(sale)
+
+        # === 6. Сохранение платежей ===
+        for pay_type, amount in all_payments.items():
+            if amount > 0:
+                session.add(DailyPayment(
+                    type="sale",
+                    payment_type=pay_type,
+                    amount=amount,
+                    sale_message_id=sale_message_id,
+                ))
+
+        if own_session:
+            await session.commit()
+
+        # === 7. Уведомление ===
+        asyncio.create_task(send_sale_notification(
+            item_text=text,
+            price=sale_price,
+            payment_type=sale_payment_type,
+            prepayment=sale_prepayment if sale_prepayment > 0 else None,
+            payment_amount=sale_payment_amount if sale_payment_type != "paid" else None,
+            platform=sale_platform,
+            full_name=sale_full_name,
+            phone=sale_phone,
+            birth_date=sale_birth_date,
+            bonus=sale_bonus,
+            change=sale_change,
+            change_type=sale_change_type,
+            accessories=processed_accessories,
+            accessories_total=accessories_total,
+        ))
+
+        await cache.delete(f"dashboard:summary:{date.today().isoformat()}")
+        await AssortmentService.invalidate_cache()
+
+        return {"success": True}
+
+    except ValueError as e:
+        if own_session:
+            await session.rollback()
+        logger.warning(f"Ошибка валидации при продаже: {e}")
+        return {"error": str(e)}
+
+    except SQLAlchemyError:
+        logger.exception("Ошибка БД при продаже из админки")
+        if own_session:
+            await session.rollback()
+        return {"error": "Ошибка базы данных"}
+
+    except Exception as e:
+        logger.exception("Неожиданная ошибка в handle_sale_from_form")
+        if own_session:
+            await session.rollback()
+        return {"error": str(e)}
+
+    finally:
+        if own_session:
+            await session.close()
