@@ -1,12 +1,12 @@
-#!/bin/sh
-set -e
+#!/bin/bash
+set -euo pipefail
 
 echo "🔥 Проверяем окружение..."
-if [ -z "$DATABASE_URL" ]; then
+if [ -z "${DATABASE_URL:-}" ]; then
     echo "❌ FATAL: DATABASE_URL is not set!"
     exit 1
 fi
-if [ -z "$BOT_TOKEN" ]; then
+if [ -z "${BOT_TOKEN:-}" ]; then
     echo "❌ FATAL: BOT_TOKEN is not set!"
     exit 1
 fi
@@ -14,14 +14,15 @@ echo "✅ Переменные окружения в порядке."
 
 export PYTHONPATH=/app
 
-echo "Сервер будет слушать порт: ${PORT:-8000}"
+PORT=${PORT:-8000}
+echo "Сервер будет слушать порт: $PORT"
 
 echo ""
 echo "🔄 Текущая ревизия Alembic:"
 alembic current || true
 
 echo ""
-echo "🔄 Применяем миграции Alembic (строго, с ошибкой при неудаче)..."
+echo "🔄 Применяем миграции Alembic..."
 alembic upgrade head
 
 echo ""
