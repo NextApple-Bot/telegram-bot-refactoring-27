@@ -147,7 +147,9 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                <button type="button" class="btn btn-primary" onclick="submitStatsUpdate()">Сохранить</button>
+                <button type="button" class="btn btn-primary" id="saveStatsBtn" onclick="submitStatsUpdate()">
+                    Сохранить
+                </button>
             </div>
         </div>
     </div>
@@ -156,23 +158,47 @@
 
 {% block extra_scripts %}
 <script>
-function submitStatsUpdate() {
+async function submitStatsUpdate() {
     const form = document.getElementById('updateStatsForm');
+    const saveBtn = document.getElementById('saveStatsBtn');
+    
+    // Блокируем кнопку на время отправки
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = 'Сохраняем...';
+
     const data = Object.fromEntries(new FormData(form).entries());
 
-    fetch('/admin/dashboard/update_stats', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(data)
-    })
-    .then(r => r.json())
-    .then(res => {
+    try {
+        const response = await fetch('/admin/dashboard/update_stats', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        // Проверяем, что ответ успешный
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Сервер вернул ошибку ${response.status}: ${text}`);
+        }
+
+        const res = await response.json();
+
         if (res.success) {
+            // Успешно — перезагружаем страницу
             location.reload();
         } else {
             alert('Ошибка: ' + (res.error || 'Неизвестная ошибка'));
         }
-    });
+    } catch (error) {
+        console.error(error);
+        alert('Не удалось сохранить статистику:\n' + error.message);
+    } finally {
+        // Разблокируем кнопку в любом случае
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = 'Сохранить';
+    }
 }
 </script>
 {% endblock %}
