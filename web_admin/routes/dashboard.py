@@ -23,9 +23,17 @@ async def dashboard(request: Request, target_date: str | None = None):
 
     async_session = get_async_session_factory()
     async with async_session() as session:
-        # Продажи
+        # === Статистика ===
         sales_count = (await session.execute(
             select(func.count(Sale.id)).where(func.date(Sale.sold_at) == today)
+        )).scalar() or 0
+
+        preorders_count = (await session.execute(
+            select(func.count(Preorder.id)).where(func.date(Preorder.created_at) == today)
+        )).scalar() or 0
+
+        bookings_count = (await session.execute(
+            select(func.count(Booking.id)).where(func.date(Booking.booked_at) == today)
         )).scalar() or 0
 
         # Платежи
@@ -40,47 +48,26 @@ async def dashboard(request: Request, target_date: str | None = None):
             ).where(func.date(DailyPayment.created_at) == today)
         )).one()
 
-        payments = {
-            "cash": float(getattr(payment_rows, "cash", 0) or 0),
-            "terminal": float(getattr(payment_rows, "terminal", 0) or 0),
-            "qr": float(getattr(payment_rows, "qr", 0) or 0),
-            "transfer": float(getattr(payment_rows, "transfer", 0) or 0),
-            "invoice": float(getattr(payment_rows, "invoice", 0) or 0),
-            "installment": float(getattr(payment_rows, "installment", 0) or 0),
-        }
+        payments = {col: float(getattr(payment_rows, col, 0) or 0) for col in ['cash','terminal','qr','transfer','invoice','installment']}
         total_revenue = sum(payments.values())
-        plan = 600000
 
-        # Предзаказы и брони
-        preorders_count = (await session.execute(
-            select(func.count(Preorder.id)).where(func.date(Preorder.created_at) == today)
-        )).scalar() or 0
-
-        bookings_count = (await session.execute(
-            select(func.count(Booking.id)).where(func.date(Booking.booked_at) == today)
-        )).scalar() or 0
-
-        # Графики за 7 дней
-        dates_labels = [(today - timedelta(days=i)).strftime("%d.%m") for i in range(6, -1, -1)]
-        sales_chart, revenue_chart = [], []
-        for i in range(6, -1, -1):
-            d = today - timedelta(days=i)
-            cnt = (await session.execute(
-                select(func.count(Sale.id)).where(func.date(Sale.sold_at) == d)
-            )).scalar() or 0
-            rev = (await session.execute(
-                select(func.coalesce(func.sum(DailyPayment.amount), 0)).where(func.date(DailyPayment.created_at) == d)
-            )).scalar() or 0
-            sales_chart.append(cnt)
-            revenue_chart.append(float(rev))
-
-        # Продавцы
+        # === Продавцы ===
         sellers_rows = (await session.execute(
             select(Seller.id, Seller.name, SellerDay.id.isnot(None).label('present'))
             .outerjoin(SellerDay, (Seller.id == SellerDay.seller_id) & (SellerDay.date == today))
             .order_by(Seller.name)
         )).all()
         sellers = [{"id": r.id, "name": r.name, "present": bool(r.present)} for r in sellers_rows]
+
+        # === Графики за 7 дней ===
+        dates_labels = [(today - timedelta(days=i)).strftime("%d.%m") for i in range(6, -1, -1)]
+        sales_chart, revenue_chart = [], []
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            cnt = (await session.execute(select(func.count(Sale.id)).where(func.date(Sale.sold_at) == d))).scalar() or 0
+            rev = (await session.execute(select(func.coalesce(func.sum(DailyPayment.amount), 0)).where(func.date(DailyPayment.created_at) == d))).scalar() or 0
+            sales_chart.append(cnt)
+            revenue_chart.append(float(rev))
 
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
@@ -94,19 +81,12 @@ async def dashboard(request: Request, target_date: str | None = None):
         "revenue_change_week": 0,
         "payments": payments,
         "total_revenue": total_revenue,
-        "plan_amount": plan,
-        "stats": {
-            "sales_count": sales_count,
-            "preorders_count": preorders_count,
-            "bookings_count": bookings_count
-        },
+        "plan_amount": 600000,
+        "stats": {"sales_count": sales_count, "preorders_count": preorders_count, "bookings_count": bookings_count},
         "sellers": sellers,
         "chart_dates": dates_labels,
         "chart_sales": sales_chart,
         "chart_revenue": revenue_chart,
-        "top_labels": [],
-        "top_counts": [],
-        "days": 7,
     })
 
 
@@ -121,7 +101,7 @@ async def update_stats(request: Request):
 
     async_session = get_async_session_factory()
     async with async_session() as session, session.begin():
-        # Очистка старых данных (как в v26)
+        # Очистка
         await session.execute(text("DELETE FROM daily_payments WHERE DATE(created_at) = :d"), {"d": target_date})
         await session.execute(text("DELETE FROM sales WHERE DATE(sold_at) = :d"), {"d": target_date})
         await session.execute(text("DELETE FROM preorders WHERE DATE(created_at) = :d"), {"d": target_date})
@@ -133,15 +113,13 @@ async def update_stats(request: Request):
             if amount > 0:
                 session.add(DailyPayment(type='sale', payment_type=pt, amount=amount, created_at=target_date))
 
-        # Продажи
+        # Продажи / Предзаказы / Брони
         for _ in range(int(data.get("sales_count", 0) or 0)):
             session.add(Sale(sold_at=target_date))
-
-        # Предзаказы
         for _ in range(int(data.get("preorders_count", 0) or 0)):
             session.add(Preorder(created_at=target_date))
 
-        # Брони + системный товар (как в v26)
+        # Системный товар для броней (как в v26)
         sys_item = (await session.execute(select(Item).where(Item.id == 0))).scalar_one_or_none()
         if not sys_item:
             sys_cat = (await session.execute(select(Category).where(Category.name == '__SYSTEM__'))).scalar_one_or_none()
