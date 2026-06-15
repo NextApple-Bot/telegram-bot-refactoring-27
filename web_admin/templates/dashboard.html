@@ -4,153 +4,139 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h4>Дашборд за {{ target_date }}</h4>
-        <small class="text-muted">
-            {{ stats.sales_count }} продаж • {{ stats.preorders_count }} предзаказов • {{ stats.bookings_count }} броней
-        </small>
-    </div>
-    <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editStatsModal">
-        <i class="bi bi-pencil-square"></i> Редактировать статистику
+    <h2>Дашборд за {{ target_date }}</h2>
+    
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editStatsModal">
+        ✏️ Редактировать статистику
     </button>
 </div>
 
-<!-- KPI Cards -->
-<div class="row g-3 mb-4">
-    <div class="col-xl-3 col-md-6">
-        <div class="card h-100">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <p class="text-muted mb-1">Выручка сегодня</p>
-                        <h3 class="mb-0">{{ "{:,.0f}".format(revenue_today) }} ₽</h3>
-                    </div>
-                    <i class="bi bi-currency-exchange display-6 text-success"></i>
+<!-- Основные показатели -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body text-center">
+                <h6 class="text-muted">Выручка сегодня</h6>
+                <h2 class="text-success mb-0">{{ "{:,.0f}".format(revenue_today) }} ₽</h2>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body text-center">
+                <h6 class="text-muted">Продажи сегодня</h6>
+                <h2 class="mb-0">{{ sales_today }}</h2>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body text-center">
+                <h6 class="text-muted">План на день</h6>
+                <h2 class="mb-0">{{ "{:,.0f}".format(plan_amount) }} ₽</h2>
+                <small class="text-muted">
+                    Выполнение: {{ ((revenue_today / plan_amount) * 100) | round(1) if plan_amount > 0 else 0 }}%
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Платежи -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header">
+        <strong>Платежи сегодня</strong>
+    </div>
+    <div class="card-body">
+        <div class="row text-center">
+            {% for type, amount in payments.items() %}
+            <div class="col">
+                <div class="border rounded p-3">
+                    <div class="text-muted small">{{ type|capitalize }}</div>
+                    <div class="fs-5 fw-semibold">{{ "{:,.0f}".format(amount) }} ₽</div>
                 </div>
             </div>
-        </div>
-    </div>
-    <div class="col-xl-3 col-md-6">
-        <div class="card h-100">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <p class="text-muted mb-1">Продажи сегодня</p>
-                        <h3 class="mb-0">{{ sales_today }}</h3>
-                    </div>
-                    <i class="bi bi-cart-check display-6 text-primary"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-3 col-md-6">
-        <div class="card h-100">
-            <div class="card-body">
-                <p class="text-muted mb-1">План на день</p>
-                <h3 class="mb-0">{{ "{:,.0f}".format(plan_amount) }} ₽</h3>
-                <small>Выполнение: {{ ((revenue_today / plan_amount) * 100) | round(1) if plan_amount > 0 else 0 }}%</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-3 col-md-6">
-        <div class="card h-100">
-            <div class="card-body">
-                <p class="text-muted mb-2">Платежи сегодня</p>
-                {% for type, amount in payments.items() %}
-                    <div class="d-flex justify-content-between small">
-                        <span>{{ type|capitalize }}</span>
-                        <strong>{{ "{:,.0f}".format(amount) }} ₽</strong>
-                    </div>
-                {% endfor %}
-            </div>
+            {% endfor %}
         </div>
     </div>
 </div>
 
 <!-- Продавцы -->
-<div class="card mb-4">
+<div class="card shadow-sm mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <span>Продавцы сегодня</span>
+        <strong>Продавцы сегодня</strong>
         <div>
             <a href="/admin/sellers/manage" class="btn btn-sm btn-outline-secondary">Управление</a>
             <a href="/admin/sellers/stats" class="btn btn-sm btn-outline-secondary">Статистика</a>
         </div>
     </div>
     <div class="card-body">
-        {% for seller in sellers %}
-            <span class="badge me-1 {% if seller.present %}bg-success{% else %}bg-secondary{% endif %}">
-                {{ seller.name }}
-            </span>
-        {% endfor %}
+        {% if sellers %}
+            {% for seller in sellers %}
+                <span class="badge {% if seller.present %}bg-success{% else %}bg-secondary{% endif %} me-2 mb-2 fs-6 p-2">
+                    {{ seller.name }}
+                </span>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted mb-0">Продавцы на сегодня не назначены.</p>
+        {% endif %}
     </div>
 </div>
 
-<!-- Графики -->
-<div class="row">
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header">Динамика продаж (7 дней)</div>
-            <div class="card-body">
-                <canvas id="salesChart" height="100"></canvas>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header">Динамика выручки (7 дней)</div>
-            <div class="card-body">
-                <canvas id="revenueChart" height="100"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Модалка редактирования статистики -->
-<div class="modal fade" id="editStatsModal" tabindex="-1">
+<!-- Модальное окно редактирования статистики -->
+<div class="modal fade" id="editStatsModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Редактировать статистику за {{ target_date }}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <form id="updateStatsForm">
+            
+            <form id="statsForm">
+                <div class="modal-body">
                     <input type="hidden" name="target_date" value="{{ target_date_iso }}">
                     
                     <div class="row">
+                        <!-- Количество -->
                         <div class="col-md-6">
-                            <h6>Количество</h6>
-                            <div class="mb-2">
-                                <label>Продажи</label>
+                            <h6 class="mb-3">Количество</h6>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Продажи</label>
                                 <input type="number" name="sales_count" class="form-control" value="{{ stats.sales_count }}">
                             </div>
-                            <div class="mb-2">
-                                <label>Предзаказы</label>
+                            <div class="mb-3">
+                                <label class="form-label">Предзаказы</label>
                                 <input type="number" name="preorders_count" class="form-control" value="{{ stats.preorders_count }}">
                             </div>
-                            <div class="mb-2">
-                                <label>Брони</label>
+                            <div class="mb-3">
+                                <label class="form-label">Брони</label>
                                 <input type="number" name="bookings_count" class="form-control" value="{{ stats.bookings_count }}">
                             </div>
                         </div>
+                        
+                        <!-- Платежи -->
                         <div class="col-md-6">
-                            <h6>Платежи</h6>
-                            {% for type in ['cash','terminal','qr','transfer','invoice','installment'] %}
+                            <h6 class="mb-3">Платежи (₽)</h6>
+                            
+                            {% for type in ['cash', 'terminal', 'qr', 'transfer', 'invoice', 'installment'] %}
                             <div class="mb-2">
-                                <label>{{ type|capitalize }}</label>
-                                <input type="number" step="0.01" name="{{ type }}" class="form-control" value="{{ payments.get(type, 0) }}">
+                                <label class="form-label text-capitalize">{{ type }}</label>
+                                <input type="number" step="0.01" name="{{ type }}" class="form-control" 
+                                       value="{{ payments.get(type, 0) }}">
                             </div>
                             {% endfor %}
                         </div>
                     </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                <button type="button" class="btn btn-primary" id="saveStatsBtn" onclick="submitStatsUpdate()">
-                    Сохранить
-                </button>
-            </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -158,47 +144,30 @@
 
 {% block extra_scripts %}
 <script>
-async function submitStatsUpdate() {
-    const form = document.getElementById('updateStatsForm');
-    const saveBtn = document.getElementById('saveStatsBtn');
+document.getElementById('statsForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
     
-    // Блокируем кнопку на время отправки
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = 'Сохраняем...';
-
-    const data = Object.fromEntries(new FormData(form).entries());
-
+    const formData = new FormData(this);
+    const data = Object.fromEntries(formData.entries());
+    
     try {
         const response = await fetch('/admin/dashboard/update_stats', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
-
-        // Проверяем, что ответ успешный
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Сервер вернул ошибку ${response.status}: ${text}`);
-        }
-
-        const res = await response.json();
-
-        if (res.success) {
-            // Успешно — перезагружаем страницу
+        
+        const result = await response.json();
+        
+        if (result.success) {
             location.reload();
         } else {
-            alert('Ошибка: ' + (res.error || 'Неизвестная ошибка'));
+            alert('Ошибка: ' + (result.error || 'Неизвестная ошибка'));
         }
     } catch (error) {
+        alert('Ошибка при сохранении');
         console.error(error);
-        alert('Не удалось сохранить статистику:\n' + error.message);
-    } finally {
-        // Разблокируем кнопку в любом случае
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = 'Сохранить';
     }
-}
+});
 </script>
 {% endblock %}
