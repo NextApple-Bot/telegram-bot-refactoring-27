@@ -1,61 +1,64 @@
 {% extends "base.html" %}
 
-{% block page_title %}Редактировать клиента #{{ client.id }}{% endblock %}
+{% block page_title %}Редактировать категорию{% endblock %}
 
 {% block content %}
-<div class="container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3>Редактировать клиента #{{ client.id }}</h3>
-        <a href="/admin/clients/{{ client.id }}" class="btn btn-secondary">← Назад</a>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Редактировать категорию: <strong>{{ category.name }}</strong></h2>
+    <a href="/admin/assortment" class="btn btn-secondary">← Назад</a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post" action="/admin/assortment/edit_category/{{ category.id }}">
+            <div class="mb-3">
+                <label class="form-label">Название категории</label>
+                <input type="text" name="name" class="form-control" value="{{ category.name }}" required>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+                <a href="/admin/assortment" class="btn btn-outline-secondary">Отмена</a>
+            </div>
+        </form>
     </div>
+</div>
 
-    <div class="card">
-        <div class="card-body">
-            <form method="post" action="/admin/clients/{{ client.id }}/edit">
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">ФИО</label>
-                        <input type="text" name="full_name" class="form-control" value="{{ client.full_name or '' }}">
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Основной телефон</label>
-                        <input type="text" name="phone" class="form-control" value="{{ client.phone or '' }}">
-                    </div>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Дополнительные телефоны (через запятую)</label>
-                    <input type="text" name="phones" class="form-control" value="{{ client.phones or '' }}">
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Telegram</label>
-                        <input type="text" name="telegram_username" class="form-control" value="{{ client.telegram_username or '' }}">
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Соцсети / Площадка</label>
-                        <input type="text" name="social_network" class="form-control" value="{{ client.social_network or '' }}">
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Источник</label>
-                        <input type="text" name="referral_source" class="form-control" value="{{ client.referral_source or '' }}">
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Дата рождения</label>
-                        <input type="date" name="birth_date" class="form-control" value="{{ client.birth_date or '' }}">
-                    </div>
-                </div>
-
-                <div class="d-flex gap-2 mt-3">
-                    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
-                    <a href="/admin/clients/{{ client.id }}" class="btn btn-outline-secondary">Отмена</a>
-                </div>
-            </form>
-        </div>
+<!-- Список товаров в категории -->
+<div class="card mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Товары в категории</strong>
+        <span class="badge bg-secondary">{{ items|length }}</span>
+    </div>
+    <div class="card-body p-0">
+        {% if items %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>Текст товара</th>
+                            <th>Серийный</th>
+                            <th style="width: 100px;">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td>#{{ item.id }}</td>
+                            <td>{{ item.text }}</td>
+                            <td>{{ item.serial or '—' }}</td>
+                            <td>
+                                <a href="/admin/assortment/edit/{{ item.id }}" class="btn btn-sm btn-outline-primary">Изменить</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="p-3 text-muted">В этой категории пока нет товаров.</div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
