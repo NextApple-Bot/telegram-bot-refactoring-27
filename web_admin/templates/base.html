@@ -18,18 +18,28 @@
         .sidebar {
             min-height: 100vh;
             background-color: #212529;
-            color: white;
+            color: #adb5bd;
         }
         .sidebar .nav-link {
             color: #adb5bd;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 4px;
         }
-        .sidebar .nav-link:hover,
-        .sidebar .nav-link.active {
-            color: white;
+        .sidebar .nav-link:hover {
             background-color: #343a40;
+            color: white;
+        }
+        .sidebar .nav-link.active {
+            background-color: #0d6efd;
+            color: white;
         }
         .main-content {
-            padding: 20px;
+            padding: 25px;
+        }
+        .card {
+            border: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
         }
     </style>
 </head>
@@ -38,49 +48,56 @@
         <div class="row">
             <!-- Sidebar -->
             <div class="col-md-2 sidebar p-3">
-                <h4 class="text-white mb-4">🤖 Bot Admin</h4>
-                
+                <div class="d-flex align-items-center mb-4 px-2">
+                    <h4 class="text-white mb-0">🤖 <strong>Bot Admin</strong></h4>
+                </div>
+
                 <ul class="nav flex-column">
                     <li class="nav-item">
-                        <a class="nav-link" href="/admin/dashboard">
+                        <a class="nav-link {% if request.url.path.startswith('/admin/dashboard') %}active{% endif %}" 
+                           href="/admin/dashboard">
                             <i class="bi bi-speedometer2 me-2"></i> Дашборд
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/admin/assortment">
+                        <a class="nav-link {% if request.url.path.startswith('/admin/assortment') %}active{% endif %}" 
+                           href="/admin/assortment">
                             <i class="bi bi-box-seam me-2"></i> Ассортимент
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/admin/clients">
+                        <a class="nav-link {% if request.url.path.startswith('/admin/clients') %}active{% endif %}" 
+                           href="/admin/clients">
                             <i class="bi bi-people me-2"></i> Клиенты
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/admin/purchases">
+                        <a class="nav-link {% if request.url.path.startswith('/admin/purchases') %}active{% endif %}" 
+                           href="/admin/purchases">
                             <i class="bi bi-cart me-2"></i> Покупки
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/admin/sold">
+                        <a class="nav-link {% if request.url.path.startswith('/admin/sold') %}active{% endif %}" 
+                           href="/admin/sold">
                             <i class="bi bi-archive me-2"></i> Проданные
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/admin/stats">
+                        <a class="nav-link {% if request.url.path.startswith('/admin/stats') %}active{% endif %}" 
+                           href="/admin/stats">
                             <i class="bi bi-graph-up me-2"></i> Статистика
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/admin/sellers/manage">
+                        <a class="nav-link {% if request.url.path.startswith('/admin/sellers') %}active{% endif %}" 
+                           href="/admin/sellers/manage">
                             <i class="bi bi-person-badge me-2"></i> Продавцы
                         </a>
                     </li>
                 </ul>
 
-                <hr class="text-secondary">
-
-                <div class="mt-auto">
+                <div class="mt-auto px-2 pt-4">
                     <a href="/admin/auth/logout" class="btn btn-outline-light btn-sm w-100">
                         <i class="bi bi-box-arrow-right me-2"></i> Выйти
                     </a>
@@ -90,7 +107,7 @@
             <!-- Main Content -->
             <div class="col-md-10 main-content">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h2>{% block page_title %}Панель управления{% endblock %}</h2>
+                    <h2 class="mb-0">{% block page_title %}Панель управления{% endblock %}</h2>
                 </div>
 
                 {% block content %}{% endblock %}
