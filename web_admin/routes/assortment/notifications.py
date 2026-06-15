@@ -1,4 +1,3 @@
-# Файл: web_admin/routes/assortment/notifications.py
 import logging
 
 from aiogram import Bot
@@ -28,7 +27,7 @@ async def send_booking_notification(
     is_cancel: bool = False
 ):
     try:
-        bot = Bot(token=config.BOT_TOKEN)  # ИСПРАВЛЕНО: было config.TOKEN
+        bot = Bot(token=config.BOT_TOKEN)
         if is_cancel:
             message_text = f"❌ Отмена Брони:\n\n{item_text}"
         else:
@@ -93,7 +92,7 @@ async def send_sale_notification(
     accessories_total: float = 0.0
 ):
     try:
-        bot = Bot(token=config.BOT_TOKEN)  # ИСПРАВЛЕНО: было config.TOKEN
+        bot = Bot(token=config.BOT_TOKEN)
         payment_type_ru = {
             'cash': 'Наличными', 'terminal': 'Терминал', 'qr': 'QR-код',
             'transfer': 'Перевод', 'invoice': 'Оплата по счету', 'installment': 'Рассрочка',
@@ -149,7 +148,7 @@ async def send_sale_notification(
             lines.pop()
         lines.append("")
 
-        # ИТОГОВАЯ ОБЩАЯ СУММА = цена товара + аксессуары - бонус
+        # ИТОГОВАЯ ОБЩАЯ СУММА
         total = price + accessories_total - (bonus or 0)
         lines.append(f"Общая – {format_number(total)}")
         lines.append("")
