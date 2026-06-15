@@ -2,8 +2,8 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func, select
 
 from bot.db import get_async_session_factory
@@ -87,29 +87,50 @@ async def dashboard(request: Request, target_date: str | None = None):
 
 @router.post("/stats/edit")
 @router.post("/update_stats")
-async def edit_stats(request: Request):
-    """Редактирование статистики (гибкая обработка формы)."""
-    form = await request.form()
-
-    target_date_str = form.get("target_date")
-    if not target_date_str:
-        raise HTTPException(status_code=400, detail="target_date обязателен")
-
+async def update_stats(request: Request):
+    """
+    Универсальный обработчик обновления статистики.
+    Поддерживает и JSON (как в v26), и form-data.
+    """
     try:
-        edit_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Неверный формат даты")
+        # Пробуем сначала JSON (как было в старой версии)
+        try:
+            data = await request.json()
+        except Exception:
+            # Если не JSON — читаем как обычную форму
+            form = await request.form()
+            data = dict(form)
 
-    # Логируем что пришло (для отладки)
-    logger.info(f"Получена форма редактирования за {edit_date}: {dict(form)}")
+        target_date_str = data.get("target_date")
+        if not target_date_str:
+            return JSONResponse({"success": False, "error": "target_date обязателен"}, status_code=400)
 
-    async_session = get_async_session_factory()
-    async with async_session() as session:
-        async with session.begin():
-            await cache.delete(f"dashboard:summary:{edit_date.isoformat()}")
+        target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
 
-    await AssortmentService.invalidate_cache()
-    return RedirectResponse(url=f"/admin/dashboard?target_date={target_date_str}", status_code=303)
+        async_session = get_async_session_factory()
+        async with async_session() as session, session.begin():
+            await session.execute(
+                "DELETE FROM daily_payments WHERE DATE(created_at) = :d", {"d": target_date}
+            )
+            # Здесь можно добавить очистку других таблиц при необходимости
+
+            # Пример сохранения платежей (адаптируй под свою форму)
+            for payment_type in ["cash", "terminal", "qr", "transfer", "invoice", "installment"]:
+                amount = float(data.get(payment_type, 0) or 0)
+                if amount > 0:
+                    session.add(DailyPayment(
+                        type="sale",
+                        payment_type=payment_type,
+                        amount=amount,
+                        created_at=target_date
+                    ))
+
+        await cache.delete(f"dashboard:summary:{target_date.isoformat()}")
+        return JSONResponse({"success": True})
+
+    except Exception as e:
+        logger.exception("Ошибка при обновлении статистики")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @router.post("/sellers/add")
