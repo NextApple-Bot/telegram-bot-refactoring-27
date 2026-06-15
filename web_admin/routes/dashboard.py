@@ -1,15 +1,13 @@
 import logging
 from datetime import date, datetime
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import func, select
 
 from bot.db import get_async_session_factory
 from bot.models import DailyPayment, Sale, Seller, SellerDay
 from bot.repositories.stats import StatsRepository
-from bot.services.assortment import AssortmentService
 from bot.services.cache import cache
 from web_admin.templates import templates
 
@@ -18,22 +16,22 @@ router = APIRouter()
 
 
 async def get_dashboard_data(target_date: date = None):
-    """Получение данных для дашборда."""
+    """Получение данных для дашборда (пока только за сегодня)."""
     if target_date is None:
         target_date = date.today()
 
     async_session = get_async_session_factory()
     async with async_session() as session:
-        # Получаем статистику
-        stats = await StatsRepository.get_today_stats(target_date=target_date)
-        
-        # Получаем продавцов на сегодня
+        # Получаем статистику (только за сегодня, как реализовано в репозитории)
+        stats = await StatsRepository.get_today_stats()
+
+        # Продавцы на сегодня
         sellers_result = await session.execute(
             select(Seller).join(SellerDay).where(SellerDay.date == target_date)
         )
         sellers = sellers_result.scalars().all()
 
-        # Получаем платежи
+        # Платежи за сегодня
         payments_result = await session.execute(
             select(DailyPayment.payment_type, func.sum(DailyPayment.amount))
             .where(func.date(DailyPayment.created_at) == target_date)
@@ -41,7 +39,6 @@ async def get_dashboard_data(target_date: date = None):
         )
         payments = {row[0]: float(row[1] or 0) for row in payments_result.all()}
 
-        # Выручка сегодня
         revenue_today = sum(payments.values())
 
         return {
@@ -52,7 +49,7 @@ async def get_dashboard_data(target_date: date = None):
             "payments": payments,
             "revenue_today": revenue_today,
             "sales_today": stats.get("sales_count", 0) if isinstance(stats, dict) else 0,
-            "plan_amount": 50000,  # Можно вынести в конфиг
+            "plan_amount": 50000,
         }
 
 
@@ -66,10 +63,7 @@ async def dashboard(request: Request, target_date: str = None):
             target_date_obj = date.today()
 
         data = await get_dashboard_data(target_date_obj)
-        return templates.TemplateResponse(
-            "dashboard.html",
-            {"request": request, **data}
-        )
+        return templates.TemplateResponse("dashboard.html", {"request": request, **data})
     except Exception as e:
         logger.exception("Ошибка при загрузке дашборда")
         raise HTTPException(status_code=500, detail=str(e))
@@ -78,7 +72,7 @@ async def dashboard(request: Request, target_date: str = None):
 @router.post("/stats/edit")
 @router.post("/update_stats")
 async def update_stats(request: Request):
-    """Сохранение отредактированной статистики."""
+    """Сохранение статистики."""
     try:
         content_type = request.headers.get("content-type", "")
         if "application/json" in content_type:
