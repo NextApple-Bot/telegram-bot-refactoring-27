@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def generate_sale_message_id() -> int:
-    """Генерирует большой уникальный ID (после миграции на BIGINT)."""
+    """Генерирует большой уникальный ID (для BIGINT)."""
     return uuid.uuid4().int & 0x7FFFFFFFFFFFFFFF
 
 
@@ -47,6 +47,7 @@ async def handle_sale_from_form(
 ) -> dict[str, Any]:
     accessories = accessories or []
 
+    # === Валидация ===
     if not sale_price or sale_price <= 0:
         return {"error": "Укажите стоимость продажи"}
 
@@ -67,7 +68,7 @@ async def handle_sale_from_form(
         if own_session:
             await session.begin()
 
-        # === Обработка аксессуаров ===
+        # === 1. Обработка аксессуаров ===
         processed_accessories = []
         accessories_payments: dict[str, float] = {}
         accessories_total = 0.0
@@ -110,11 +111,12 @@ async def handle_sale_from_form(
                 "payment_type": pay_type,
             })
 
-        all_payments = dict(accessories_payments)
+        # === 2. Сбор всех платежей ===
+        all_payments: dict[str, float] = dict(accessories_payments)
         if sale_payment_type != "paid" and sale_payment_amount > 0:
             all_payments[sale_payment_type] = all_payments.get(sale_payment_type, 0) + sale_payment_amount
 
-        # === Клиент ===
+        # === 3. Клиент + Purchase ===
         client_id = None
         if sale_phone or sale_full_name:
             client_id = await ClientRepository.get_or_create_client(
@@ -139,7 +141,7 @@ async def handle_sale_from_form(
                 conn=session,
             )
 
-        # === Удаление основного товара ===
+        # === 4. Удаление основного товара ===
         main_item = await session.get(Item, item_id)
         if main_item:
             deleted = DeletedItem(
@@ -153,7 +155,7 @@ async def handle_sale_from_form(
             session.add(deleted)
             await session.delete(main_item)
 
-        # === Запись продажи ===
+        # === 5. Запись продажи ===
         sale = Sale(
             count=1,
             cash=all_payments.get("cash", 0),
@@ -167,7 +169,7 @@ async def handle_sale_from_form(
         )
         session.add(sale)
 
-        # === Платежи ===
+        # === 6. Сохранение платежей ===
         for pay_type, amount in all_payments.items():
             if amount > 0:
                 session.add(DailyPayment(
@@ -180,6 +182,7 @@ async def handle_sale_from_form(
         if own_session:
             await session.commit()
 
+        # === 7. Уведомление ===
         asyncio.create_task(send_sale_notification(
             item_text=text,
             price=sale_price,
@@ -202,10 +205,22 @@ async def handle_sale_from_form(
 
         return {"success": True}
 
-    except Exception as e:
+    except ValueError as e:
         if own_session:
             await session.rollback()
-        logger.exception("Ошибка в handle_sale_from_form")
+        logger.warning(f"Ошибка валидации при продаже: {e}")
+        return {"error": str(e)}
+
+    except SQLAlchemyError:
+        logger.exception("Ошибка БД при продаже из админки")
+        if own_session:
+            await session.rollback()
+        return {"error": "Ошибка базы данных"}
+
+    except Exception as e:
+        logger.exception("Неожиданная ошибка в handle_sale_from_form")
+        if own_session:
+            await session.rollback()
         return {"error": str(e)}
 
     finally:
