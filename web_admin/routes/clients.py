@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 
 from bot.db import get_async_session_factory
 from bot.models import Client, Purchase
