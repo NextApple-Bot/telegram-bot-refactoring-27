@@ -6,62 +6,59 @@
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h3>Редактировать товар #{{ item.id }}</h3>
-        <a href="/admin/assortment" class="btn btn-secondary">← Назад к ассортименту</a>
+        <a href="/admin/assortment" class="btn btn-secondary">← Назад</a>
     </div>
 
     <form method="post" action="/admin/assortment/edit/{{ item.id }}">
         <div class="row">
             <!-- Основная информация -->
-            <div class="col-md-6">
+            <div class="col-lg-7">
                 <div class="card mb-4">
                     <div class="card-header">
                         <strong>Основная информация</strong>
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
-                            <label class="form-label">Текст товара</label>
-                            <textarea name="text" class="form-control" rows="3" required>{{ item.text }}</textarea>
+                            <label class="form-label">Текст товара *</label>
+                            <textarea name="text" class="form-control" rows="4" required>{{ item.text }}</textarea>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label">Серийный номер</label>
-                            <input type="text" name="serial" class="form-control" value="{{ item.serial or '' }}">
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Категория</label>
-                            <select name="category_id" class="form-select" required>
-                                {% for cat in categories %}
-                                    <option value="{{ cat.id }}" {% if cat.id == item.category_id %}selected{% endif %}>
-                                        {{ cat.name }}
-                                    </option>
-                                {% endfor %}
-                            </select>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Серийный номер</label>
+                                <input type="text" name="serial" class="form-control" value="{{ item.serial or '' }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Категория *</label>
+                                <select name="category_id" class="form-select" required>
+                                    {% for cat in categories %}
+                                        <option value="{{ cat.id }}" {% if cat.id == item.category_id %}selected{% endif %}>
+                                            {{ cat.name }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- Статус -->
-            <div class="col-md-6">
+            <div class="col-lg-5">
                 <div class="card mb-4">
                     <div class="card-header">
                         <strong>Статус</strong>
                     </div>
                     <div class="card-body">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" name="is_booked" id="is_booked" 
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" name="is_booked" id="is_booked"
                                    {% if item.is_booked %}checked{% endif %}>
-                            <label class="form-check-label" for="is_booked">
-                                Забронирован
-                            </label>
+                            <label class="form-check-label" for="is_booked">Забронирован</label>
                         </div>
 
-                        <div class="form-check">
+                        <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" name="is_sold" id="is_sold">
-                            <label class="form-check-label" for="is_sold">
-                                Продать товар
-                            </label>
+                            <label class="form-check-label" for="is_sold">Продать товар сейчас</label>
                         </div>
                     </div>
                 </div>
@@ -69,23 +66,21 @@
         </div>
 
         <!-- Блок бронирования -->
-        <div class="card mb-4" id="booking_section">
+        <div class="card mb-4" id="bookingBlock" style="display: {% if item.is_booked %}block{% else %}none{% endif %};">
             <div class="card-header bg-warning text-dark">
-                <strong>Бронирование</strong>
+                <strong>Данные бронирования</strong>
             </div>
             <div class="card-body">
                 <div class="row">
-                    <div class="col-md-4">
+                    <div class="col-md-4 mb-3">
                         <label class="form-label">Стоимость *</label>
-                        <input type="number" step="0.01" name="booking_price" class="form-control" 
-                               value="{{ item.booking_price or '' }}">
+                        <input type="number" step="0.01" name="booking_price" class="form-control" value="{{ item.booking_price or '' }}">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-4 mb-3">
                         <label class="form-label">Предоплата</label>
-                        <input type="number" step="0.01" name="booking_prepayment" class="form-control" 
-                               value="{{ item.booking_prepayment or '' }}">
+                        <input type="number" step="0.01" name="booking_prepayment" class="form-control" value="{{ item.booking_prepayment or '' }}">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-4 mb-3">
                         <label class="form-label">Способ оплаты</label>
                         <select name="booking_payment_type" class="form-select">
                             <option value="">Не указан</option>
@@ -97,12 +92,12 @@
                     </div>
                 </div>
 
-                <div class="row mt-3">
-                    <div class="col-md-6">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
                         <label class="form-label">ФИО</label>
                         <input type="text" name="booking_full_name" class="form-control" value="{{ item.booking_full_name or '' }}">
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-6 mb-3">
                         <label class="form-label">Телефон</label>
                         <input type="text" name="booking_phone" class="form-control" value="{{ item.booking_phone or '' }}">
                     </div>
@@ -111,21 +106,21 @@
         </div>
 
         <!-- Блок продажи -->
-        <div class="card mb-4" id="sale_section" style="display: none;">
+        <div class="card mb-4" id="saleBlock" style="display: none;">
             <div class="card-header bg-success text-white">
                 <strong>Продажа товара</strong>
             </div>
             <div class="card-body">
                 <div class="row">
-                    <div class="col-md-4">
+                    <div class="col-md-4 mb-3">
                         <label class="form-label">Стоимость *</label>
                         <input type="number" step="0.01" name="sale_price" class="form-control">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-4 mb-3">
                         <label class="form-label">Сумма оплаты</label>
                         <input type="number" step="0.01" name="sale_payment_amount" class="form-control">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-4 mb-3">
                         <label class="form-label">Способ оплаты</label>
                         <select name="sale_payment_type" class="form-select">
                             <option value="cash">Наличные</option>
@@ -142,30 +137,30 @@
         </div>
 
         <div class="d-flex gap-2">
-            <button type="submit" class="btn btn-primary">Сохранить изменения</button>
-            <a href="/admin/assortment" class="btn btn-secondary">Отмена</a>
+            <button type="submit" class="btn btn-primary px-4">Сохранить изменения</button>
+            <a href="/admin/assortment" class="btn btn-outline-secondary">Отмена</a>
         </div>
     </form>
 </div>
 
 <script>
-// Показываем/скрываем блоки в зависимости от чекбоксов
-document.getElementById('is_booked').addEventListener('change', function() {
-    document.getElementById('booking_section').style.display = this.checked ? 'block' : 'none';
-});
+// Показываем/скрываем блоки брони и продажи
+const isBooked = document.getElementById('is_booked');
+const isSold = document.getElementById('is_sold');
+const bookingBlock = document.getElementById('bookingBlock');
+const saleBlock = document.getElementById('saleBlock');
 
-document.getElementById('is_sold').addEventListener('change', function() {
-    document.getElementById('sale_section').style.display = this.checked ? 'block' : 'none';
-});
+function toggleBlocks() {
+    bookingBlock.style.display = isBooked.checked ? 'block' : 'none';
+    saleBlock.style.display = isSold.checked ? 'block' : 'none';
+}
 
-// Инициализация при загрузке
+isBooked.addEventListener('change', toggleBlocks);
+isSold.addEventListener('change', toggleBlocks);
+
+// Инициализация при загрузке страницы
 window.onload = function() {
-    if (document.getElementById('is_booked').checked) {
-        document.getElementById('booking_section').style.display = 'block';
-    }
-    if (document.getElementById('is_sold').checked) {
-        document.getElementById('sale_section').style.display = 'block';
-    }
+    toggleBlocks();
 }
 </script>
 {% endblock %}
