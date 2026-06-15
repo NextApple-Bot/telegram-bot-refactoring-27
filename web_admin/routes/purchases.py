@@ -25,40 +25,54 @@ async def list_purchases(
     async_session = get_async_session_factory()
     async with async_session() as session:
         offset = (page - 1) * per_page
-        base_query = select(Purchase, Client.full_name.label('client_name')) \
-            .outerjoin(Client, Purchase.client_id == Client.id)
-        count_query = select(func.count(Purchase.id)).outerjoin(Client, Purchase.client_id == Client.id)
 
+        base_query = (
+            select(Purchase, Client.full_name.label("client_name"))
+            .outerjoin(Client, Purchase.client_id == Client.id)
+        )
+
+        count_query = select(func.count(Purchase.id)).outerjoin(
+            Client, Purchase.client_id == Client.id
+        )
+
+        # Фильтры
         if client_search:
+            search_term = f"%{client_search}%"
             base_query = base_query.where(
-                (Client.full_name.ilike(f"%{client_search}%")) | (Client.phone.ilike(f"%{client_search}%"))
+                (Client.full_name.ilike(search_term)) | (Client.phone.ilike(search_term))
             )
             count_query = count_query.where(
-                (Client.full_name.ilike(f"%{client_search}%")) | (Client.phone.ilike(f"%{client_search}%"))
+                (Client.full_name.ilike(search_term)) | (Client.phone.ilike(search_term))
             )
+
         if date_from:
             base_query = base_query.where(Purchase.created_at >= date_from)
             count_query = count_query.where(Purchase.created_at >= date_from)
+
         if date_to:
             base_query = base_query.where(Purchase.created_at <= date_to)
             count_query = count_query.where(Purchase.created_at <= date_to)
+
         if purchase_type != "all":
             base_query = base_query.where(Purchase.purchase_type == purchase_type)
             count_query = count_query.where(Purchase.purchase_type == purchase_type)
 
+        # Сортировка
         allowed_sort = {
             "id": Purchase.id,
             "client_name": Client.full_name,
             "created_at": Purchase.created_at,
             "total_amount": Purchase.total_amount,
-            "purchase_type": Purchase.purchase_type
+            "purchase_type": Purchase.purchase_type,
         }
         sort_col = allowed_sort.get(sort_by, Purchase.id)
         order_dir = sort_col.desc() if sort_order == "desc" else sort_col.asc()
+
         base_query = base_query.order_by(order_dir).limit(per_page).offset(offset)
 
-        total = (await session.execute(count_query)).scalar()
+        total = (await session.execute(count_query)).scalar_one()
         total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+
         rows = (await session.execute(base_query)).all()
 
     purchases = [
@@ -69,28 +83,31 @@ async def list_purchases(
             "created_at": p.created_at,
             "total_amount": p.total_amount,
             "purchase_type": p.purchase_type,
-            "payment_details": p.payment_details
+            "payment_details": p.payment_details,
         }
         for p, client_name in rows
     ]
 
-    return templates.TemplateResponse("purchases.html", {
-        "request": request,
-        "purchases": purchases,
-        "page": page,
-        "per_page": per_page,
-        "total": total,
-        "total_pages": total_pages,
-        "client_search": client_search,
-        "date_from": date_from,
-        "date_to": date_to,
-        "payment_type": payment_type,
-        "purchase_type": purchase_type,
-        "sort_by": sort_by,
-        "sort_order": sort_order,
-        "payment_types": ["cash", "terminal", "qr", "transfer", "invoice", "installment"],
-        "purchase_types": ["sale", "preorder", "booking"],
-    })
+    return templates.TemplateResponse(
+        "purchases.html",
+        {
+            "request": request,
+            "purchases": purchases,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "client_search": client_search,
+            "date_from": date_from,
+            "date_to": date_to,
+            "payment_type": payment_type,
+            "purchase_type": purchase_type,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "payment_types": ["cash", "terminal", "qr", "transfer", "invoice", "installment"],
+            "purchase_types": ["sale", "preorder", "booking"],
+        },
+    )
 
 
 @router.post("/delete/{purchase_id}")
