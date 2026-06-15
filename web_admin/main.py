@@ -3,7 +3,9 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
 from web_admin.auth import is_authenticated
-from web_admin.routes import auth, clients, dashboard, debug, purchases, sellers, sold, stats
+from web_admin.routes import (
+    auth, clients, dashboard, debug, purchases, sellers, sold, stats
+)
 from web_admin.routes.assortment import manage as assortment_manage
 from web_admin.routes.assortment import views as assortment_views
 
@@ -23,17 +25,26 @@ app.include_router(sellers.router, prefix="/sellers", tags=["sellers"])
 app.include_router(debug.router, prefix="/admin", tags=["debug"])
 
 
-# ====================== MIDDLEWARE ======================
+# ====================== MIDDLEWARE АВТОРИЗАЦИИ ======================
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Разрешаем доступ к логину и debug без авторизации
-    if path.startswith("/auth/login") or path.startswith("/debug/routes"):
+    # Разрешаем доступ без авторизации
+    public_paths = [
+        "/auth/login",
+        "/admin/auth/login",
+        "/debug/routes",
+        "/static",
+    ]
+
+    if any(path.startswith(p) for p in public_paths):
         return await call_next(request)
 
     if not is_authenticated(request):
-        return RedirectResponse(url="/admin/auth/login", status_code=303)
+        if path.startswith("/admin"):
+            return RedirectResponse(url="/admin/auth/login", status_code=303)
+        return RedirectResponse(url="/auth/login", status_code=303)
 
     return await call_next(request)
 
