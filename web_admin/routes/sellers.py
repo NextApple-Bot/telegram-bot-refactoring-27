@@ -21,14 +21,15 @@ router = APIRouter()
 
 @router.get("/manage")
 async def seller_manage(request: Request):
-    """Страница управления списком продавцов."""
+    """Страница управления продавцами."""
     async_session = get_async_session_factory()
     async with async_session() as session:
         try:
-            # Убрали phone — колонки нет в БД
-            sellers = (await session.execute(
-                select(Seller.id, Seller.name).order_by(Seller.name)
-            )).all()
+            sellers = (
+                await session.execute(
+                    select(Seller.id, Seller.name).order_by(Seller.name)
+                )
+            ).all()
 
             return templates.TemplateResponse(
                 "sellers_manage.html",
