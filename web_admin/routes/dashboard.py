@@ -1,5 +1,4 @@
-import logging
-from datetime import date, datetime, timedelta
+from datetime import datetime, date, timedelta
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -13,7 +12,10 @@ from bot.repositories.stats import StatsRepository
 from bot.services.cache import cache
 from web_admin.templates import templates
 
+import logging
+
 logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -101,36 +103,56 @@ async def update_stats(request: Request):
 
     async_session = get_async_session_factory()
     async with async_session() as session, session.begin():
-        # Очистка
+        # === 1. Очистка старых данных ===
         await session.execute(text("DELETE FROM daily_payments WHERE DATE(created_at) = :d"), {"d": target_date})
         await session.execute(text("DELETE FROM sales WHERE DATE(sold_at) = :d"), {"d": target_date})
         await session.execute(text("DELETE FROM preorders WHERE DATE(created_at) = :d"), {"d": target_date})
         await session.execute(text("DELETE FROM bookings WHERE DATE(booked_at) = :d"), {"d": target_date})
 
-        # Платежи
+        # === 2. Платежи ===
         for pt in ['cash', 'terminal', 'qr', 'transfer', 'invoice', 'installment']:
             amount = float(data.get(pt, 0) or 0)
             if amount > 0:
                 session.add(DailyPayment(type='sale', payment_type=pt, amount=amount, created_at=target_date))
 
-        # Продажи / Предзаказы / Брони
+        # === 3. Продажи и Предзаказы ===
         for _ in range(int(data.get("sales_count", 0) or 0)):
             session.add(Sale(sold_at=target_date))
         for _ in range(int(data.get("preorders_count", 0) or 0)):
             session.add(Preorder(created_at=target_date))
 
-        # Системный товар для броней (как в v26)
-        sys_item = (await session.execute(select(Item).where(Item.id == 0))).scalar_one_or_none()
+        # === 4. Гарантируем существование системного товара (id=0) ===
+        sys_item = (await session.execute(
+            select(Item).where(Item.id == 0)
+        )).scalar_one_or_none()
+
         if not sys_item:
-            sys_cat = (await session.execute(select(Category).where(Category.name == '__SYSTEM__'))).scalar_one_or_none()
+            sys_cat = (await session.execute(
+                select(Category).where(Category.name == '__SYSTEM__')
+            )).scalar_one_or_none()
+
             if not sys_cat:
                 sys_cat = Category(name='__SYSTEM__', sort_order=-1)
                 session.add(sys_cat)
                 await session.flush()
-            session.add(Item(id=0, text='__SYSTEM_STATS__', category_id=sys_cat.id, is_booked=False))
 
+            sys_item = Item(
+                id=0,
+                text='__SYSTEM_STATS__',
+                category_id=sys_cat.id,
+                is_booked=False
+            )
+            session.add(sys_item)
+            await session.flush()
+
+        # === 5. Брони (используем item_id=0) ===
         for _ in range(int(data.get("bookings_count", 0) or 0)):
             session.add(Booking(item_id=0, booked_at=target_date))
 
     await cache.delete(f"dashboard:summary:{target_date.isoformat()}")
     return JSONResponse({"success": True})
+
+
+@router.get("/top_models_data")
+async def top_models_data(request: Request, days: int = 7, target_date: str | None = None):
+    return JSONResponse({"labels": [], "counts": []})
