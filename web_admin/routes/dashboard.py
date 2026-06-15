@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from bot.db import get_async_session_factory
 from bot.models import DailyPayment, Sale, Seller, SellerDay
@@ -16,13 +16,12 @@ router = APIRouter()
 
 
 async def get_dashboard_data(target_date: date = None):
-    """Получение данных для дашборда (пока только за сегодня)."""
+    """Получение данных для дашборда."""
     if target_date is None:
         target_date = date.today()
 
     async_session = get_async_session_factory()
     async with async_session() as session:
-        # Получаем статистику (только за сегодня, как реализовано в репозитории)
         stats = await StatsRepository.get_today_stats()
 
         # Продавцы на сегодня
@@ -64,6 +63,7 @@ async def dashboard(request: Request, target_date: str = None):
 
         data = await get_dashboard_data(target_date_obj)
         return templates.TemplateResponse("dashboard.html", {"request": request, **data})
+
     except Exception as e:
         logger.exception("Ошибка при загрузке дашборда")
         raise HTTPException(status_code=500, detail=str(e))
@@ -83,14 +83,18 @@ async def update_stats(request: Request):
 
         target_date_str = data.get("target_date")
         if not target_date_str:
-            return JSONResponse({"success": False, "error": "target_date обязателен"}, status_code=400)
+            return JSONResponse(
+                {"success": False, "error": "target_date обязателен"}, 
+                status_code=400
+            )
 
         target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
 
         async_session = get_async_session_factory()
         async with async_session() as session, session.begin():
+            # Исправлено: оборачиваем сырой SQL в text()
             await session.execute(
-                "DELETE FROM daily_payments WHERE DATE(created_at) = :d",
+                text("DELETE FROM daily_payments WHERE DATE(created_at) = :d"),
                 {"d": target_date}
             )
 
@@ -98,12 +102,14 @@ async def update_stats(request: Request):
             for field in payment_fields:
                 amount = float(data.get(field, 0) or 0)
                 if amount > 0:
-                    session.add(DailyPayment(
-                        type="sale",
-                        payment_type=field,
-                        amount=amount,
-                        created_at=target_date
-                    ))
+                    session.add(
+                        DailyPayment(
+                            type="sale",
+                            payment_type=field,
+                            amount=amount,
+                            created_at=target_date
+                        )
+                    )
 
         await cache.delete(f"dashboard:summary:{target_date.isoformat()}")
         return JSONResponse({"success": True})
