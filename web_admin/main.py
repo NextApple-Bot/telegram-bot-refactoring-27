@@ -28,13 +28,8 @@ app.include_router(debug.router, prefix="/admin", tags=["debug"])
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Разрешаем доступ к странице логина (явно добавлено /auth/login)
-    if (
-        path == "/auth/login"
-        or path.startswith("/auth/login")
-        or "/auth/login" in path
-        or path == "/debug/routes"
-    ):
+    # Разрешаем доступ к логину и debug без авторизации
+    if path.startswith("/auth/login") or path.startswith("/debug/routes"):
         return await call_next(request)
 
     if not is_authenticated(request):
@@ -45,7 +40,7 @@ async def auth_middleware(request: Request, call_next):
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/dashboard")
+    return RedirectResponse(url="/admin/dashboard")
 
 
 # ====================== ДИАГНОСТИКА ======================
