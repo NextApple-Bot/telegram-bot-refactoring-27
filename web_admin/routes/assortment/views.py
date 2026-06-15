@@ -29,15 +29,12 @@ async def list_assortment(
     sort_by: str = Query("id", pattern="^(id|text|serial|category_name|is_booked|created_at)$"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
 ):
-    """
-    Список ассортимента с поиском, фильтрацией, сортировкой и пагинацией.
-    """
     async_session = get_async_session_factory()
 
     async with async_session() as session:
         offset = (page - 1) * per_page
 
-        # === Базовый запрос ===
+        # Базовый запрос
         base_query = (
             select(
                 Item.id,
@@ -49,10 +46,10 @@ async def list_assortment(
                 Category.name.label("category_name"),
             )
             .join(Category, Item.category_id == Category.id)
-            .where(Category.name != "__SYSTEM__")  # Исключаем служебную категорию
+            .where(Category.name != "__SYSTEM__")
         )
 
-        # === Фильтры ===
+        # Фильтры
         if search:
             base_query = base_query.where(
                 (Item.text.ilike(f"%{search}%")) | (Item.serial.ilike(f"%{search}%"))
@@ -61,12 +58,12 @@ async def list_assortment(
         if category_id and category_id.isdigit():
             base_query = base_query.where(Item.category_id == int(category_id))
 
-        # === Сортировка (защищённая) ===
+        # Сортировка
         sort_column = ALLOWED_SORT_FIELDS.get(sort_by, Item.id)
         order_direction = sort_column.desc() if sort_order == "desc" else sort_column.asc()
         base_query = base_query.order_by(order_direction).limit(per_page).offset(offset)
 
-        # === Подсчёт общего количества (для пагинации) ===
+        # Подсчёт общего количества
         count_query = (
             select(func.count())
             .select_from(Item)
@@ -81,14 +78,13 @@ async def list_assortment(
         if category_id and category_id.isdigit():
             count_query = count_query.where(Item.category_id == int(category_id))
 
-        # === Выполнение запросов ===
         total = (await session.execute(count_query)).scalar_one()
         total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
         items_result = await session.execute(base_query)
         items = [dict(row._mapping) for row in items_result.all()]
 
-        # === Категории для фильтра ===
+        # Категории для фильтра
         cats_query = (
             select(Category.id, Category.name)
             .where(Category.name != "__SYSTEM__")
