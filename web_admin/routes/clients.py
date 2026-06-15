@@ -1,5 +1,4 @@
 import logging
-
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, or_, select
@@ -13,7 +12,6 @@ router = APIRouter()
 
 
 def _validate_phone(phone: str | None) -> bool:
-    """Простая валидация телефона."""
     if not phone:
         return True
     import re
@@ -27,9 +25,6 @@ async def list_clients(
     per_page: int = Query(50, ge=10, le=200),
     search: str | None = Query(None),
 ):
-    """
-    Список клиентов с поиском и пагинацией.
-    """
     async_session = get_async_session_factory()
     offset = (page - 1) * per_page
 
@@ -42,12 +37,11 @@ async def list_clients(
                 or_(
                     Client.full_name.ilike(search_term),
                     Client.phone.ilike(search_term),
-                    Client.phones.ilike(search_term),           # ← Улучшено: поиск по доп. телефонам
+                    Client.phones.ilike(search_term),
                     Client.telegram_username.ilike(search_term),
                 )
             )
 
-        # Подсчёт общего количества
         total_query = select(func.count()).select_from(Client)
         if search:
             total_query = total_query.where(
@@ -81,9 +75,7 @@ async def list_clients(
 
 @router.get("/{client_id}", response_class=HTMLResponse)
 async def client_detail(request: Request, client_id: int):
-    """Детальная карточка клиента + история покупок."""
     async_session = get_async_session_factory()
-
     async with async_session() as session:
         client = await session.get(Client, client_id)
         if not client:
@@ -105,9 +97,7 @@ async def client_detail(request: Request, client_id: int):
 
 @router.get("/{client_id}/edit", response_class=HTMLResponse)
 async def client_edit_form(request: Request, client_id: int):
-    """Форма редактирования клиента."""
     async_session = get_async_session_factory()
-
     async with async_session() as session:
         client = await session.get(Client, client_id)
         if not client:
@@ -131,63 +121,42 @@ async def client_edit_submit(
     referral_source: str = Form(None),
     birth_date: str = Form(None),
 ):
-    """Сохранение изменений клиента с базовой валидацией."""
     if phone and not _validate_phone(phone):
-        raise HTTPException(status_code=400, detail="Неверный формат основного телефона")
+        raise HTTPException(status_code=400, detail="Неверный формат телефона")
 
     async_session = get_async_session_factory()
+    async with async_session() as session, session.begin():
+        client = await session.get(Client, client_id)
+        if not client:
+            raise HTTPException(status_code=404, detail="Клиент не найден")
 
-    try:
-        async with async_session() as session:
-            async with session.begin():
-                client = await session.get(Client, client_id)
-                if not client:
-                    raise HTTPException(status_code=404, detail="Клиент не найден")
+        client.full_name = full_name or None
+        client.phone = phone or None
+        client.phones = phones or None
+        client.telegram_username = telegram_username or None
+        client.social_network = social_network or None
+        client.referral_source = referral_source or None
+        client.birth_date = birth_date or None
 
-                client.full_name = full_name or None
-                client.phone = phone or None
-                client.phones = phones or None
-                client.telegram_username = telegram_username or None
-                client.social_network = social_network or None
-                client.referral_source = referral_source or None
-                client.birth_date = birth_date or None
+        session.add(client)
 
-                session.add(client)
-
-        return RedirectResponse(url=f"/admin/clients/{client_id}", status_code=303)
-
-    except Exception as e:
-        logger.exception(f"Ошибка при редактировании клиента {client_id}")
-        raise HTTPException(status_code=500, detail="Не удалось сохранить изменения") from e
+    return RedirectResponse(url=f"/admin/clients/{client_id}", status_code=303)
 
 
 @router.post("/{client_id}/delete")
 async def client_delete(request: Request, client_id: int):
-    """
-    Удаление клиента с явным удалением связанных покупок.
-    Это безопаснее, чем полагаться только на каскад в модели.
-    """
     async_session = get_async_session_factory()
+    async with async_session() as session, session.begin():
+        client = await session.get(Client, client_id)
+        if not client:
+            raise HTTPException(status_code=404, detail="Клиент не найден")
 
-    try:
-        async with async_session() as session:
-            async with session.begin():
-                client = await session.get(Client, client_id)
-                if not client:
-                    raise HTTPException(status_code=404, detail="Клиент не найден")
+        # Удаляем связанные покупки
+        await session.execute(
+            text("DELETE FROM purchases WHERE client_id = :client_id"),
+            {"client_id": client_id}
+        )
 
-                # Явно удаляем все покупки клиента (защита данных)
-                await session.execute(
-                    Purchase.__table__.delete().where(Purchase.client_id == client_id)
-                )
+        await session.delete(client)
 
-                # Удаляем самого клиента
-                await session.delete(client)
-
-                logger.info(f"Клиент #{client_id} и его покупки удалены")
-
-        return RedirectResponse(url="/admin/clients", status_code=303)
-
-    except Exception as e:
-        logger.exception(f"Ошибка при удалении клиента {client_id}")
-        raise HTTPException(status_code=500, detail="Не удалось удалить клиента") from e
+    return RedirectResponse(url="/admin/clients", status_code=303)
