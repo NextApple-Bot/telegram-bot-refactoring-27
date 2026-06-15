@@ -15,9 +15,7 @@ async def login_form(request: Request):
 @router.post("/login")
 async def login_submit(request: Request, password: str = Form(...)):
     if login(request, password):
-        # Исправленный редирект после успешного логина
         return RedirectResponse(url="/admin/dashboard", status_code=303)
-    
     return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
 
