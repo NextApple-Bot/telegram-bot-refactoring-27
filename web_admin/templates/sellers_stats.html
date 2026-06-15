@@ -3,43 +3,64 @@
 {% block page_title %}Статистика продавцов{% endblock %}
 
 {% block content %}
-
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h4>Статистика продавцов</h4>
+    <h2>Статистика продавцов</h2>
     <a href="/admin/sellers/manage" class="btn btn-outline-secondary">← Управление продавцами</a>
 </div>
 
-<div class="card">
+<!-- Фильтры -->
+<div class="card mb-4">
     <div class="card-body">
-        {% if results %}
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Продавец</th>
-                            <th>Дней работал</th>
-                            <th>Личных продаж (шт.)</th>
-                            <th>Личная выручка (₽)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for r in results %}
-                        <tr>
-                            <td>{{ r.name }}</td>
-                            <td>{{ r.days_worked }}</td>
-                            <td>{{ r.total_count }}</td>
-                            <td>{{ "{:,.0f}".format(r.total_revenue) }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">С</label>
+                <input type="date" name="date_from" class="form-control" value="{{ date_from or '' }}">
             </div>
-        {% else %}
-            <div class="text-center py-5">
-                <p class="text-muted">Данных за выбранный период нет.</p>
+            <div class="col-md-3">
+                <label class="form-label">По</label>
+                <input type="date" name="date_to" class="form-control" value="{{ date_to or '' }}">
             </div>
-        {% endif %}
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Показать</button>
+            </div>
+        </form>
     </div>
 </div>
 
+<!-- Результаты -->
+{% if results %}
+<div class="card">
+    <div class="card-header">
+        <strong>Результаты за выбранный период</strong>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Продавец</th>
+                        <th class="text-center">Дней работал</th>
+                        <th class="text-center">Личных продаж (шт.)</th>
+                        <th class="text-end">Личная выручка (₽)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in results %}
+                    <tr>
+                        <td><strong>{{ r.name }}</strong></td>
+                        <td class="text-center">{{ r.days_worked }}</td>
+                        <td class="text-center">{{ r.total_count }}</td>
+                        <td class="text-end">{{ "{:,.0f}".format(r.total_revenue) }} ₽</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    Нет данных за выбранный период.
+</div>
+{% endif %}
 {% endblock %}
