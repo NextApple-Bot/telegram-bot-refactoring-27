@@ -1,89 +1,61 @@
 {% extends "base.html" %}
-{% block title %}Редактировать категорию{% endblock %}
+
+{% block page_title %}Редактировать клиента #{{ client.id }}{% endblock %}
+
 {% block content %}
-<h1>Редактировать категорию: {{ category.name }}</h1>
-
-<form method="post" action="/admin/assortment/edit/{{ category.id }}">
-    <div class="mb-3">
-        <label for="name" class="form-label">Название категории</label>
-        <input type="text" class="form-control" id="name" name="name" value="{{ category.name }}" required>
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3>Редактировать клиента #{{ client.id }}</h3>
+        <a href="/admin/clients/{{ client.id }}" class="btn btn-secondary">← Назад</a>
     </div>
-    <div class="mb-3">
-        <label class="form-label">Товары</label>
-        <div class="table-responsive">
-            <table class="table table-sm" id="items-table">
-                <thead>
-                    <tr><th>Текст товара</th><th>Действия</th></tr>
-                </thead>
-                <tbody>
-                    {% for item in items %}
-                    <tr data-item-id="{{ item.id }}">
-                        <td>
-                            <input type="text" class="form-control" name="items_text" value="{{ item.text }}" style="width: 100%;">
-                        </td>
-                        <td>
-                            <button type="button" class="btn btn-sm btn-danger delete-item-btn">Удалить</button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                    <tr id="new-item-row">
-                        <td colspan="2">
-                            <button type="button" class="btn btn-sm btn-success" id="add-item-btn">+ Добавить товар</button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+
+    <div class="card">
+        <div class="card-body">
+            <form method="post" action="/admin/clients/{{ client.id }}/edit">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">ФИО</label>
+                        <input type="text" name="full_name" class="form-control" value="{{ client.full_name or '' }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Основной телефон</label>
+                        <input type="text" name="phone" class="form-control" value="{{ client.phone or '' }}">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Дополнительные телефоны (через запятую)</label>
+                    <input type="text" name="phones" class="form-control" value="{{ client.phones or '' }}">
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Telegram</label>
+                        <input type="text" name="telegram_username" class="form-control" value="{{ client.telegram_username or '' }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Соцсети / Площадка</label>
+                        <input type="text" name="social_network" class="form-control" value="{{ client.social_network or '' }}">
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Источник</label>
+                        <input type="text" name="referral_source" class="form-control" value="{{ client.referral_source or '' }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Дата рождения</label>
+                        <input type="date" name="birth_date" class="form-control" value="{{ client.birth_date or '' }}">
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2 mt-3">
+                    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+                    <a href="/admin/clients/{{ client.id }}" class="btn btn-outline-secondary">Отмена</a>
+                </div>
+            </form>
         </div>
-        <div class="form-text">Каждый товар можно редактировать индивидуально. Удалённые товары будут удалены из БД.</div>
-    </div>
-    <button type="submit" class="btn btn-primary">Сохранить все изменения</button>
-    <a href="/admin/assortment" class="btn btn-outline-secondary">Отмена</a>
-</form>
-
-<div class="card mt-4">
-    <div class="card-header">➕ Быстрое добавление товара</div>
-    <div class="card-body">
-        <form method="post" action="/admin/assortment/add_item/{{ category.id }}" class="row g-2">
-            <div class="col-md-10">
-                <input type="text" class="form-control" name="item_text" placeholder="Например: iPhone 15 Pro 256GB (ABC123)" required>
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-success w-100">Добавить</button>
-            </div>
-        </form>
-        <div class="form-text mt-2">Если в тексте есть серийный номер в скобках, он будет автоматически извлечён.</div>
     </div>
 </div>
-
-<script>
-    document.querySelectorAll('.delete-item-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            this.closest('tr').remove();
-        });
-    });
-
-    document.getElementById('add-item-btn').addEventListener('click', function() {
-        const tbody = document.querySelector('#items-table tbody');
-        const newRow = document.createElement('tr');
-        newRow.innerHTML = `
-            <td><input type="text" class="form-control" name="items_text" value="" style="width: 100%;"></td>
-            <td><button type="button" class="btn btn-sm btn-danger delete-item-btn">Удалить</button></td>
-        `;
-        tbody.insertBefore(newRow, document.getElementById('new-item-row'));
-        newRow.querySelector('.delete-item-btn').addEventListener('click', function() {
-            this.closest('tr').remove();
-        });
-    });
-</script>
-<style>
-    @media (max-width: 480px) {
-        .btn {
-            width: 100%;
-            margin-bottom: 0.5rem;
-        }
-        .col-md-10, .col-md-2 {
-            width: 100%;
-        }
-    }
-</style>
 {% endblock %}
