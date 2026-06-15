@@ -2,39 +2,33 @@
 
 Revision ID: 023
 Revises: 022
-Create Date: 2026-06-15 09:35:00.000000
+Create Date: 2026-06-15
 """
 from alembic import op
 import sqlalchemy as sa
 
+# revision identifiers, used by Alembic.
+revision = '023'
+down_revision = '022'
+branch_labels = None
+depends_on = None
+
 
 def upgrade():
-    # daily_payments
-    op.alter_column(
-        'daily_payments',
-        'sale_message_id',
-        existing_type=sa.Integer(),
-        type_=sa.BigInteger(),
-        existing_nullable=True
-    )
+    op.alter_column('daily_payments', 'sale_message_id',
+                    existing_type=sa.Integer(),
+                    type_=sa.BigInteger(),
+                    existing_nullable=True)
 
-    # sales
-    op.alter_column(
-        'sales',
-        'message_id',
-        existing_type=sa.Integer(),
-        type_=sa.BigInteger(),
-        existing_nullable=True
-    )
+    op.alter_column('sales', 'message_id',
+                    existing_type=sa.Integer(),
+                    type_=sa.BigInteger(),
+                    existing_nullable=True)
 
-    # deleted_items
-    op.alter_column(
-        'deleted_items',
-        'sale_message_id',
-        existing_type=sa.Integer(),
-        type_=sa.BigInteger(),
-        existing_nullable=True
-    )
+    op.alter_column('deleted_items', 'sale_message_id',
+                    existing_type=sa.Integer(),
+                    type_=sa.BigInteger(),
+                    existing_nullable=True)
 
 
 def downgrade():
