@@ -3,64 +3,109 @@
 {% block page_title %}Клиент #{{ client.id }}{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-lg-5">
-        <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between">
-                <span>Основная информация</span>
-                <div>
-                    <a href="/admin/clients/{{ client.id }}/edit" class="btn btn-sm btn-outline-primary">Редактировать</a>
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3>Клиент #{{ client.id }}</h3>
+        <div>
+            <a href="/admin/clients/{{ client.id }}/edit" class="btn btn-primary me-2">Редактировать</a>
+            <form action="/admin/clients/{{ client.id }}/delete" method="post" class="d-inline">
+                <button type="submit" class="btn btn-danger" 
+                        onclick="return confirm('Удалить клиента?')">
+                    Удалить
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Основная информация -->
+        <div class="col-lg-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <strong>Основная информация</strong>
+                </div>
+                <div class="card-body">
+                    <table class="table table-borderless mb-0">
+                        <tr>
+                            <td class="text-muted" style="width: 140px;">ФИО</td>
+                            <td><strong>{{ client.full_name or '—' }}</strong></td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Основной телефон</td>
+                            <td>{{ client.phone or '—' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Дата рождения</td>
+                            <td>{{ client.birth_date|format_date if client.birth_date else '—' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Доп. телефоны</td>
+                            <td>{{ client.phones or '—' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Telegram</td>
+                            <td>{{ client.telegram_username or '—' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Соцсети</td>
+                            <td>{{ client.social_network or '—' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Источник</td>
+                            <td>{{ client.referral_source or '—' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Создан</td>
+                            <td>{{ client.created_at|format_date if client.created_at else '—' }}</td>
+                        </tr>
+                    </table>
                 </div>
             </div>
-            <div class="card-body">
-                <table class="table table-sm mb-0">
-                    <tr><td width="140"><strong>ФИО</strong></td><td>{{ client.full_name or '—' }}</td></tr>
-                    <tr><td><strong>Основной телефон</strong></td><td>{{ client.phone or '—' }}</td></tr>
-                    <tr><td><strong>Дата рождения</strong></td><td>{{ client.birth_date|format_date or '—' }}</td></tr>
-                    <tr><td><strong>Доп. телефоны</strong></td><td>{{ client.phones or '—' }}</td></tr>
-                    <tr><td><strong>Telegram</strong></td><td>{{ client.telegram_username or '—' }}</td></tr>
-                    <tr><td><strong>Соцсети / Площадка</strong></td><td>{{ client.social_network or '—' }}</td></tr>
-                    <tr><td><strong>Источник</strong></td><td>{{ client.referral_source or '—' }}</td></tr>
-                    <tr><td><strong>Создан</strong></td><td>{{ client.created_at|format_date or '—' }}</td></tr>
-                </table>
+        </div>
+
+        <!-- Покупки клиента -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong>Покупки клиента</strong>
+                    <span class="badge bg-secondary">{{ purchases|length }}</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if purchases %}
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Дата</th>
+                                        <th>Сумма</th>
+                                        <th>Тип</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for p in purchases %}
+                                    <tr>
+                                        <td>#{{ p.id }}</td>
+                                        <td>{{ p.created_at|format_date }}</td>
+                                        <td>{{ "{:,.0f}".format(p.total_amount or 0) }} ₽</td>
+                                        <td>
+                                            <span class="badge bg-info">{{ p.purchase_type }}</span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="p-3 text-muted">Покупок пока нет</div>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="col-lg-7">
-        <div class="card">
-            <div class="card-header">Покупки клиента</div>
-            <div class="card-body p-0">
-                {% if purchases %}
-                <table class="table table-sm mb-0">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Дата</th>
-                            <th>Сумма</th>
-                            <th>Тип</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for p in purchases %}
-                        <tr>
-                            <td>{{ p.id }}</td>
-                            <td>{{ p.created_at|format_date }}</td>
-                            <td>{{ "{:,.0f}".format(p.total_amount or 0) }} ₽</td>
-                            <td>{{ p.purchase_type }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                {% else %}
-                <div class="p-3 text-muted">Покупок пока нет</div>
-                {% endif %}
-            </div>
-        </div>
+    <div class="mt-3">
+        <a href="/admin/clients" class="btn btn-outline-secondary">← Назад к списку клиентов</a>
     </div>
-</div>
-
-<div class="mt-3">
-    <a href="/admin/clients" class="btn btn-secondary">← Назад к списку клиентов</a>
 </div>
 {% endblock %}
