@@ -17,18 +17,69 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ... (get_dashboard_data и dashboard оставляю как в предыдущей версии)
+async def get_dashboard_data(target_date: date = None):
+    """Получение данных для дашборда."""
+    if target_date is None:
+        target_date = date.today()
+
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        # Получаем статистику
+        stats = await StatsRepository.get_today_stats(target_date=target_date)
+        
+        # Получаем продавцов на сегодня
+        sellers_result = await session.execute(
+            select(Seller).join(SellerDay).where(SellerDay.date == target_date)
+        )
+        sellers = sellers_result.scalars().all()
+
+        # Получаем платежи
+        payments_result = await session.execute(
+            select(DailyPayment.payment_type, func.sum(DailyPayment.amount))
+            .where(func.date(DailyPayment.created_at) == target_date)
+            .group_by(DailyPayment.payment_type)
+        )
+        payments = {row[0]: float(row[1] or 0) for row in payments_result.all()}
+
+        # Выручка сегодня
+        revenue_today = sum(payments.values())
+
+        return {
+            "target_date": target_date,
+            "target_date_iso": target_date.isoformat(),
+            "stats": stats,
+            "sellers": sellers,
+            "payments": payments,
+            "revenue_today": revenue_today,
+            "sales_today": stats.get("sales_count", 0) if isinstance(stats, dict) else 0,
+            "plan_amount": 50000,  # Можно вынести в конфиг
+        }
+
+
+@router.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request, target_date: str = None):
+    """Главная страница дашборда."""
+    try:
+        if target_date:
+            target_date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
+        else:
+            target_date_obj = date.today()
+
+        data = await get_dashboard_data(target_date_obj)
+        return templates.TemplateResponse(
+            "dashboard.html",
+            {"request": request, **data}
+        )
+    except Exception as e:
+        logger.exception("Ошибка при загрузке дашборда")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/stats/edit")
 @router.post("/update_stats")
 async def update_stats(request: Request):
-    """
-    Универсальный обработчик сохранения статистики.
-    Поддерживает и JSON, и form-data.
-    """
+    """Сохранение отредактированной статистики."""
     try:
-        # Пытаемся прочитать JSON (как в v26)
         content_type = request.headers.get("content-type", "")
         if "application/json" in content_type:
             data = await request.json()
@@ -44,12 +95,11 @@ async def update_stats(request: Request):
 
         async_session = get_async_session_factory()
         async with async_session() as session, session.begin():
-            # Очищаем старые данные за день (можно расширить)
             await session.execute(
-                "DELETE FROM daily_payments WHERE DATE(created_at) = :d", {"d": target_date}
+                "DELETE FROM daily_payments WHERE DATE(created_at) = :d",
+                {"d": target_date}
             )
 
-            # Сохраняем платежи
             payment_fields = ["cash", "terminal", "qr", "transfer", "invoice", "installment"]
             for field in payment_fields:
                 amount = float(data.get(field, 0) or 0)
@@ -60,8 +110,6 @@ async def update_stats(request: Request):
                         amount=amount,
                         created_at=target_date
                     ))
-
-            # При необходимости здесь можно сохранить sales_count, preorders_count, bookings_count
 
         await cache.delete(f"dashboard:summary:{target_date.isoformat()}")
         return JSONResponse({"success": True})
