@@ -9,7 +9,7 @@ from bot import config
 
 logger = logging.getLogger(__name__)
 
-# Флаг, чтобы не спамить WARNING каждый раз
+# Флаг, чтобы не спамить WARNING каждый раз при проверке вебхука
 _webhook_mismatch_logged = False
 
 
@@ -20,6 +20,9 @@ async def check_and_set_webhook(
 ) -> bool:
     """
     Проверяет текущий вебхук Telegram и при необходимости переустанавливает его.
+
+    Функция идемпотентна: если вебхук уже установлен на правильный URL,
+    повторная установка не происходит.
     """
     global _webhook_mismatch_logged
 
@@ -53,50 +56,8 @@ async def check_and_set_webhook(
                 _webhook_mismatch_logged = False
             return True
 
-        # Логируем mismatch только один раз
         if current_url != expected_url:
             if not _webhook_mismatch_logged:
                 logger.warning(
                     f"⚠️ Вебхук не соответствует ожидаемому.\n"
-                    f"   Текущий:   {current_url}\n"
-                    f"   Ожидаемый: {expected_url}\n"
-                    f"   Выполняем переустановку..."
-                )
-                _webhook_mismatch_logged = True
-        else:
-            _webhook_mismatch_logged = False
-
-        await bot.delete_webhook(drop_pending_updates=True)
-        logger.info("🗑️ Старый вебхук удалён")
-
-        allowed_updates = dp.resolve_used_update_types() if dp else None
-
-        await bot.set_webhook(
-            url=expected_url,
-            allowed_updates=allowed_updates,
-            drop_pending_updates=True,
-        )
-
-        logger.info(f"✅ Вебхук успешно установлен: {expected_url}")
-        _webhook_mismatch_logged = False
-        return True
-
-    except TelegramAPIError as e:
-        logger.error(f"❌ Ошибка Telegram API при настройке вебхука: {e}")
-        return False
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Сетевая ошибка при проверке вебхука: {e}")
-        return False
-    except Exception as e:
-        logger.exception(f"❌ Неожиданная ошибка при настройке вебхука: {e}")
-        return False
-
-
-async def delete_webhook(bot: Bot) -> bool:
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        logger.info("✅ Вебхук успешно удалён")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Ошибка при удалении вебхука: {e}")
-        return False
+                    f"   Текущий:   {
