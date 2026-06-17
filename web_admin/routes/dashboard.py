@@ -38,7 +38,7 @@ async def dashboard(request: Request, target_date: str | None = None):
 
     async_session = get_async_session_factory()
     async with async_session() as session:
-        # === Основные KPI за сегодня ===
+        # === Основные KPI ===
         sales_today = (
             await session.execute(
                 select(func.count(Sale.id)).where(func.date(Sale.sold_at) == today)
@@ -81,13 +81,12 @@ async def dashboard(request: Request, target_date: str | None = None):
             )
         ).scalar() or 0
 
-        # === Изменения ===
         sales_change_yesterday = calculate_change(sales_today, sales_yesterday)
         sales_change_week = calculate_change(sales_today, sales_week_ago)
         revenue_change_yesterday = calculate_change(revenue_today, revenue_yesterday)
         revenue_change_week = calculate_change(revenue_today, revenue_week_ago)
 
-        # === Платежи за сегодня ===
+        # === Платежи ===
         payment_rows = (
             await session.execute(
                 select(
@@ -119,10 +118,7 @@ async def dashboard(request: Request, target_date: str | None = None):
         ).scalar() or 0
 
         # === Графики за 7 дней ===
-        chart_dates: list[str] = []
-        chart_sales: list[int] = []
-        chart_revenue: list[float] = []
-
+        chart_dates, chart_sales, chart_revenue = [], [], []
         for i in range(6, -1, -1):
             d = today - timedelta(days=i)
             chart_dates.append(d.strftime("%d.%m"))
@@ -159,7 +155,7 @@ async def dashboard(request: Request, target_date: str | None = None):
 
         sellers = [{"id": r.id, "name": r.name, "present": bool(r.present)} for r in sellers_rows]
 
-        # === Топ-5 моделей за 7 дней ===
+        # === Топ-5 моделей ===
         top_models = (
             await session.execute(
                 select(Item.text, func.count(Sale.id).label("count"))
@@ -208,7 +204,6 @@ async def dashboard(request: Request, target_date: str | None = None):
 
 @router.post("/toggle_seller_day")
 async def toggle_seller_day(seller_id: int = Form(...), target_date: str = Form(...)):
-    """Отметить / снять явку продавца."""
     try:
         date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError:
@@ -234,44 +229,66 @@ async def toggle_seller_day(seller_id: int = Form(...), target_date: str = Form(
 
 @router.post("/update_stats")
 async def update_stats(request: Request):
-    data: dict[str, Any] = await request.json()
+    data = await request.json()
     target_date_str = data.get("target_date")
+
     if not target_date_str:
         return JSONResponse({"success": False, "error": "target_date is required"}, status_code=400)
 
-    target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+    try:
+        target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return JSONResponse({"success": False, "error": "Неверный формат даты"}, status_code=400)
 
     async_session = get_async_session_factory()
-    async with async_session() as session, session.begin():
-        await session.execute(text("DELETE FROM daily_payments WHERE DATE(created_at) = :d"), {"d": target_date})
-        await session.execute(text("DELETE FROM sales WHERE DATE(sold_at) = :d"), {"d": target_date})
-        await session.execute(text("DELETE FROM preorders WHERE DATE(created_at) = :d"), {"d": target_date})
-        await session.execute(text("DELETE FROM bookings WHERE DATE(booked_at) = :d"), {"d": target_date})
 
-        for pt in ["cash", "terminal", "qr", "transfer", "invoice", "installment"]:
-            amount = float(data.get(pt, 0) or 0)
-            if amount > 0:
-                session.add(DailyPayment(type="sale", payment_type=pt, amount=amount, created_at=target_date))
+    async with async_session() as session:
+        async with session.begin():
+            # Очищаем старые данные
+            await session.execute(text("DELETE FROM daily_payments WHERE DATE(created_at) = :d"), {"d": target_date})
+            await session.execute(text("DELETE FROM sales WHERE DATE(sold_at) = :d"), {"d": target_date})
+            await session.execute(text("DELETE FROM preorders WHERE DATE(created_at) = :d"), {"d": target_date})
+            await session.execute(text("DELETE FROM bookings WHERE DATE(booked_at) = :d"), {"d": target_date})
 
-        for _ in range(int(data.get("sales_count", 0) or 0)):
-            session.add(Sale(sold_at=target_date))
+            # Платежи
+            for pt in ["cash", "terminal", "qr", "transfer", "invoice", "installment"]:
+                amount = float(data.get(pt, 0) or 0)
+                if amount > 0:
+                    session.add(DailyPayment(type="sale", payment_type=pt, amount=amount, created_at=target_date))
 
-        for _ in range(int(data.get("preorders_count", 0) or 0)):
-            session.add(Preorder(created_at=target_date))
+            # Продажи
+            for _ in range(int(data.get("sales_count", 0) or 0)):
+                session.add(Sale(sold_at=target_date))
 
-        sys_cat = (await session.execute(select(Category).where(Category.name == "__SYSTEM__"))).scalar_one_or_none()
-        if not sys_cat:
-            sys_cat = Category(name="__SYSTEM__", sort_order=-1)
-            session.add(sys_cat)
-            await session.flush()
+            # Предзаказы
+            for _ in range(int(data.get("preorders_count", 0) or 0)):
+                session.add(Preorder(created_at=target_date))
 
-        sys_item = (await session.execute(select(Item).where(Item.id == 0))).scalar_one_or_none()
-        if not sys_item:
-            session.add(Item(id=0, text="__SYSTEM_STATS__", category_id=sys_cat.id, is_booked=False))
+            # Брони
+            bookings_count = int(data.get("bookings_count", 0) or 0)
+            if bookings_count > 0:
+                sys_cat = (await session.execute(
+                    select(Category).where(Category.name == "__SYSTEM__")
+                )).scalar_one_or_none()
 
-        for _ in range(int(data.get("bookings_count", 0) or 0)):
-            session.add(Booking(item_id=0, booked_at=target_date))
+                if not sys_cat:
+                    sys_cat = Category(name="__SYSTEM__", sort_order=-999)
+                    session.add(sys_cat)
+                    await session.flush()
 
+                sys_item = (await session.execute(
+                    select(Item).where(Item.text == "__SYSTEM_STATS__")
+                )).scalar_one_or_none()
+
+                if not sys_item:
+                    sys_item = Item(text="__SYSTEM_STATS__", category_id=sys_cat.id, is_booked=False)
+                    session.add(sys_item)
+                    await session.flush()
+
+                for _ in range(bookings_count):
+                    session.add(Booking(item_id=sys_item.id, total_amount=0, booked_at=target_date))
+
+    logger.info(f"✅ Статистика за {target_date} успешно обновлена")
     return JSONResponse({"success": True})
 
 
