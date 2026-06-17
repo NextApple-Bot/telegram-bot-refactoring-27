@@ -39,3 +39,35 @@ def parse_arrival_text(text: str) -> List[dict]:
         if clean_text:
             items.append({"text": clean_text, "serial": serial})
     return items
+
+
+def validate_phone(phone: str | None) -> bool:
+    """
+    Валидация телефона (российские и международные номера).
+    Принимает номера с +, 7, 8, пробелами, скобками, дефисами.
+    Возвращает True, если номер выглядит корректно.
+    """
+    if not phone:
+        return True  # пустой телефон считаем допустимым (поле необязательное)
+
+    # Оставляем только цифры и +
+    cleaned = re.sub(r'[^\d+]', '', str(phone).strip())
+
+    if not cleaned:
+        return False
+
+    # Приводим российские номера к единому виду
+    if cleaned.startswith('+'):
+        cleaned = cleaned[1:]
+    if cleaned.startswith('8') and len(cleaned) == 11:
+        cleaned = '7' + cleaned[1:]
+
+    # Российский номер: 11 цифр, начинается с 7
+    if cleaned.startswith('7') and len(cleaned) == 11:
+        return True
+
+    # Международный номер: от 10 до 15 цифр
+    if 10 <= len(cleaned) <= 15:
+        return True
+
+    return False
