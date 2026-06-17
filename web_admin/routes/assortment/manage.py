@@ -113,11 +113,11 @@ async def edit_item_submit(
                     for name, acc_serial, price, pay_type in zip(
                         accessory_name, accessory_serial, accessory_price, accessory_payment_type, strict=False
                     ):
-                        if name and str(name).strip() and price and float(price) > 0:
+                        if name and str(name).strip():
                             accessories.append({
                                 "name": str(name).strip(),
                                 "serial": str(acc_serial).strip().upper() if acc_serial else None,
-                                "price": float(price),
+                                "price": float(price) if price else 0,
                                 "payment_type": pay_type if pay_type else None,
                             })
 
