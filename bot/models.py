@@ -37,7 +37,7 @@ class Item(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    # Поля для брони и продажи (добавлены позже)
+    # Поля для брони и продажи
     booking_price: Mapped[Optional[float]] = mapped_column(nullable=True)
     booking_prepayment: Mapped[Optional[float]] = mapped_column(nullable=True)
     booking_platform: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -108,7 +108,7 @@ class DeletedItem(Base):
     reason: Mapped[str] = mapped_column(String(50), default="manual")
     deleted_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     restored: Mapped[bool] = mapped_column(Boolean, default=False)
-    sale_message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    sale_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)   # ← ИЗМЕНЕНО
 
 
 class Sale(Base):
@@ -124,7 +124,7 @@ class Sale(Base):
     invoice: Mapped[float] = mapped_column(default=0)
     installment: Mapped[float] = mapped_column(default=0)
     is_accessory: Mapped[bool] = mapped_column(Boolean, default=False)
-    message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)        # ← ИЗМЕНЕНО
     sold_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -157,7 +157,7 @@ class DailyPayment(Base):
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     payment_type: Mapped[str] = mapped_column(String(20), nullable=False)
     amount: Mapped[float] = mapped_column(default=0)
-    sale_message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    sale_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)   # ← ИЗМЕНЕНО
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -193,7 +193,6 @@ class SellerDay(Base):
 Seller.days = relationship("SellerDay", back_populates="seller", cascade="all, delete-orphan")
 
 
-# ====================== НОВАЯ МОДЕЛЬ ======================
 class DailyStats(Base):
     __tablename__ = "daily_stats"
 
