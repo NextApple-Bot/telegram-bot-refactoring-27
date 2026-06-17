@@ -145,7 +145,11 @@ async def edit_item_submit(
                     )
 
                     if "error" in result:
-                        raise HTTPException(status_code=400, detail=result["error"])
+                        error_msg = result["error"]
+                        return RedirectResponse(
+                            url=f"/admin/assortment/edit/{item_id}?error={error_msg}",
+                            status_code=303
+                        )
 
                     await AssortmentService.invalidate_cache()
                     return RedirectResponse(url="/admin/assortment", status_code=303)
