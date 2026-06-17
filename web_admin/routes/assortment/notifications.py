@@ -26,7 +26,7 @@ async def send_booking_notification(
     bonus: float | None = None,
     is_cancel: bool = False,
 ):
-    """Отправляет уведомление о брони в топик Предзаказы."""
+    """Уведомление о брони"""
     try:
         bot = Bot(token=config.BOT_TOKEN)
 
@@ -42,24 +42,18 @@ async def send_booking_notification(
                     lines.append(f"Стоимость – {format_number(price)}")
 
             if prepayment and prepayment > 0:
-                pt = {
+                pt_name = {
                     "cash": "наличными",
-                    "terminal": "терминал",
-                    "qr": "QR-код",
-                    "transfer": "перевод",
-                    "invoice": "по счёту",
-                    "installment": "рассрочка",
+                    "terminal": "терминалом",
+                    "qr": "QR-кодом",
+                    "transfer": "переводом",
                 }.get(payment_type, payment_type or "")
-                lines.append(f"П/О – {format_number(prepayment)} ({pt})" if pt else f"П/О – {format_number(prepayment)}")
+                lines.append(f"П/О – {format_number(prepayment)} ({pt_name})" if pt_name else f"П/О – {format_number(prepayment)}")
 
-            if full_name:
-                lines.append(full_name)
-            if birth_date:
-                lines.append(birth_date)
-            if phone:
-                lines.append(phone)
-            if platform:
-                lines.append(f"Площадка – {platform}")
+            if full_name: lines.append(full_name)
+            if birth_date: lines.append(birth_date)
+            if phone: lines.append(phone)
+            if platform: lines.append(f"Площадка – {platform}")
 
             text = "\n".join(lines)
 
@@ -89,8 +83,9 @@ async def send_sale_notification(
     change_type: str | None = None,
     accessories: list[dict] | None = None,
     accessories_total: float = 0.0,
+    final_amount: float | None = None,
 ):
-    """Отправляет красивое уведомление о продаже в топик Продажи."""
+    """Уведомление о продаже с бонусом и сдачей"""
     try:
         bot = Bot(token=config.BOT_TOKEN)
         accessories = accessories or []
@@ -107,12 +102,11 @@ async def send_sale_notification(
 
         lines = [item_text]
 
-        # Стоимость товара
+        # Стоимость + бонус
         if bonus and bonus > 0:
             lines.append(f"Стоимость – {format_number(price)} (скидка бонусами {format_number(bonus)})")
         else:
             lines.append(f"Стоимость – {format_number(price)}")
-
         lines.append("")
 
         # Аксессуары
@@ -124,42 +118,38 @@ async def send_sale_notification(
             lines.append("")
 
         # Платежи
-        payments_info = []
-
         if payment_type == "paid":
-            payments_info.append("Оплачен")
+            lines.append("Оплачен")
+            lines.append("")
         else:
             if payment_amount and payment_amount > 0:
                 pt_name = payment_names.get(payment_type, payment_type)
                 pay_line = f"{pt_name} – {format_number(payment_amount)}"
+
                 if change and change > 0 and change_type == payment_type:
                     pay_line += f" (сдача {'наличными' if change_type == 'cash' else 'переводом'} {format_number(change)})"
-                payments_info.append(pay_line)
 
-            # Аксессуары тоже могут иметь свои оплаты
+                lines.append(pay_line)
+                lines.append("")
+
+            # Оплата аксессуаров
             for acc in accessories:
                 acc_pay = acc.get("payment_type")
                 acc_price = acc.get("price", 0)
                 if acc_pay and acc_pay != "paid" and acc_price > 0:
-                    payments_info.append(f"{payment_names.get(acc_pay, acc_pay)} – {format_number(acc_price)}")
-
-        for line in payments_info:
-            lines.append(line)
-            lines.append("")
+                    lines.append(f"{payment_names.get(acc_pay, acc_pay)} – {format_number(acc_price)}")
+                    lines.append("")
 
         # Итоговая сумма
-        total = price + accessories_total - (bonus or 0)
+        total = final_amount if final_amount is not None else (price + accessories_total - (bonus or 0))
         if total > 0:
-            lines.append(f"Общая – {format_number(total)}")
+            lines.append(f"Общая сумма – {format_number(total)}")
             lines.append("")
 
         # Клиент
-        if full_name:
-            lines.append(full_name)
-        if birth_date:
-            lines.append(birth_date)
-        if phone:
-            lines.append(phone)
+        if full_name: lines.append(full_name)
+        if birth_date: lines.append(birth_date)
+        if phone: lines.append(phone)
         lines.append("")
 
         if platform:
