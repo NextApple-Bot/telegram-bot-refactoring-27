@@ -1,3 +1,4 @@
+cat > scripts/check_migrations.py << 'EOF'
 #!/usr/bin/env python3
 """
 Автоматическая проверка миграций Alembic.
@@ -66,7 +67,7 @@ async def check_migrations() -> bool:
     except Exception as e:
         logger.warning(f"⚠️ alembic check не прошёл: {e}")
 
-    # Проверка существования таблиц из моделей
+    # Проверка существования всех таблиц из моделей
     try:
         from bot.models import Base
 
@@ -92,3 +93,4 @@ async def check_migrations() -> bool:
 if __name__ == "__main__":
     success = asyncio.run(check_migrations())
     sys.exit(0 if success else 1)
+EOF
