@@ -1,66 +1,53 @@
 {% extends "base.html" %}
 
+{% block title %}Статистика продавцов{% endblock %}
 {% block page_title %}Статистика продавцов{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Статистика продавцов</h2>
-    <a href="/admin/sellers/manage" class="btn btn-outline-secondary">← Управление продавцами</a>
-</div>
-
-<!-- Фильтры -->
-<div class="card mb-4">
-    <div class="card-body">
-        <form method="get" class="row g-3">
-            <div class="col-md-3">
-                <label class="form-label">С</label>
-                <input type="date" name="date_from" class="form-control" value="{{ date_from or '' }}">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">По</label>
-                <input type="date" name="date_to" class="form-control" value="{{ date_to or '' }}">
-            </div>
-            <div class="col-md-2 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100">Показать</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Результаты -->
-{% if results %}
 <div class="card">
-    <div class="card-header">
-        <strong>Результаты за выбранный период</strong>
-    </div>
-    <div class="card-body p-0">
+    <div class="card-body">
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h5 class="mb-1">Статистика продавцов</h5>
+                <small class="text-muted">{{ start_date }} — {{ end_date }}</small>
+            </div>
+            <a href="/admin/sellers/manage" class="btn btn-outline-secondary btn-sm">← Управление продавцами</a>
+        </div>
+
+        {% if results %}
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-striped align-middle">
                 <thead class="table-light">
                     <tr>
                         <th>Продавец</th>
                         <th class="text-center">Дней работал</th>
-                        <th class="text-center">Личных продаж (шт.)</th>
-                        <th class="text-end">Личная выручка (₽)</th>
+                        <th class="text-end">Продаж (шт.)</th>
+                        <th class="text-end">Выручка (₽)</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for r in results %}
                     <tr>
                         <td><strong>{{ r.name }}</strong></td>
-                        <td class="text-center">{{ r.days_worked }}</td>
-                        <td class="text-center">{{ r.total_count }}</td>
-                        <td class="text-end">{{ "{:,.0f}".format(r.total_revenue) }} ₽</td>
+                        <td class="text-center">
+                            <span class="badge bg-primary fs-6">{{ r.days_worked }}</span>
+                        </td>
+                        <td class="text-end">{{ r.total_count }}</td>
+                        <td class="text-end">{{ "{:,.0f}".format(r.total_revenue) }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+        {% else %}
+        <div class="alert alert-info">Нет данных за выбранный период.</div>
+        {% endif %}
+
+        <div class="mt-4">
+            <a href="/admin/dashboard" class="btn btn-secondary">← Назад к дашборду</a>
+        </div>
+
     </div>
 </div>
-{% else %}
-<div class="alert alert-info">
-    Нет данных за выбранный период.
-</div>
-{% endif %}
 {% endblock %}
