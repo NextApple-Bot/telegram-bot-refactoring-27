@@ -19,10 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 def generate_sale_message_id() -> int:
-    """
-    Генерирует большой уникальный ID для sale_message_id.
-    Гарантирует попадание в диапазон signed BIGINT.
-    """
     return uuid.uuid4().int & 0x7FFFFFFFFFFFFFFF
 
 
@@ -48,18 +44,39 @@ async def handle_sale_from_form(
     accessories: Optional[list[dict[str, Any]]] = None,
     conn=None,
 ) -> dict[str, Any]:
-    """
-    Полная обработка продажи товара из веб-админки.
-    Поддерживает аксессуары, бонусы, сдачу, создание клиента и уведомления.
-    """
+
     accessories = accessories or []
 
-    # === Валидация ===
-    if not sale_price or sale_price <= 0:
-        return {"error": "Укажите стоимость продажи"}
+    # ====================== ВАЛИДАЦИЯ ЦЕН ======================
+    errors = []
 
-    if sale_payment_type != "paid" and (not sale_payment_amount or sale_payment_amount <= 0):
-        return {"error": "Укажите сумму оплаты"}
+    if not sale_price or sale_price <= 0:
+        errors.append("Стоимость продажи должна быть больше 0")
+
+    if sale_bonus is not None and sale_bonus < 0:
+        errors.append("Бонус/скидка не может быть отрицательным")
+
+    if sale_bonus and sale_bonus > sale_price:
+        errors.append("Бонус не может быть больше стоимости товара")
+
+    if sale_prepayment is not None and sale_prepayment < 0:
+        errors.append("Сумма предоплаты не может быть отрицательной")
+
+    if sale_prepayment and sale_prepayment > sale_price:
+        errors.append("Предоплата не может быть больше стоимости продажи")
+
+    if sale_change is not None and sale_change < 0:
+        errors.append("Сумма сдачи не может быть отрицательной")
+
+    # Проверка аксессуаров (только на отрицательную цену)
+    for i, acc in enumerate(accessories):
+        acc_price = float(acc.get("price", 0) or 0)
+        if acc_price < 0:
+            errors.append(f"Цена аксессуара №{i+1} не может быть отрицательной")
+
+    if errors:
+        return {"error": " | ".join(errors)}
+    # ========================================================
 
     sale_message_id: int = generate_sale_message_id()
     own_session = False
@@ -82,9 +99,6 @@ async def handle_sale_from_form(
 
         for acc in accessories:
             price = float(acc.get("price", 0) or 0)
-            if price <= 0:
-                continue
-
             accessories_total += price
             display_text = acc.get("name", "").strip() or "Аксессуар"
 
@@ -123,7 +137,7 @@ async def handle_sale_from_form(
         if sale_payment_type != "paid" and sale_payment_amount > 0:
             all_payments[sale_payment_type] = all_payments.get(sale_payment_type, 0) + sale_payment_amount
 
-        # === 3. Создание клиента (при необходимости) ===
+        # === 3. Создание клиента ===
         client_id = None
         if sale_phone or sale_full_name:
             client_id = await ClientRepository.get_or_create_client(
@@ -176,7 +190,7 @@ async def handle_sale_from_form(
         )
         session.add(sale)
 
-        # === 6. Сохранение платежей в daily_payments ===
+        # === 6. Сохранение платежей ===
         for pay_type, amount in all_payments.items():
             if amount > 0:
                 session.add(DailyPayment(
@@ -189,7 +203,7 @@ async def handle_sale_from_form(
         if own_session:
             await session.commit()
 
-        # === 7. Отправка уведомления ===
+        # === 7. Уведомление ===
         asyncio.create_task(send_sale_notification(
             item_text=text,
             price=sale_price,
