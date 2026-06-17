@@ -1,3 +1,4 @@
+cat > web_admin/routes/__init__.py << 'EOF'
 from .assortment.manage import router as assortment_manage_router
 from .assortment.views import router as assortment_views_router
 from .auth import router as auth_router
@@ -21,3 +22,4 @@ routers = [
     assortment_manage_router,
     sellers_router,
 ]
+EOF
