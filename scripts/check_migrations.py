@@ -15,7 +15,7 @@ import sys
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import text
+from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from bot.config import DATABASE_URL
@@ -28,19 +28,18 @@ async def check_migrations() -> bool:
     """Основная функция проверки миграций."""
     logger.info("🔍 Запуск проверки миграций...")
 
-    # 1. Проверка переменной окружения
     if not DATABASE_URL:
         logger.error("❌ DATABASE_URL не задан")
         return False
 
-    # 2. Создаём Alembic config
     alembic_cfg = Config("alembic.ini")
     alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
 
     script = ScriptDirectory.from_config(alembic_cfg)
 
-    # 3. Получаем текущую ревизию из БД
-    engine = create_async_engine(DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"))
+    engine = create_async_engine(
+        DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+    )
 
     async with engine.connect() as conn:
         context = MigrationContext.configure(conn.sync_connection)
@@ -58,22 +57,19 @@ async def check_migrations() -> bool:
 
     logger.info("✅ Ревизии совпадают (current == head)")
 
-    # 4. Проверка через alembic check (если доступно)
+    # Проверка через alembic check
     try:
         from alembic import command
         command.check(alembic_cfg)
         logger.info("✅ alembic check пройден (модели соответствуют схеме)")
     except Exception as e:
         logger.warning(f"⚠️ alembic check не прошёл: {e}")
-        # Не прерываем, так как check может быть строгим
 
-    # 5. Дополнительная проверка — пробный SELECT из моделей
+    # Проверка существования таблиц из моделей
     try:
         from bot.models import Base
-        from sqlalchemy import inspect
 
         async with engine.connect() as conn:
-            # Проверяем, что все таблицы из моделей существуют
             inspector = inspect(conn.sync_connection)
             existing_tables = set(inspector.get_table_names())
 
