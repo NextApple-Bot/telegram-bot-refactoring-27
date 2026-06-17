@@ -47,36 +47,28 @@ async def handle_sale_from_form(
 
     accessories = accessories or []
 
-    # ====================== ВАЛИДАЦИЯ ЦЕН ======================
+    # ====================== ВАЛИДАЦИЯ ======================
     errors = []
 
     if not sale_price or sale_price <= 0:
         errors.append("Стоимость продажи должна быть больше 0")
 
     if sale_bonus is not None and sale_bonus < 0:
-        errors.append("Бонус/скидка не может быть отрицательным")
+        errors.append("Бонус не может быть отрицательным")
 
     if sale_bonus and sale_bonus > sale_price:
         errors.append("Бонус не может быть больше стоимости товара")
 
-    if sale_prepayment is not None and sale_prepayment < 0:
-        errors.append("Сумма предоплаты не может быть отрицательной")
-
-    if sale_prepayment and sale_prepayment > sale_price:
-        errors.append("Предоплата не может быть больше стоимости продажи")
-
     if sale_change is not None and sale_change < 0:
         errors.append("Сумма сдачи не может быть отрицательной")
 
-    # Проверка аксессуаров (только на отрицательную цену)
     for i, acc in enumerate(accessories):
-        acc_price = float(acc.get("price", 0) or 0)
-        if acc_price < 0:
+        if float(acc.get("price", 0) or 0) < 0:
             errors.append(f"Цена аксессуара №{i+1} не может быть отрицательной")
 
     if errors:
         return {"error": " | ".join(errors)}
-    # ========================================================
+    # =====================================================
 
     sale_message_id: int = generate_sale_message_id()
     own_session = False
@@ -132,12 +124,15 @@ async def handle_sale_from_form(
                 "payment_type": pay_type,
             })
 
-        # === 2. Сбор всех платежей ===
+        # === 2. Расчёт итоговой суммы ===
+        final_amount = sale_price + accessories_total - (sale_bonus or 0)
+
+        # === 3. Сбор платежей ===
         all_payments: dict[str, float] = dict(accessories_payments)
         if sale_payment_type != "paid" and sale_payment_amount > 0:
             all_payments[sale_payment_type] = all_payments.get(sale_payment_type, 0) + sale_payment_amount
 
-        # === 3. Создание клиента ===
+        # === 4. Создание клиента ===
         client_id = None
         if sale_phone or sale_full_name:
             client_id = await ClientRepository.get_or_create_client(
@@ -156,13 +151,13 @@ async def handle_sale_from_form(
             await ClientRepository.add_purchase(
                 client_id=client_id,
                 items=items_list,
-                total_amount=sale_price + accessories_total,
+                total_amount=final_amount,
                 payment_details={pt: amt for pt, amt in all_payments.items() if amt > 0},
                 purchase_type="sale",
                 conn=session,
             )
 
-        # === 4. Удаление основного товара ===
+        # === 5. Удаление товара ===
         main_item = await session.get(Item, item_id)
         if main_item:
             deleted = DeletedItem(
@@ -176,7 +171,7 @@ async def handle_sale_from_form(
             session.add(deleted)
             await session.delete(main_item)
 
-        # === 5. Запись продажи ===
+        # === 6. Запись продажи ===
         sale = Sale(
             count=1,
             cash=all_payments.get("cash", 0),
@@ -190,7 +185,7 @@ async def handle_sale_from_form(
         )
         session.add(sale)
 
-        # === 6. Сохранение платежей ===
+        # === 7. Сохранение платежей ===
         for pay_type, amount in all_payments.items():
             if amount > 0:
                 session.add(DailyPayment(
@@ -203,7 +198,7 @@ async def handle_sale_from_form(
         if own_session:
             await session.commit()
 
-        # === 7. Уведомление ===
+        # === 8. Уведомление ===
         asyncio.create_task(send_sale_notification(
             item_text=text,
             price=sale_price,
@@ -219,6 +214,7 @@ async def handle_sale_from_form(
             change_type=sale_change_type,
             accessories=processed_accessories,
             accessories_total=accessories_total,
+            final_amount=final_amount,
         ))
 
         await cache.delete(f"dashboard:summary:{date.today().isoformat()}")
@@ -229,7 +225,7 @@ async def handle_sale_from_form(
     except ValueError as e:
         if own_session:
             await session.rollback()
-        logger.warning(f"Ошибка валидации при продаже: {e}")
+        logger.warning(f"Ошибка валидации: {e}")
         return {"error": str(e)}
 
     except SQLAlchemyError:
