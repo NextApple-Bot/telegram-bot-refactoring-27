@@ -6,7 +6,16 @@
 {% block content %}
 <div class="card">
     <div class="card-body">
+
+        {% if request.query_params.get('error') %}
+        <div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
+            <strong>Ошибка валидации:</strong> {{ request.query_params.get('error') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endif %}
+
         <form method="post" action="/admin/assortment/edit/{{ item.id }}">
+
             <div class="row">
                 <!-- Основная информация -->
                 <div class="col-md-6">
@@ -45,7 +54,9 @@
                     <div class="mb-3">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="is_sold" id="is_sold">
-                            <label class="form-check-label text-danger" for="is_sold">Продать товар (удалить из ассортимента)</label>
+                            <label class="form-check-label text-danger" for="is_sold">
+                                Продать товар (удалить из ассортимента)
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -143,6 +154,7 @@
                 <button type="submit" class="btn btn-primary">Сохранить</button>
                 <a href="/admin/assortment" class="btn btn-secondary">Отмена</a>
             </div>
+
         </form>
     </div>
 </div>
@@ -167,7 +179,7 @@ function addAccessory() {
                 <option value="">Способ оплаты</option>
                 <option value="cash">Наличные</option>
                 <option value="terminal">Терминал</option>
-                <option value="qr">QR</option>
+                <option value="qr">QR-код</option>
                 <option value="transfer">Перевод</option>
             </select>
         </div>
