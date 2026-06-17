@@ -20,18 +20,17 @@ async def run_migrations():
     alembic_cfg = Config("alembic.ini")
 
     try:
-        # Проверяем миграции перед применением
+        # Импортируем функцию проверки
         from scripts.check_migrations import check_migrations
 
         if not await check_migrations():
-            logger.error("❌ Проверка миграций не прошла. Прерываем применение.")
+            logger.error("❌ Проверка миграций не прошла. Прерываем деплой.")
             sys.exit(1)
 
         # Применяем миграции
         command.upgrade(alembic_cfg, "head")
         logger.info("✅ Все миграции успешно применены!")
 
-        # Показываем текущую ревизию
         command.current(alembic_cfg)
 
     except Exception as e:
