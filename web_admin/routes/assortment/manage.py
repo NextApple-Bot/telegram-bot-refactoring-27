@@ -1,20 +1,46 @@
 from fastapi import APIRouter, Request, Form, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 import asyncio
 import logging
 
 from bot.db import get_async_session_factory
-from bot.models import Item, DailyPayment
+from bot.models import Item, DailyPayment, Category
 from bot.repositories.client import ClientRepository
 from bot.services.assortment import AssortmentService
 from bot.utils.validators import validate_phone
 
 from .sales import handle_sale_from_form
 from .notifications import send_booking_notification
+from web_admin.templates import templates
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.get("/edit/{item_id}", response_class=HTMLResponse)
+async def edit_item_form(request: Request, item_id: int):
+    """Отображает форму редактирования товара"""
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        item = await session.get(Item, item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+
+        categories_result = await session.execute(
+            select(Category.id, Category.name).order_by(Category.sort_order, Category.name)
+        )
+        categories = [dict(row._mapping) for row in categories_result.all()]
+
+    return templates.TemplateResponse(
+        "assortment_edit_item.html",
+        {
+            "request": request,
+            "item": item,
+            "categories": categories,
+        },
+    )
 
 
 @router.post("/edit/{item_id}")
@@ -153,7 +179,6 @@ async def edit_item_submit(
                         )
                         session.add(payment)
 
-                    # Полноценный вызов уведомления (исправлено)
                     asyncio.create_task(send_booking_notification(
                         item_text=text,
                         serial=serial or "",
@@ -193,3 +218,25 @@ async def edit_item_submit(
         except SQLAlchemyError as e:
             logger.exception(f"Ошибка БД при редактировании товара {item_id}")
             raise HTTPException(status_code=500, detail="Ошибка базы данных") from e
+
+
+@router.post("/delete/{item_id}")
+async def delete_item(request: Request, item_id: int):
+    """Удаление товара"""
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        try:
+            async with session.begin():
+                item = await session.get(Item, item_id)
+                if not item:
+                    raise HTTPException(status_code=404, detail="Товар не найден")
+                await session.delete(item)
+
+            await AssortmentService.invalidate_cache()
+            return RedirectResponse(url="/admin/assortment", status_code=303)
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Ошибка при удалении товара {item_id}")
+            raise HTTPException(status_code=500, detail="Ошибка при удалении товара")
