@@ -1,41 +1,43 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
-Скрипт для применения миграций Alembic.
-Используется в start.sh и вручную.
+Улучшенный скрипт применения миграций с проверками.
 """
 
+import asyncio
+import logging
 import os
 import sys
-from pathlib import Path
 
-from dotenv import load_dotenv
-
-from alembic import command
 from alembic.config import Config
+from alembic import command
 
-# Добавляем корень проекта в PYTHONPATH
-BASE_DIR = Path(__file__).parent
-sys.path.insert(0, str(BASE_DIR))
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
-load_dotenv()
 
-def run_migrations():
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        print("❌ Ошибка: DATABASE_URL не найден в .env", file=sys.stderr)
-        sys.exit(1)
+async def run_migrations():
+    logger.info("🔄 Применяем миграции Alembic...")
 
-    alembic_cfg = Config(str(BASE_DIR / "alembic.ini"))
-    alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+    alembic_cfg = Config("alembic.ini")
 
-    print("🔄 Применяем миграции Alembic...")
     try:
+        # Сначала проверяем текущее состояние
+        from scripts.check_migrations import check_migrations
+        if not await check_migrations():
+            logger.error("❌ Проверка миграций не прошла. Прерываем.")
+            sys.exit(1)
+
+        # Применяем миграции
         command.upgrade(alembic_cfg, "head")
-        print("✅ Все миграции успешно применены!")
+        logger.info("✅ Все миграции успешно применены!")
+
+        # Показываем текущую ревизию
+        command.current(alembic_cfg)
+
     except Exception as e:
-        print(f"❌ Ошибка при применении миграций: {e}", file=sys.stderr)
+        logger.error(f"❌ Ошибка при применении миграций: {e}")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    run_migrations()
+    asyncio.run(run_migrations())
