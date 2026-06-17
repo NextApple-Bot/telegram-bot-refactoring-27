@@ -3,36 +3,37 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
 from web_admin.auth import is_authenticated
+
+# Импортируем модули с роутерами
 from web_admin.routes import (
     auth, clients, dashboard, debug, purchases, sellers, sold, stats
 )
-from web_admin.routes.assortment import manage as assortment_manage
 from web_admin.routes.assortment import views as assortment_views
+from web_admin.routes.assortment import manage as assortment_manage
 from web_admin.routes.assortment import booking as assortment_booking
 
 app = FastAPI(title="Telegram Bot Admin Panel")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
-# ====================== РОУТЕРЫ (все под префиксом /admin) ======================
-app.include_router(auth.router,          prefix="/admin/auth",     tags=["auth"])
-app.include_router(dashboard.router,     prefix="/admin/dashboard", tags=["dashboard"])
-app.include_router(clients.router,       prefix="/admin/clients",   tags=["clients"])
-app.include_router(purchases.router,     prefix="/admin/purchases", tags=["purchases"])
-app.include_router(sold.router,          prefix="/admin/sold",      tags=["sold"])
-app.include_router(stats.router,         prefix="/admin/stats",     tags=["stats"])
-app.include_router(sellers.router,       prefix="/admin/sellers",   tags=["sellers"])
-app.include_router(debug.router,         prefix="/admin/debug",     tags=["debug"])
+# ====================== РОУТЕРЫ ======================
+app.include_router(auth.router, prefix="/admin/auth", tags=["auth"])
+app.include_router(dashboard.router, prefix="/admin/dashboard", tags=["dashboard"])
+app.include_router(clients.router, prefix="/admin/clients", tags=["clients"])
+app.include_router(purchases.router, prefix="/admin/purchases", tags=["purchases"])
+app.include_router(sold.router, prefix="/admin/sold", tags=["sold"])
+app.include_router(stats.router, prefix="/admin/stats", tags=["stats"])
+app.include_router(sellers.router, prefix="/admin/sellers", tags=["sellers"])
+app.include_router(debug.router, prefix="/admin/debug", tags=["debug"])
 
 # Ассортимент
-app.include_router(assortment_views.router,   prefix="/admin/assortment", tags=["assortment"])
-app.include_router(assortment_manage.router,  prefix="/admin/assortment", tags=["assortment_manage"])
-app.include_router(assortment_booking.router, prefix="/admin/assortment", tags=["assortment_booking"])
+app.include_router(assortment_views.router, prefix="/admin/assortment", tags=["assortment"])
+app.include_router(assortment_manage.router, prefix="/admin/assortment", tags=["assortment"])
+app.include_router(assortment_booking.router, prefix="/admin/assortment", tags=["assortment"])
 
 # ====================== MIDDLEWARE АВТОРИЗАЦИИ ======================
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-
     public_paths = [
         "/admin/auth/login",
         "/debug/routes",
