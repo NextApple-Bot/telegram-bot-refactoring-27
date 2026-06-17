@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 from typing import List
 
@@ -12,10 +13,7 @@ from bot.db import get_async_session_factory
 from bot.models import DailyPayment, Sale, Seller, SellerDay
 from web_admin.templates import templates
 
-import logging
-
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
 
@@ -27,9 +25,9 @@ async def seller_manage(request: Request):
         try:
             sellers = (
                 await session.execute(
-                    select(Seller.id, Seller.name).order_by(Seller.name)
+                    select(Seller).order_by(Seller.name)
                 )
-            ).all()
+            ).scalars().all()
 
             return templates.TemplateResponse(
                 "sellers_manage.html",
@@ -51,10 +49,19 @@ async def add_seller(request: Request, name: str = Form(...)):
     async with async_session() as session:
         try:
             async with session.begin():
+                # Проверка на существование
+                existing = await session.execute(
+                    select(Seller.id).where(func.lower(Seller.name) == func.lower(name))
+                )
+                if existing.scalar_one_or_none():
+                    raise HTTPException(status_code=400, detail="Продавец с таким именем уже существует")
+
                 new_seller = Seller(name=name)
                 session.add(new_seller)
+
             logger.info(f"Добавлен новый продавец: {name}")
             return RedirectResponse(url="/admin/sellers/manage", status_code=303)
+
         except SQLAlchemyError as e:
             logger.error(f"Ошибка при добавлении продавца '{name}': {e}")
             raise HTTPException(status_code=500, detail="Ошибка при добавлении продавца")
@@ -71,8 +78,10 @@ async def delete_seller(seller_id: int):
                 if not seller:
                     raise HTTPException(status_code=404, detail="Продавец не найден")
                 await session.delete(seller)
+
             logger.info(f"Удалён продавец id={seller_id}")
             return RedirectResponse(url="/admin/sellers/manage", status_code=303)
+
         except SQLAlchemyError as e:
             logger.error(f"Ошибка при удалении продавца {seller_id}: {e}")
             raise HTTPException(status_code=500, detail="Ошибка при удалении продавца")
@@ -85,7 +94,7 @@ async def seller_stats(
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    """Статистика продавцов."""
+    """Статистика продавцов (дни работы + общая статистика)."""
     try:
         if date_from and date_to:
             start_date = date.fromisoformat(date_from)
@@ -99,22 +108,25 @@ async def seller_stats(
     async_session = get_async_session_factory()
     async with async_session() as session:
         try:
+            # Продавцы + количество дней работы
             sellers_query = (
                 select(
                     Seller.id,
                     Seller.name,
-                    func.count(func.distinct(SellerDay.date)).label("days_worked")
+                    func.count(func.distinct(SellerDay.date)).label("days_worked"),
                 )
                 .outerjoin(
                     SellerDay,
                     (Seller.id == SellerDay.seller_id)
-                    & (SellerDay.date.between(start_date, end_date))
+                    & (SellerDay.date.between(start_date, end_date)),
                 )
                 .group_by(Seller.id, Seller.name)
                 .order_by(Seller.name)
             )
+
             sellers_rows = (await session.execute(sellers_query)).all()
 
+            # Общая статистика за период (пока общая, не личная)
             total_sales = (
                 await session.execute(
                     select(func.count(Sale.id)).where(
@@ -133,10 +145,11 @@ async def seller_stats(
 
             results: List[dict] = [
                 {
+                    "id": row.id,
                     "name": row.name,
                     "days_worked": row.days_worked or 0,
-                    "total_count": total_sales,
-                    "total_revenue": float(total_revenue),
+                    "total_count": total_sales,      # пока общая
+                    "total_revenue": float(total_revenue),  # пока общая
                 }
                 for row in sellers_rows
             ]
@@ -151,8 +164,9 @@ async def seller_stats(
                     "date_to": date_to,
                     "start_date": start_date.isoformat(),
                     "end_date": end_date.isoformat(),
-                }
+                },
             )
+
         except SQLAlchemyError as e:
             logger.error(f"Ошибка при расчёте статистики продавцов: {e}")
             raise HTTPException(status_code=500, detail="Ошибка базы данных при расчёте статистики")
