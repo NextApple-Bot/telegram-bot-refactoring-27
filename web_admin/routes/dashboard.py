@@ -34,6 +34,8 @@ async def dashboard(request: Request, target_date: str | None = None):
     yesterday = today - timedelta(days=1)
     week_ago = today - timedelta(days=7)
 
+    yesterday_iso = yesterday.isoformat()
+
     async_session = get_async_session_factory()
     async with async_session() as session:
         # === Основные KPI за сегодня ===
@@ -178,6 +180,7 @@ async def dashboard(request: Request, target_date: str | None = None):
             "request": request,
             "target_date": today.strftime("%d.%m.%Y"),
             "target_date_iso": today.isoformat(),
+            "yesterday_iso": yesterday_iso,
             "sales_today": sales_today,
             "revenue_today": total_revenue,
             "sales_change_yesterday": sales_change_yesterday,
@@ -240,27 +243,22 @@ async def update_stats(request: Request):
 
     async_session = get_async_session_factory()
     async with async_session() as session, session.begin():
-        # Очистка старых данных за день
         await session.execute(text("DELETE FROM daily_payments WHERE DATE(created_at) = :d"), {"d": target_date})
         await session.execute(text("DELETE FROM sales WHERE DATE(sold_at) = :d"), {"d": target_date})
         await session.execute(text("DELETE FROM preorders WHERE DATE(created_at) = :d"), {"d": target_date})
         await session.execute(text("DELETE FROM bookings WHERE DATE(booked_at) = :d"), {"d": target_date})
 
-        # Платежи
         for pt in ["cash", "terminal", "qr", "transfer", "invoice", "installment"]:
             amount = float(data.get(pt, 0) or 0)
             if amount > 0:
                 session.add(DailyPayment(type="sale", payment_type=pt, amount=amount, created_at=target_date))
 
-        # Продажи
         for _ in range(int(data.get("sales_count", 0) or 0)):
             session.add(Sale(sold_at=target_date))
 
-        # Предзаказы
         for _ in range(int(data.get("preorders_count", 0) or 0)):
             session.add(Preorder(created_at=target_date))
 
-        # Брони (служебная запись)
         sys_cat = (await session.execute(select(Category).where(Category.name == "__SYSTEM__"))).scalar_one_or_none()
         if not sys_cat:
             sys_cat = Category(name="__SYSTEM__", sort_order=-1)
@@ -279,7 +277,6 @@ async def update_stats(request: Request):
 
 @router.get("/top_models_data")
 async def top_models_data(request: Request, days: int = 7, target_date: str | None = None):
-    """Возвращает топ моделей за указанный период (для AJAX)."""
     if target_date:
         end_date = datetime.strptime(target_date, "%Y-%m-%d").date()
     else:
