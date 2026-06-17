@@ -1,3 +1,22 @@
+from fastapi import APIRouter, Request, Form, HTTPException
+from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import SQLAlchemyError
+import asyncio
+import logging
+
+from bot.db import get_async_session_factory
+from bot.models import Item, DailyPayment
+from bot.repositories.client import ClientRepository
+from bot.services.assortment import AssortmentService
+from bot.utils.validators import validate_phone
+
+from .sales import handle_sale_from_form
+from .notifications import send_booking_notification
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
 @router.post("/edit/{item_id}")
 async def edit_item_submit(
     request: Request,
@@ -68,7 +87,6 @@ async def edit_item_submit(
                                 "payment_type": pay_type if pay_type else None,
                             })
 
-                    from .sales import handle_sale_from_form
                     result = await handle_sale_from_form(
                         item_id=item_id,
                         text=text,
@@ -98,7 +116,7 @@ async def edit_item_submit(
                     await AssortmentService.invalidate_cache()
                     return RedirectResponse(url="/admin/assortment", status_code=303)
 
-                # === БРОНИРОВАНИЕ (оставил как было) ===
+                # === БРОНИРОВАНИЕ ===
                 if is_booked:
                     if not booking_price or booking_price <= 0:
                         raise HTTPException(status_code=400, detail="Укажите стоимость брони")
@@ -128,7 +146,6 @@ async def edit_item_submit(
                     session.add(old)
 
                     if booking_prepayment and booking_prepayment > 0 and booking_payment_type:
-                        from bot.models import DailyPayment
                         payment = DailyPayment(
                             type="preorder",
                             payment_type=booking_payment_type,
@@ -136,8 +153,19 @@ async def edit_item_submit(
                         )
                         session.add(payment)
 
-                    from .notifications import send_booking_notification
-                    asyncio.create_task(send_booking_notification(...))  # твой код
+                    # Полноценный вызов уведомления (исправлено)
+                    asyncio.create_task(send_booking_notification(
+                        item_text=text,
+                        serial=serial or "",
+                        price=booking_price,
+                        prepayment=booking_prepayment,
+                        platform=booking_platform,
+                        full_name=booking_full_name,
+                        phone=booking_phone,
+                        payment_type=booking_payment_type,
+                        birth_date=booking_birth_date,
+                        bonus=booking_bonus,
+                    ))
 
                 # === ОБЫЧНОЕ РЕДАКТИРОВАНИЕ ===
                 else:
@@ -146,12 +174,14 @@ async def edit_item_submit(
                     old.category_id = category_id
                     old.is_booked = False
                     old.is_sold = False
-                    for field in ["booking_price", "booking_bonus", "booking_prepayment",
-                                  "booking_platform", "booking_full_name", "booking_phone",
-                                  "booking_payment_type", "booking_birth_date",
-                                  "sale_price", "sale_bonus", "sale_change", "sale_change_type",
-                                  "sale_prepayment", "sale_payment_amount", "sale_payment_type",
-                                  "sale_platform", "sale_full_name", "sale_phone", "sale_birth_date"]:
+                    for field in [
+                        "booking_price", "booking_bonus", "booking_prepayment",
+                        "booking_platform", "booking_full_name", "booking_phone",
+                        "booking_payment_type", "booking_birth_date",
+                        "sale_price", "sale_bonus", "sale_change", "sale_change_type",
+                        "sale_prepayment", "sale_payment_amount", "sale_payment_type",
+                        "sale_platform", "sale_full_name", "sale_phone", "sale_birth_date"
+                    ]:
                         setattr(old, field, None)
                     session.add(old)
 
