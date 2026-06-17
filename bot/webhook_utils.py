@@ -9,6 +9,9 @@ from bot import config
 
 logger = logging.getLogger(__name__)
 
+# Флаг, чтобы не спамить WARNING каждый раз
+_webhook_mismatch_logged = False
+
 
 async def check_and_set_webhook(
     bot: Optional[Bot] = None,
@@ -17,18 +20,9 @@ async def check_and_set_webhook(
 ) -> bool:
     """
     Проверяет текущий вебхук Telegram и при необходимости переустанавливает его.
-
-    Функция идемпотентна: если вебхук уже установлен на правильный URL,
-    повторная установка не происходит.
-
-    Args:
-        bot: Экземпляр бота. Если не передан — функция завершится.
-        dp: Dispatcher (нужен для получения списка allowed_updates).
-        force: Если True — принудительно пересоздаёт вебхук, даже если URL совпадает.
-
-    Returns:
-        True, если вебхук успешно установлен/проверен, иначе False.
     """
+    global _webhook_mismatch_logged
+
     if not bot:
         logger.error("❌ Невозможно проверить вебхук: объект Bot не передан")
         return False
@@ -40,7 +34,6 @@ async def check_and_set_webhook(
     expected_url = f"{config.RENDER_URL}/webhook".rstrip("/")
 
     try:
-        # Получаем текущую информацию о вебхуке
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 f"https://api.telegram.org/bot{config.BOT_TOKEN}/getWebhookInfo",
@@ -54,29 +47,30 @@ async def check_and_set_webhook(
 
         current_url = data["result"].get("url", "")
 
-        # Если URL совпадает и не требуется принудительная переустановка — выходим
         if current_url == expected_url and not force:
-            logger.info(f"✅ Вебхук уже корректно настроен: {expected_url}")
+            if _webhook_mismatch_logged:
+                logger.info(f"✅ Вебхук корректен: {expected_url}")
+                _webhook_mismatch_logged = False
             return True
 
-        # Нужно установить/переустановить вебхук
-        if current_url:
-            logger.warning(
-                f"⚠️ Вебхук не соответствует ожидаемому.\n"
-                f"   Текущий:   {current_url}\n"
-                f"   Ожидаемый: {expected_url}"
-            )
+        # Логируем mismatch только один раз
+        if current_url != expected_url:
+            if not _webhook_mismatch_logged:
+                logger.warning(
+                    f"⚠️ Вебхук не соответствует ожидаемому.\n"
+                    f"   Текущий:   {current_url}\n"
+                    f"   Ожидаемый: {expected_url}\n"
+                    f"   Выполняем переустановку..."
+                )
+                _webhook_mismatch_logged = True
         else:
-            logger.info("ℹ️ Вебхук не установлен. Выполняем первоначальную настройку...")
+            _webhook_mismatch_logged = False
 
-        # Удаляем старый вебхук (с очисткой pending updates)
         await bot.delete_webhook(drop_pending_updates=True)
         logger.info("🗑️ Старый вебхук удалён")
 
-        # Получаем список используемых типов обновлений
         allowed_updates = dp.resolve_used_update_types() if dp else None
 
-        # Устанавливаем новый вебхук
         await bot.set_webhook(
             url=expected_url,
             allowed_updates=allowed_updates,
@@ -84,26 +78,21 @@ async def check_and_set_webhook(
         )
 
         logger.info(f"✅ Вебхук успешно установлен: {expected_url}")
+        _webhook_mismatch_logged = False
         return True
 
     except TelegramAPIError as e:
         logger.error(f"❌ Ошибка Telegram API при настройке вебхука: {e}")
         return False
-
     except aiohttp.ClientError as e:
         logger.error(f"❌ Сетевая ошибка при проверке вебхука: {e}")
         return False
-
     except Exception as e:
         logger.exception(f"❌ Неожиданная ошибка при настройке вебхука: {e}")
         return False
 
 
 async def delete_webhook(bot: Bot) -> bool:
-    """
-    Принудительно удаляет текущий вебхук.
-    Полезно при переключении между webhook и long polling.
-    """
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         logger.info("✅ Вебхук успешно удалён")
