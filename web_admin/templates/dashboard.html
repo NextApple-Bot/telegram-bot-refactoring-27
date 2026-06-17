@@ -1,173 +1,355 @@
 {% extends "base.html" %}
 
-{% block page_title %}Дашборд — {{ target_date }}{% endblock %}
+{% block title %}Дашборд{% endblock %}
+{% block page_title %}Дашборд{% endblock %}
+
+{% block extra_head %}
+<style>
+    .kpi-card {
+        transition: transform 0.2s ease;
+    }
+    .kpi-card:hover {
+        transform: translateY(-2px);
+    }
+    .change-positive { color: #10b981; font-weight: 600; }
+    .change-negative { color: #ef4444; font-weight: 600; }
+    .change-neutral { color: #64748b; }
+    .seller-btn {
+        transition: all 0.2s ease;
+    }
+    .seller-btn.active {
+        background-color: #10b981;
+        color: white;
+        border-color: #10b981;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
+
+<!-- Верхняя панель -->
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Дашборд за {{ target_date }}</h2>
-    
-    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editStatsModal">
-        ✏️ Редактировать статистику
-    </button>
-</div>
-
-<!-- Основные показатели -->
-<div class="row mb-4">
-    <div class="col-md-4">
-        <div class="card shadow-sm">
-            <div class="card-body text-center">
-                <h6 class="text-muted">Выручка сегодня</h6>
-                <h2 class="text-success mb-0">{{ "{:,.0f}".format(revenue_today) }} ₽</h2>
-            </div>
-        </div>
+    <div class="d-flex align-items-center gap-3">
+        <h4 class="mb-0">Дашборд за <strong>{{ target_date }}</strong></h4>
+        <a href="/admin/dashboard?target_date={{ (target_date_iso | string | replace('-', '')) | int - 1 | string | replace(' ', '') }}" 
+           class="btn btn-outline-secondary btn-sm">← Вчера</a>
+        <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm">Сегодня</a>
     </div>
     
-    <div class="col-md-4">
-        <div class="card shadow-sm">
-            <div class="card-body text-center">
-                <h6 class="text-muted">Продажи сегодня</h6>
-                <h2 class="mb-0">{{ sales_today }}</h2>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-4">
-        <div class="card shadow-sm">
-            <div class="card-body text-center">
-                <h6 class="text-muted">План на день</h6>
-                <h2 class="mb-0">{{ "{:,.0f}".format(plan_amount) }} ₽</h2>
-                <small class="text-muted">
-                    Выполнение: {{ ((revenue_today / plan_amount) * 100) | round(1) if plan_amount > 0 else 0 }}%
-                </small>
-            </div>
-        </div>
+    <div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editStatsModal">
+            ✏️ Редактировать статистику
+        </button>
     </div>
 </div>
 
-<!-- Платежи -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header">
-        <strong>Платежи сегодня</strong>
-    </div>
-    <div class="card-body">
-        <div class="row text-center">
-            {% for type, amount in payments.items() %}
-            <div class="col">
-                <div class="border rounded p-3">
-                    <div class="text-muted small">{{ type|capitalize }}</div>
-                    <div class="fs-5 fw-semibold">{{ "{:,.0f}".format(amount) }} ₽</div>
+<!-- KPI -->
+<div class="row g-4 mb-4">
+    <!-- Продажи -->
+    <div class="col-md-6">
+        <div class="card kpi-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted mb-1">Продажи сегодня</h6>
+                        <h2 class="mb-0">{{ sales_today }}</h2>
+                    </div>
+                    <div class="text-end">
+                        {% if sales_change_yesterday is not none %}
+                            <div class="{{ 'change-positive' if sales_change_yesterday > 0 else 'change-negative' if sales_change_yesterday < 0 else 'change-neutral' }}">
+                                {% if sales_change_yesterday > 0 %}+{% endif %}{{ sales_change_yesterday }}% ко вчера
+                            </div>
+                        {% endif %}
+                        {% if sales_change_week is not none %}
+                            <div class="{{ 'change-positive' if sales_change_week > 0 else 'change-negative' if sales_change_week < 0 else 'change-neutral' }} small">
+                                {% if sales_change_week > 0 %}+{% endif %}{{ sales_change_week }}% к нед.
+                            </div>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
-            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Выручка -->
+    <div class="col-md-6">
+        <div class="card kpi-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted mb-1">Выручка сегодня</h6>
+                        <h2 class="mb-0">{{ "{:,.0f}".format(revenue_today) }} ₽</h2>
+                    </div>
+                    <div class="text-end">
+                        {% if revenue_change_yesterday is not none %}
+                            <div class="{{ 'change-positive' if revenue_change_yesterday > 0 else 'change-negative' if revenue_change_yesterday < 0 else 'change-neutral' }}">
+                                {% if revenue_change_yesterday > 0 %}+{% endif %}{{ revenue_change_yesterday }}% ко вчера
+                            </div>
+                        {% endif %}
+                        {% if revenue_change_week is not none %}
+                            <div class="{{ 'change-positive' if revenue_change_week > 0 else 'change-negative' if revenue_change_week < 0 else 'change-neutral' }} small">
+                                {% if revenue_change_week > 0 %}+{% endif %}{{ revenue_change_week }}% к нед.
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- Продавцы -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Продавцы сегодня</strong>
-        <div>
-            <a href="/admin/sellers/manage" class="btn btn-sm btn-outline-secondary">Управление</a>
-            <a href="/admin/sellers/stats" class="btn btn-sm btn-outline-secondary">Статистика</a>
+<!-- Финансы и Продавцы -->
+<div class="row g-4 mb-4">
+    <!-- Финансы -->
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header">
+                <h6 class="mb-0">Финансы за {{ target_date }}</h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for key, label in [('cash','Наличные'), ('terminal','Терминал'), ('qr','QR-код'), 
+                                         ('transfer','Перевод'), ('invoice','По счёту'), ('installment','Рассрочка')] %}
+                    <div class="col-6 col-md-4 mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span class="text-muted">{{ label }}</span>
+                            <strong>{{ "{:,.0f}".format(payments[key]) }} ₽</strong>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between">
+                    <strong>Итого</strong>
+                    <strong class="fs-5">{{ "{:,.0f}".format(total_revenue) }} ₽</strong>
+                </div>
+                <div class="d-flex justify-content-between text-muted small mt-1">
+                    <span>План</span>
+                    <span>{{ "{:,.0f}".format(plan_amount) }} ₽ ({{ (total_revenue / plan_amount * 100) | round(1) }}%)</span>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- Продавцы дня -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Продавцы дня</h6>
+                <a href="/admin/sellers/manage" class="btn btn-sm btn-outline-primary">Управление</a>
+            </div>
+            <div class="card-body">
+                {% if sellers %}
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for seller in sellers %}
+                            <button 
+                                class="btn btn-sm seller-btn {{ 'active' if seller.present else 'btn-outline-secondary' }}"
+                                onclick="toggleSeller({{ seller.id }})"
+                                id="seller-btn-{{ seller.id }}">
+                                {{ seller.name }}
+                            </button>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-muted">Продавцы не добавлены</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Графики -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Динамика продаж (7 дней)</h6>
+            </div>
+            <div class="card-body">
+                <canvas id="salesChart" height="120"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Динамика выручки (7 дней)</h6>
+            </div>
+            <div class="card-body">
+                <canvas id="revenueChart" height="120"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Топ моделей -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Топ-5 моделей (7 дней)</h6>
+        <a href="/admin/sellers/stats" class="btn btn-sm btn-outline-secondary">Статистика продавцов →</a>
+    </div>
     <div class="card-body">
-        {% if sellers %}
-            {% for seller in sellers %}
-                <span class="badge {% if seller.present %}bg-success{% else %}bg-secondary{% endif %} me-2 mb-2 fs-6 p-2">
-                    {{ seller.name }}
-                </span>
-            {% endfor %}
+        {% if top_labels %}
+            <div class="row">
+                {% for i in range(top_labels|length) %}
+                <div class="col-md-4 mb-2">
+                    <div class="d-flex justify-content-between">
+                        <span>{{ top_labels[i] }}</span>
+                        <strong>{{ top_counts[i] }}</strong>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
         {% else %}
-            <p class="text-muted mb-0">Продавцы на сегодня не назначены.</p>
+            <div class="text-muted">Нет данных за последние 7 дней</div>
         {% endif %}
     </div>
 </div>
 
 <!-- Модальное окно редактирования статистики -->
-<div class="modal fade" id="editStatsModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="editStatsModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Редактировать статистику за {{ target_date }}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            
-            <form id="statsForm">
-                <div class="modal-body">
+            <div class="modal-body">
+                <form id="editStatsForm">
                     <input type="hidden" name="target_date" value="{{ target_date_iso }}">
                     
                     <div class="row">
-                        <!-- Количество -->
                         <div class="col-md-6">
-                            <h6 class="mb-3">Количество</h6>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Продажи</label>
-                                <input type="number" name="sales_count" class="form-control" value="{{ stats.sales_count }}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Предзаказы</label>
-                                <input type="number" name="preorders_count" class="form-control" value="{{ stats.preorders_count }}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Брони</label>
-                                <input type="number" name="bookings_count" class="form-control" value="{{ stats.bookings_count }}">
-                            </div>
-                        </div>
-                        
-                        <!-- Платежи -->
-                        <div class="col-md-6">
-                            <h6 class="mb-3">Платежи (₽)</h6>
-                            
-                            {% for type in ['cash', 'terminal', 'qr', 'transfer', 'invoice', 'installment'] %}
+                            <h6>Платежи</h6>
+                            {% for key, label in [('cash','Наличные'), ('terminal','Терминал'), ('qr','QR-код'),
+                                                 ('transfer','Перевод'), ('invoice','По счёту'), ('installment','Рассрочка')] %}
                             <div class="mb-2">
-                                <label class="form-label text-capitalize">{{ type }}</label>
-                                <input type="number" step="0.01" name="{{ type }}" class="form-control" 
-                                       value="{{ payments.get(type, 0) }}">
+                                <label class="form-label small">{{ label }} (₽)</label>
+                                <input type="number" step="0.01" class="form-control form-control-sm" 
+                                       name="{{ key }}" value="{{ payments[key] }}">
                             </div>
                             {% endfor %}
                         </div>
+                        
+                        <div class="col-md-6">
+                            <h6>Количество</h6>
+                            <div class="mb-2">
+                                <label class="form-label small">Продажи</label>
+                                <input type="number" class="form-control form-control-sm" 
+                                       name="sales_count" value="{{ stats.sales_count }}">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small">Предзаказы</label>
+                                <input type="number" class="form-control form-control-sm" 
+                                       name="preorders_count" value="{{ stats.preorders_count }}">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small">Брони</label>
+                                <input type="number" class="form-control form-control-sm" 
+                                       name="bookings_count" value="{{ stats.bookings_count }}">
+                            </div>
+                        </div>
                     </div>
-                </div>
-                
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                    <button type="submit" class="btn btn-primary">Сохранить</button>
-                </div>
-            </form>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="saveStats()">Сохранить</button>
+            </div>
         </div>
     </div>
 </div>
+
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-document.getElementById('statsForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    
-    const formData = new FormData(this);
-    const data = Object.fromEntries(formData.entries());
-    
+// График продаж
+const salesCtx = document.getElementById('salesChart');
+new Chart(salesCtx, {
+    type: 'line',
+    data: {
+        labels: {{ chart_dates | tojson }},
+        datasets: [{
+            label: 'Продажи',
+            data: {{ chart_sales | tojson }},
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37, 99, 235, 0.1)',
+            tension: 0.3,
+            fill: true
+        }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } } }
+});
+
+// График выручки
+const revenueCtx = document.getElementById('revenueChart');
+new Chart(revenueCtx, {
+    type: 'line',
+    data: {
+        labels: {{ chart_dates | tojson }},
+        datasets: [{
+            label: 'Выручка',
+            data: {{ chart_revenue | tojson }},
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            tension: 0.3,
+            fill: true
+        }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } } }
+});
+
+// Отметка продавца
+async function toggleSeller(sellerId) {
+    const btn = document.getElementById('seller-btn-' + sellerId);
+    const targetDate = '{{ target_date_iso }}';
+
     try {
-        const response = await fetch('/admin/dashboard/update_stats', {
+        const res = await fetch('/admin/dashboard/toggle_seller_day', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `seller_id=${sellerId}&target_date=${targetDate}`
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+            if (data.status === 'added') {
+                btn.classList.add('active', 'btn-success');
+                btn.classList.remove('btn-outline-secondary');
+            } else {
+                btn.classList.remove('active', 'btn-success');
+                btn.classList.add('btn-outline-secondary');
+            }
+        }
+    } catch (e) {
+        alert('Ошибка при обновлении');
+    }
+}
+
+// Сохранение статистики
+async function saveStats() {
+    const form = document.getElementById('editStatsForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+
+    try {
+        const res = await fetch('/admin/dashboard/update_stats', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
         
-        const result = await response.json();
-        
+        const result = await res.json();
         if (result.success) {
             location.reload();
         } else {
             alert('Ошибка: ' + (result.error || 'Неизвестная ошибка'));
         }
-    } catch (error) {
-        alert('Ошибка при сохранении');
-        console.error(error);
+    } catch (e) {
+        alert('Ошибка соединения');
     }
-});
+}
 </script>
 {% endblock %}
