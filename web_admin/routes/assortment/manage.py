@@ -1,27 +1,33 @@
-from fastapi import APIRouter, Request, Form, HTTPException
-from fastapi.responses import RedirectResponse, HTMLResponse
-from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 import asyncio
 import logging
 
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import RedirectResponse
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+
 from bot.db import get_async_session_factory
-from bot.models import Item, DailyPayment, Category
+from bot.models import Category, Item
 from bot.repositories.client import ClientRepository
 from bot.services.assortment import AssortmentService
-from bot.utils.validators import validate_phone
-
-from .sales import handle_sale_from_form
-from .notifications import send_booking_notification
 from web_admin.templates import templates
 
-router = APIRouter()
+from .notifications import send_booking_notification
+from .sales import handle_sale_from_form
+
 logger = logging.getLogger(__name__)
+router = APIRouter()
 
 
-@router.get("/edit/{item_id}", response_class=HTMLResponse)
+def validate_phone(phone: str) -> bool:
+    if not phone:
+        return True
+    import re
+    return bool(re.match(r'^\+7\d{10}$', phone))
+
+
+@router.get("/edit/{item_id}")
 async def edit_item_form(request: Request, item_id: int):
-    """Отображает форму редактирования товара"""
     async_session = get_async_session_factory()
     async with async_session() as session:
         item = await session.get(Item, item_id)
@@ -83,6 +89,7 @@ async def edit_item_submit(
         raise HTTPException(status_code=400, detail="Неверный формат телефона брони")
     if sale_phone and not validate_phone(sale_phone):
         raise HTTPException(status_code=400, detail="Неверный формат телефона продажи")
+
     if is_sold and is_booked:
         raise HTTPException(status_code=400, detail="Нельзя одновременно забронировать и продать товар")
 
@@ -96,11 +103,12 @@ async def edit_item_submit(
                 if getattr(old, "is_sold", False):
                     raise HTTPException(status_code=400, detail="Товар уже продан")
 
+                old_text = old.text
+                old_serial = old.serial or ""
+                old_category_id = old.category_id
+
                 # === ПРОДАЖА ===
                 if is_sold:
-                    if not sale_price or float(sale_price) <= 0:
-                        raise HTTPException(status_code=400, detail="Укажите стоимость продажи")
-
                     accessories = []
                     for name, acc_serial, price, pay_type in zip(
                         accessory_name, accessory_serial, accessory_price, accessory_payment_type, strict=False
@@ -118,10 +126,10 @@ async def edit_item_submit(
                         text=text,
                         serial=serial,
                         category_id=category_id,
-                        old_text=old.text,
-                        old_serial=old.serial or "",
-                        old_category_id=old.category_id,
-                        sale_price=float(sale_price),
+                        old_text=old_text,
+                        old_serial=old_serial,
+                        old_category_id=old_category_id,
+                        sale_price=float(sale_price) if sale_price else 0,
                         sale_prepayment=sale_prepayment or 0,
                         sale_payment_amount=sale_payment_amount or 0,
                         sale_payment_type=sale_payment_type or "cash",
@@ -169,9 +177,16 @@ async def edit_item_submit(
                     old.booking_phone = booking_phone
                     old.booking_payment_type = booking_payment_type
                     old.booking_birth_date = booking_birth_date
+
+                    for field in ["sale_price", "sale_bonus", "sale_change", "sale_change_type",
+                                  "sale_prepayment", "sale_payment_amount", "sale_payment_type",
+                                  "sale_platform", "sale_full_name", "sale_phone", "sale_birth_date"]:
+                        setattr(old, field, None)
+
                     session.add(old)
 
                     if booking_prepayment and booking_prepayment > 0 and booking_payment_type:
+                        from bot.models import DailyPayment
                         payment = DailyPayment(
                             type="preorder",
                             payment_type=booking_payment_type,
@@ -199,6 +214,7 @@ async def edit_item_submit(
                     old.category_id = category_id
                     old.is_booked = False
                     old.is_sold = False
+
                     for field in [
                         "booking_price", "booking_bonus", "booking_prepayment",
                         "booking_platform", "booking_full_name", "booking_phone",
@@ -208,6 +224,7 @@ async def edit_item_submit(
                         "sale_platform", "sale_full_name", "sale_phone", "sale_birth_date"
                     ]:
                         setattr(old, field, None)
+
                     session.add(old)
 
             await AssortmentService.invalidate_cache()
@@ -222,21 +239,20 @@ async def edit_item_submit(
 
 @router.post("/delete/{item_id}")
 async def delete_item(request: Request, item_id: int):
-    """Удаление товара"""
     async_session = get_async_session_factory()
-    async with async_session() as session:
-        try:
-            async with session.begin():
-                item = await session.get(Item, item_id)
-                if not item:
-                    raise HTTPException(status_code=404, detail="Товар не найден")
-                await session.delete(item)
+    async with async_session() as session, session.begin():
+        item = await session.get(Item, item_id)
+        if item:
+            from bot.models import DeletedItem
+            deleted = DeletedItem(
+                item_id=item.id,
+                text=item.text,
+                serial=item.serial,
+                category_id=item.category_id,
+                reason="admin_manual",
+            )
+            session.add(deleted)
+            await session.delete(item)
 
-            await AssortmentService.invalidate_cache()
-            return RedirectResponse(url="/admin/assortment", status_code=303)
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.exception(f"Ошибка при удалении товара {item_id}")
-            raise HTTPException(status_code=500, detail="Ошибка при удалении товара")
+    await AssortmentService.invalidate_cache()
+    return RedirectResponse(url="/admin/assortment", status_code=303)
