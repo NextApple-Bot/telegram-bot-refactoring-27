@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 """
-Полноценная автоматическая проверка миграций Alembic.
-Проверяет ревизии, таблицы и соответствие моделей схеме БД.
+Полноценная проверка миграций (синхронная версия — стабильная).
 """
 
-import asyncio
 import logging
 import sys
 
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import inspect
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import create_engine, inspect
 
 from bot.config import config as bot_config
 
@@ -20,14 +17,14 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-async def check_migrations() -> bool:
-    """Полноценная проверка миграций."""
+def check_migrations() -> bool:
+    """Проверка миграций (синхронно — надёжно для pre-deploy)."""
     logger.info("🔍 Запуск проверки миграций...")
 
     DATABASE_URL = bot_config.DATABASE_URL
 
     if not DATABASE_URL:
-        logger.error("❌ DATABASE_URL не задан в конфигурации")
+        logger.error("❌ DATABASE_URL не задан")
         return False
 
     # Настройка Alembic
@@ -36,16 +33,13 @@ async def check_migrations() -> bool:
 
     script = ScriptDirectory.from_config(alembic_cfg)
 
-    # Создаём асинхронный движок
-    engine = create_async_engine(
-        DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
-        echo=False,
-    )
+    # Создаём синхронный движок (более стабильный для pre-deploy)
+    engine = create_engine(DATABASE_URL)
 
     try:
-        # === 1. Проверка текущей ревизии ===
-        async with engine.connect() as conn:
-            context = MigrationContext.configure(conn.sync_connection)
+        # 1. Проверка ревизий
+        with engine.connect() as conn:
+            context = MigrationContext.configure(conn)
             current_rev = context.get_current_revision()
 
         head_rev = script.get_current_head()
@@ -54,38 +48,33 @@ async def check_migrations() -> bool:
         logger.info(f"Head ревизия:        {head_rev}")
 
         if current_rev != head_rev:
-            logger.error("❌ Миграции не актуальны! Нужно выполнить: alembic upgrade head")
+            logger.error("❌ Миграции не актуальны!")
             return False
 
-        logger.info("✅ Ревизии совпадают (current == head)")
+        logger.info("✅ Ревизии совпадают")
 
-        # === 2. Проверка существования всех таблиц из моделей ===
+        # 2. Проверка таблиц
         from bot.models import Base
 
-        async with engine.connect() as conn:
-            inspector = inspect(conn.sync_connection)
-            existing_tables = set(inspector.get_table_names())
+        inspector = inspect(engine)
+        existing_tables = set(inspector.get_table_names())
 
-            missing_tables = []
-            for table_name in Base.metadata.tables.keys():
-                if table_name not in existing_tables:
-                    missing_tables.append(table_name)
-
-            if missing_tables:
-                logger.error(f"❌ Отсутствуют таблицы в БД: {missing_tables}")
+        for table in Base.metadata.tables.keys():
+            if table not in existing_tables:
+                logger.error(f"❌ Таблица '{table}' отсутствует в БД")
                 return False
 
         logger.info("✅ Все таблицы из моделей присутствуют в БД")
 
-        # === 3. Дополнительная проверка через alembic check (если доступно) ===
+        # 3. alembic check (опционально)
         try:
             from alembic import command
             command.check(alembic_cfg)
-            logger.info("✅ alembic check пройден (модели соответствуют схеме БД)")
+            logger.info("✅ alembic check пройден")
         except Exception as e:
-            logger.warning(f"⚠️ alembic check завершился с предупреждением: {e}")
+            logger.warning(f"⚠️ alembic check: {e}")
 
-        logger.info("✅ Все проверки миграций пройдены успешно!")
+        logger.info("✅ Проверка миграций пройдена успешно")
         return True
 
     except Exception as e:
@@ -93,9 +82,9 @@ async def check_migrations() -> bool:
         return False
 
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 if __name__ == "__main__":
-    success = asyncio.run(check_migrations())
+    success = check_migrations()
     sys.exit(0 if success else 1)
