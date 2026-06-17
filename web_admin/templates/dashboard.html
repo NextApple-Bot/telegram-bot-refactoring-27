@@ -5,23 +5,13 @@
 
 {% block extra_head %}
 <style>
-    .kpi-card {
-        transition: transform 0.2s ease;
-    }
-    .kpi-card:hover {
-        transform: translateY(-2px);
-    }
+    .kpi-card { transition: transform 0.2s ease; }
+    .kpi-card:hover { transform: translateY(-2px); }
     .change-positive { color: #10b981; font-weight: 600; }
     .change-negative { color: #ef4444; font-weight: 600; }
     .change-neutral { color: #64748b; }
-    .seller-btn {
-        transition: all 0.2s ease;
-    }
-    .seller-btn.active {
-        background-color: #10b981;
-        color: white;
-        border-color: #10b981;
-    }
+    .seller-btn { transition: all 0.2s ease; }
+    .seller-btn.active { background-color: #10b981; color: white; border-color: #10b981; }
 </style>
 {% endblock %}
 
@@ -31,9 +21,12 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div class="d-flex align-items-center gap-3">
         <h4 class="mb-0">Дашборд за <strong>{{ target_date }}</strong></h4>
-        <a href="/admin/dashboard?target_date={{ (target_date_iso | string | replace('-', '')) | int - 1 | string | replace(' ', '') }}" 
-           class="btn btn-outline-secondary btn-sm">← Вчера</a>
+        
         <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm">Сегодня</a>
+        
+        {% if yesterday_iso %}
+        <a href="/admin/dashboard?target_date={{ yesterday_iso }}" class="btn btn-outline-secondary btn-sm">← Вчера</a>
+        {% endif %}
     </div>
     
     <div>
@@ -45,7 +38,6 @@
 
 <!-- KPI -->
 <div class="row g-4 mb-4">
-    <!-- Продажи -->
     <div class="col-md-6">
         <div class="card kpi-card h-100">
             <div class="card-body">
@@ -71,7 +63,6 @@
         </div>
     </div>
 
-    <!-- Выручка -->
     <div class="col-md-6">
         <div class="card kpi-card h-100">
             <div class="card-body">
@@ -122,10 +113,6 @@
                 <div class="d-flex justify-content-between">
                     <strong>Итого</strong>
                     <strong class="fs-5">{{ "{:,.0f}".format(total_revenue) }} ₽</strong>
-                </div>
-                <div class="d-flex justify-content-between text-muted small mt-1">
-                    <span>План</span>
-                    <span>{{ "{:,.0f}".format(plan_amount) }} ₽ ({{ (total_revenue / plan_amount * 100) | round(1) }}%)</span>
                 </div>
             </div>
         </div>
