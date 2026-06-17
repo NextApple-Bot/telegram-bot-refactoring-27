@@ -94,7 +94,7 @@ async def seller_stats(
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    """Статистика продавцов (дни работы + общая статистика)."""
+    """Статистика продавцов (дни работы + общая статистика за период)."""
     try:
         if date_from and date_to:
             start_date = date.fromisoformat(date_from)
@@ -126,7 +126,7 @@ async def seller_stats(
 
             sellers_rows = (await session.execute(sellers_query)).all()
 
-            # Общая статистика за период (пока общая, не личная)
+            # Общая статистика за период (пока общая, не личная по продавцу)
             total_sales = (
                 await session.execute(
                     select(func.count(Sale.id)).where(
@@ -148,8 +148,8 @@ async def seller_stats(
                     "id": row.id,
                     "name": row.name,
                     "days_worked": row.days_worked or 0,
-                    "total_count": total_sales,      # пока общая
-                    "total_revenue": float(total_revenue),  # пока общая
+                    "total_count": total_sales,
+                    "total_revenue": float(total_revenue),
                 }
                 for row in sellers_rows
             ]
