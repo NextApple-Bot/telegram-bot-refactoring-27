@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Улучшенный скрипт применения миграций с проверками.
+Улучшенный скрипт применения миграций с проверкой.
 """
 
 import asyncio
 import logging
-import os
 import sys
 
 from alembic.config import Config
@@ -21,10 +20,11 @@ async def run_migrations():
     alembic_cfg = Config("alembic.ini")
 
     try:
-        # Сначала проверяем текущее состояние
+        # Проверяем миграции перед применением
         from scripts.check_migrations import check_migrations
+
         if not await check_migrations():
-            logger.error("❌ Проверка миграций не прошла. Прерываем.")
+            logger.error("❌ Проверка миграций не прошла. Прерываем применение.")
             sys.exit(1)
 
         # Применяем миграции
