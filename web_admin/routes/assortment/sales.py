@@ -19,7 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 def generate_sale_message_id() -> int:
-    """Генерирует большой уникальный ID (для BIGINT)."""
+    """
+    Генерирует большой уникальный идентификатор для sale_message_id.
+    Возвращает число в диапазоне signed BIGINT (до 2^63-1).
+    Используется при продаже товара из веб-админки.
+    """
     return uuid.uuid4().int & 0x7FFFFFFFFFFFFFFF
 
 
@@ -45,6 +49,10 @@ async def handle_sale_from_form(
     accessories: Optional[list[dict[str, Any]]] = None,
     conn=None,
 ) -> dict[str, Any]:
+    """
+    Полная обработка продажи товара из веб-админки.
+    Создаёт записи в DeletedItem, Sale, DailyPayment, Purchase (при необходимости).
+    """
     accessories = accessories or []
 
     # === Валидация ===
@@ -54,7 +62,8 @@ async def handle_sale_from_form(
     if sale_payment_type != "paid" and (not sale_payment_amount or sale_payment_amount <= 0):
         return {"error": "Укажите сумму оплаты"}
 
-    sale_message_id = generate_sale_message_id()
+    # Генерируем большой уникальный ID (для BIGINT колонок)
+    sale_message_id: int = generate_sale_message_id()
     own_session = False
 
     if conn is None:
@@ -169,7 +178,7 @@ async def handle_sale_from_form(
         )
         session.add(sale)
 
-        # === 6. Сохранение платежей ===
+        # === 6. Сохранение платежей в daily_payments ===
         for pay_type, amount in all_payments.items():
             if amount > 0:
                 session.add(DailyPayment(
