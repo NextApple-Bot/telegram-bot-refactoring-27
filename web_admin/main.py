@@ -33,14 +33,18 @@ app.include_router(assortment_booking.router, prefix="/assortment", tags=["assor
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    public_paths = ["/auth/login", "/debug/routes", "/static"]
+    
+    # Публичные пути (важно: указываем полный путь после монтирования)
+    public_paths = ["/admin/auth/login", "/debug/routes", "/static"]
+    
     if any(path.startswith(p) for p in public_paths):
         return await call_next(request)
 
     if not is_authenticated(request):
-        if path.startswith("/admin") or path.startswith("/auth"):
+        if path.startswith("/admin"):
             return RedirectResponse(url="/admin/auth/login", status_code=303)
         return RedirectResponse(url="/auth/login", status_code=303)
+    
     return await call_next(request)
 
 @app.get("/")
