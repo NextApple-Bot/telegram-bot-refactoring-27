@@ -9,7 +9,6 @@
 
 import asyncio
 import logging
-import os
 import sys
 
 from alembic.config import Config
@@ -18,7 +17,7 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from bot.config import DATABASE_URL
+from bot.config import config as bot_config
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -27,6 +26,8 @@ logger = logging.getLogger(__name__)
 async def check_migrations() -> bool:
     """Основная функция проверки миграций."""
     logger.info("🔍 Запуск проверки миграций...")
+
+    DATABASE_URL = bot_config.DATABASE_URL
 
     if not DATABASE_URL:
         logger.error("❌ DATABASE_URL не задан")
