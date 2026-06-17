@@ -20,9 +20,8 @@ logger = logging.getLogger(__name__)
 
 def generate_sale_message_id() -> int:
     """
-    Генерирует большой уникальный идентификатор для sale_message_id.
-    Возвращает число в диапазоне signed BIGINT (до 2^63-1).
-    Используется при продаже товара из веб-админки.
+    Генерирует большой уникальный ID для sale_message_id.
+    Гарантирует попадание в диапазон signed BIGINT.
     """
     return uuid.uuid4().int & 0x7FFFFFFFFFFFFFFF
 
@@ -51,7 +50,7 @@ async def handle_sale_from_form(
 ) -> dict[str, Any]:
     """
     Полная обработка продажи товара из веб-админки.
-    Создаёт записи в DeletedItem, Sale, DailyPayment, Purchase (при необходимости).
+    Поддерживает аксессуары, бонусы, сдачу, создание клиента и уведомления.
     """
     accessories = accessories or []
 
@@ -62,7 +61,6 @@ async def handle_sale_from_form(
     if sale_payment_type != "paid" and (not sale_payment_amount or sale_payment_amount <= 0):
         return {"error": "Укажите сумму оплаты"}
 
-    # Генерируем большой уникальный ID (для BIGINT колонок)
     sale_message_id: int = generate_sale_message_id()
     own_session = False
 
@@ -125,7 +123,7 @@ async def handle_sale_from_form(
         if sale_payment_type != "paid" and sale_payment_amount > 0:
             all_payments[sale_payment_type] = all_payments.get(sale_payment_type, 0) + sale_payment_amount
 
-        # === 3. Клиент + Purchase ===
+        # === 3. Создание клиента (при необходимости) ===
         client_id = None
         if sale_phone or sale_full_name:
             client_id = await ClientRepository.get_or_create_client(
@@ -191,7 +189,7 @@ async def handle_sale_from_form(
         if own_session:
             await session.commit()
 
-        # === 7. Уведомление ===
+        # === 7. Отправка уведомления ===
         asyncio.create_task(send_sale_notification(
             item_text=text,
             price=sale_price,
