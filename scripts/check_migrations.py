@@ -1,5 +1,3 @@
-# 1. Полностью перезаписать файл правильным содержимым
-cat > scripts/check_migrations.py << 'ENDOFFILE'
 #!/usr/bin/env python3
 """
 Автоматическая проверка миграций Alembic.
@@ -54,19 +52,21 @@ async def check_migrations() -> bool:
 
     logger.info("✅ Ревизии совпадают")
 
-    # Проверка таблиц
+    # Проверка таблиц из моделей
     try:
         from bot.models import Base
         async with engine.connect() as conn:
             inspector = inspect(conn.sync_connection)
-            existing = set(inspector.get_table_names())
+            existing_tables = set(inspector.get_table_names())
+
             for table in Base.metadata.tables.keys():
-                if table not in existing:
-                    logger.error(f"❌ Таблица {table} отсутствует в БД")
+                if table not in existing_tables:
+                    logger.error(f"❌ Таблица '{table}' отсутствует в БД")
                     return False
-        logger.info("✅ Все таблицы на месте")
+
+        logger.info("✅ Все таблицы из моделей присутствуют в БД")
     except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
+        logger.error(f"❌ Ошибка при проверке таблиц: {e}")
         return False
 
     logger.info("✅ Проверка миграций пройдена успешно")
@@ -76,4 +76,3 @@ async def check_migrations() -> bool:
 if __name__ == "__main__":
     success = asyncio.run(check_migrations())
     sys.exit(0 if success else 1)
-ENDOFFILE
