@@ -12,7 +12,7 @@ from sqlalchemy import text
 from starlette.applications import Starlette
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 SENTRY_DSN = os.getenv("SENTRY_DSN")
@@ -122,7 +122,12 @@ class Application:
             if self.bot:
                 try:
                     await self.bot.delete_webhook()
-                    await self.bot.session.close()
+                    # Улучшенное закрытие сессии (защита от ошибок при shutdown)
+                    if hasattr(self.bot, "session") and self.bot.session:
+                        try:
+                            await self.bot.session.close()
+                        except Exception as e:
+                            logger.error(f"Ошибка при закрытии bot.session: {e}")
                 except Exception as e:
                     logger.error(f"Ошибка при закрытии бота: {e}")
 
@@ -181,6 +186,8 @@ def create_starlette_app(app_instance):
         Route("/webhook", app_instance.webhook, methods=["POST"]),
         Route("/health", app_instance.health, methods=["GET"]),
         Route("/health/detailed", app_instance.health_detailed, methods=["GET"]),
+        # === ДОБАВЛЕНО: чтобы не было 404 на корневом пути ===
+        Route("/", lambda req: RedirectResponse(url="/admin/dashboard")),
     ]
     starlette_app = Starlette(routes=routes)
 
