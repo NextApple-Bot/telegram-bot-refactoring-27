@@ -26,7 +26,7 @@ async def send_booking_notification(
     bonus: float | None = None,
     is_cancel: bool = False,
 ):
-    """Уведомление о брони"""
+    """Уведомление о брони (улучшенная версия)"""
     try:
         bot = Bot(token=config.BOT_TOKEN)
 
@@ -36,19 +36,23 @@ async def send_booking_notification(
             lines = [f"БРОНЬ:\n{item_text}"]
 
             if price:
-                if bonus:
+                if bonus and bonus > 0:
                     lines.append(f"Стоимость – {format_number(price)} (скидка бонусами {format_number(bonus)})")
                 else:
                     lines.append(f"Стоимость – {format_number(price)}")
 
             if prepayment and prepayment > 0:
-                pt_name = {
+                pt_map = {
                     "cash": "наличными",
                     "terminal": "терминалом",
                     "qr": "QR-кодом",
                     "transfer": "переводом",
-                }.get(payment_type, payment_type or "")
-                lines.append(f"П/О – {format_number(prepayment)} ({pt_name})" if pt_name else f"П/О – {format_number(prepayment)}")
+                }
+                pt_name = pt_map.get(payment_type, payment_type or "")
+                prep_line = f"П/О – {format_number(prepayment)}"
+                if pt_name:
+                    prep_line += f" ({pt_name})"
+                lines.append(prep_line)
 
             if full_name: lines.append(full_name)
             if birth_date: lines.append(birth_date)
@@ -85,7 +89,7 @@ async def send_sale_notification(
     accessories_total: float = 0.0,
     final_amount: float | None = None,
 ):
-    """Уведомление о продаже с бонусом и сдачей"""
+    """Уведомление о продаже с поддержкой бонуса, сдачи и аксессуаров"""
     try:
         bot = Bot(token=config.BOT_TOKEN)
         accessories = accessories or []
@@ -117,7 +121,7 @@ async def send_sale_notification(
                 lines.append("")
             lines.append("")
 
-        # Платежи
+        # Основная оплата
         if payment_type == "paid":
             lines.append("Оплачен")
             lines.append("")
