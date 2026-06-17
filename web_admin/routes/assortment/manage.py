@@ -145,14 +145,34 @@ async def edit_item_submit(
                     )
 
                     if "error" in result:
-                        error_msg = result["error"]
                         return RedirectResponse(
-                            url=f"/admin/assortment/edit/{item_id}?error={error_msg}",
+                            url=f"/admin/assortment/edit/{item_id}?error={result['error']}",
                             status_code=303
                         )
 
                     await AssortmentService.invalidate_cache()
                     return RedirectResponse(url="/admin/assortment", status_code=303)
+
+                # === ОБЩАЯ ЛОГИКА: сначала очищаем все временные поля ===
+                booking_fields = [
+                    "booking_price", "booking_bonus", "booking_prepayment",
+                    "booking_platform", "booking_full_name", "booking_phone",
+                    "booking_payment_type", "booking_birth_date"
+                ]
+                sale_fields = [
+                    "sale_price", "sale_bonus", "sale_change", "sale_change_type",
+                    "sale_prepayment", "sale_payment_amount", "sale_payment_type",
+                    "sale_platform", "sale_full_name", "sale_phone", "sale_birth_date"
+                ]
+
+                for field in booking_fields + sale_fields:
+                    setattr(old, field, None)
+
+                old.text = text
+                old.serial = serial.strip().upper() if serial else None
+                old.category_id = category_id
+                old.is_booked = is_booked
+                old.is_sold = False
 
                 # === БРОНИРОВАНИЕ ===
                 if is_booked:
@@ -168,11 +188,6 @@ async def edit_item_submit(
                             conn=session,
                         )
 
-                    old.text = text
-                    old.serial = serial.strip().upper() if serial else None
-                    old.category_id = category_id
-                    old.is_booked = True
-                    old.is_sold = False
                     old.booking_price = booking_price
                     old.booking_bonus = booking_bonus
                     old.booking_prepayment = booking_prepayment
@@ -181,13 +196,6 @@ async def edit_item_submit(
                     old.booking_phone = booking_phone
                     old.booking_payment_type = booking_payment_type
                     old.booking_birth_date = booking_birth_date
-
-                    for field in ["sale_price", "sale_bonus", "sale_change", "sale_change_type",
-                                  "sale_prepayment", "sale_payment_amount", "sale_payment_type",
-                                  "sale_platform", "sale_full_name", "sale_phone", "sale_birth_date"]:
-                        setattr(old, field, None)
-
-                    session.add(old)
 
                     if booking_prepayment and booking_prepayment > 0 and booking_payment_type:
                         from bot.models import DailyPayment
@@ -210,26 +218,6 @@ async def edit_item_submit(
                         birth_date=booking_birth_date,
                         bonus=booking_bonus,
                     ))
-
-                # === ОБЫЧНОЕ РЕДАКТИРОВАНИЕ ===
-                else:
-                    old.text = text
-                    old.serial = serial.strip().upper() if serial else None
-                    old.category_id = category_id
-                    old.is_booked = False
-                    old.is_sold = False
-
-                    for field in [
-                        "booking_price", "booking_bonus", "booking_prepayment",
-                        "booking_platform", "booking_full_name", "booking_phone",
-                        "booking_payment_type", "booking_birth_date",
-                        "sale_price", "sale_bonus", "sale_change", "sale_change_type",
-                        "sale_prepayment", "sale_payment_amount", "sale_payment_type",
-                        "sale_platform", "sale_full_name", "sale_phone", "sale_birth_date"
-                    ]:
-                        setattr(old, field, None)
-
-                    session.add(old)
 
             await AssortmentService.invalidate_cache()
             return RedirectResponse(url="/admin/assortment", status_code=303)
