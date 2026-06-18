@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from aiogram import Bot, Dispatcher
-from sqlalchemy import text  # ← добавлен импорт
+from sqlalchemy import text
 
 from bot import config
 from bot.db import get_async_session_factory
