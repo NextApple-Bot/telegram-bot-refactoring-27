@@ -217,11 +217,11 @@ async def update_stats(request: Request):
             for _ in range(int(data.get("preorders_count", 0) or 0)):
                 session.add(Preorder(created_at=target_date))
 
-            # Брони (безопасная версия — без select(Item))
+            # Брони (item_id=0 — безопасно)
             bookings_count = int(data.get("bookings_count", 0) or 0)
             for _ in range(bookings_count):
                 session.add(Booking(
-                    item_id=None,
+                    item_id=0,
                     total_amount=0,
                     booked_at=target_date
                 ))
