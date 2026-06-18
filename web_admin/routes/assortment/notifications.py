@@ -133,7 +133,7 @@ async def send_sale_notification(
     accessories_total: float = 0.0,
     final_amount: float | None = None,
 ):
-    """Уведомление о продаже (в стиле v26)."""
+    """Уведомление о продаже (максимально близко к формату v26)."""
     try:
         accessories = accessories or []
 
