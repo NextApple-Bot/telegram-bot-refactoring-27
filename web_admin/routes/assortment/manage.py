@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# ====================== ВАЛИДАЦИЯ ======================
+
 def validate_phone(phone: str) -> bool:
     if not phone:
         return True
@@ -30,14 +32,25 @@ def validate_phone(phone: str) -> bool:
 
 
 def validate_telegram_username(username: str | None) -> bool:
-    """Простая валидация Telegram username."""
+    """Валидация Telegram username (5-32 символа, буквы, цифры, подчёркивание)."""
     if not username:
         return True
+
     username = username.strip()
     if username.startswith("@"):
         username = username[1:]
+
     return bool(re.match(r'^[a-zA-Z0-9_]{5,32}$', username))
 
+
+def validate_comment(comment: str | None) -> bool:
+    """Валидация комментария (максимум 200 символов)."""
+    if not comment:
+        return True
+    return len(comment.strip()) <= 200
+
+
+# ====================== РОУТЫ ======================
 
 @router.get("/edit/{item_id}")
 async def edit_item_form(request: Request, item_id: int):
@@ -100,6 +113,7 @@ async def edit_item_submit(
     accessory_price: list[float] = Form([]),
     accessory_payment_type: list[str] = Form([]),
 ):
+    # === Валидация ===
     if booking_phone and not validate_phone(booking_phone):
         raise HTTPException(status_code=400, detail="Неверный формат телефона брони")
 
@@ -107,7 +121,10 @@ async def edit_item_submit(
         raise HTTPException(status_code=400, detail="Неверный формат телефона продажи")
 
     if booking_telegram_username and not validate_telegram_username(booking_telegram_username):
-        raise HTTPException(status_code=400, detail="Неверный формат Telegram username")
+        raise HTTPException(status_code=400, detail="Неверный формат Telegram username (5-32 символа, буквы/цифры/_)")
+
+    if booking_comment and not validate_comment(booking_comment):
+        raise HTTPException(status_code=400, detail="Комментарий слишком длинный (максимум 200 символов)")
 
     if is_sold and is_booked:
         raise HTTPException(status_code=400, detail="Нельзя одновременно забронировать и продать товар")
