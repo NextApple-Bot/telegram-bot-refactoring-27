@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -10,7 +11,7 @@ from aiogram import Bot
 
 from bot import config
 from bot.db import get_async_session_factory
-from bot.models import Category, Item
+from bot.models import Category, DailyPayment, DeletedItem, Item
 from bot.repositories.client import ClientRepository
 from bot.services.assortment import AssortmentService
 from web_admin.templates import templates
@@ -25,8 +26,17 @@ router = APIRouter()
 def validate_phone(phone: str) -> bool:
     if not phone:
         return True
-    import re
     return bool(re.match(r'^\+7\d{10}$', phone))
+
+
+def validate_telegram_username(username: str | None) -> bool:
+    """Простая валидация Telegram username."""
+    if not username:
+        return True
+    username = username.strip()
+    if username.startswith("@"):
+        username = username[1:]
+    return bool(re.match(r'^[a-zA-Z0-9_]{5,32}$', username))
 
 
 @router.get("/edit/{item_id}")
@@ -70,8 +80,8 @@ async def edit_item_submit(
     booking_phone: str | None = Form(None),
     booking_payment_type: str | None = Form(None),
     booking_birth_date: str | None = Form(None),
-    booking_telegram_username: str | None = Form(None),   # ← Новое поле
-    booking_comment: str | None = Form(None),             # ← Новое поле
+    booking_telegram_username: str | None = Form(None),
+    booking_comment: str | None = Form(None),
     # Продажа
     sale_price: float | None = Form(None),
     sale_bonus: float | None = Form(None),
@@ -92,8 +102,12 @@ async def edit_item_submit(
 ):
     if booking_phone and not validate_phone(booking_phone):
         raise HTTPException(status_code=400, detail="Неверный формат телефона брони")
+
     if sale_phone and not validate_phone(sale_phone):
         raise HTTPException(status_code=400, detail="Неверный формат телефона продажи")
+
+    if booking_telegram_username and not validate_telegram_username(booking_telegram_username):
+        raise HTTPException(status_code=400, detail="Неверный формат Telegram username")
 
     if is_sold and is_booked:
         raise HTTPException(status_code=400, detail="Нельзя одновременно забронировать и продать товар")
@@ -163,7 +177,7 @@ async def edit_item_submit(
                     "booking_price", "booking_bonus", "booking_prepayment",
                     "booking_platform", "booking_full_name", "booking_phone",
                     "booking_payment_type", "booking_birth_date",
-                    "booking_telegram_username", "booking_comment"   # ← Новые поля
+                    "booking_telegram_username", "booking_comment"
                 ]
                 sale_fields = [
                     "sale_price", "sale_bonus", "sale_change", "sale_change_type",
@@ -202,11 +216,10 @@ async def edit_item_submit(
                     old.booking_phone = booking_phone
                     old.booking_payment_type = booking_payment_type
                     old.booking_birth_date = booking_birth_date
-                    old.booking_telegram_username = booking_telegram_username
-                    old.booking_comment = booking_comment
+                    old.booking_telegram_username = booking_telegram_username.strip() if booking_telegram_username else None
+                    old.booking_comment = booking_comment.strip() if booking_comment else None
 
                     if booking_prepayment and booking_prepayment > 0 and booking_payment_type:
-                        from bot.models import DailyPayment
                         payment = DailyPayment(
                             type="preorder",
                             payment_type=booking_payment_type,
@@ -248,7 +261,6 @@ async def delete_item(request: Request, item_id: int):
     async with async_session() as session, session.begin():
         item = await session.get(Item, item_id)
         if item:
-            from bot.models import DeletedItem
             deleted = DeletedItem(
                 item_id=item.id,
                 text=item.text,
