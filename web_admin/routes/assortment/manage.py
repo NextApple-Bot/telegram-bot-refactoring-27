@@ -6,13 +6,16 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from aiogram import Bot
+
+from bot import config
 from bot.db import get_async_session_factory
 from bot.models import Category, Item
 from bot.repositories.client import ClientRepository
 from bot.services.assortment import AssortmentService
 from web_admin.templates import templates
 
-from .notifications import send_booking_notification
+from .notifications import send_booking_notification, send_sale_notification
 from .sales import handle_sale_from_form
 
 logger = logging.getLogger(__name__)
@@ -153,7 +156,7 @@ async def edit_item_submit(
                     await AssortmentService.invalidate_cache()
                     return RedirectResponse(url="/admin/assortment", status_code=303)
 
-                # === ОБЩАЯ ЛОГИКА: сначала очищаем все временные поля ===
+                # === ОБЩАЯ ЛОГИКА ===
                 booking_fields = [
                     "booking_price", "booking_bonus", "booking_prepayment",
                     "booking_platform", "booking_full_name", "booking_phone",
@@ -206,7 +209,10 @@ async def edit_item_submit(
                         )
                         session.add(payment)
 
+                    # === Отправка уведомления о брони ===
+                    bot = Bot(token=config.BOT_TOKEN)
                     asyncio.create_task(send_booking_notification(
+                        bot=bot,
                         item_text=text,
                         serial=serial or "",
                         price=booking_price,
