@@ -1,10 +1,14 @@
 import logging
 from typing import Any
 
+from aiogram import Bot
+
+from bot import config
 from bot.db import get_async_session_factory, get_pool
 from bot.repositories.item import ItemRepository
 from bot.repositories.stats import StatsRepository
 from bot.services.assortment import AssortmentService
+from bot.services.notifications import send_sale_notification
 from bot.utils.validators import extract_serials
 
 logger = logging.getLogger(__name__)
@@ -13,11 +17,6 @@ logger = logging.getLogger(__name__)
 class SaleService:
     """
     Сервис обработки продаж из топика Sales.
-    Отвечает за:
-    - Поиск товаров по серийным номерам
-    - Удаление проданных товаров из ассортимента
-    - Сохранение статистики продаж
-    - Определение, является ли сообщение аксессуаром (без серийника)
     """
 
     @staticmethod
@@ -27,30 +26,14 @@ class SaleService:
         message_id: int,
         payments: dict[str, float]
     ) -> dict[str, Any]:
-        """
-        Основная функция обработки продажи.
 
-        Args:
-            content: Текст сообщения с продажей
-            chat_id: ID чата
-            message_id: ID сообщения (для статистики)
-            payments: Извлечённые суммы платежей (не используются здесь напрямую)
-
-        Returns:
-            dict с ключами:
-                - sold_items: список кортежей (item_id, serial)
-                - not_found: список серийников, которых нет в БД
-                - is_accessory: True, если в сообщении нет серийников
-                - skip_sale_stats: нужно ли пропустить сохранение статистики
-                - skip_payments: нужно ли пропустить сохранение платежей
-        """
         serials = extract_serials(content)
 
-        # === Случай: сообщение без серийных номеров (аксессуар) ===
+        # === Случай: аксессуар (без серийников) ===
         if not serials:
             logger.info(
                 f"Сообщение {message_id} не содержит серийных номеров — "
-                f"считаем аксессуаром. Платежи сохраняем, статистику продаж — нет."
+                f"считаем аксессуаром."
             )
             return {
                 "sold_items": [],
@@ -68,10 +51,13 @@ class SaleService:
             async with conn.transaction():
                 for serial in serials:
                     try:
-                        # Ищем товар по серийному номеру
                         item_id = await ItemRepository.get_item_id_by_serial(serial, conn=conn)
 
                         if item_id:
+                            # Получаем название товара
+                            item = await ItemRepository.get_item_by_id(item_id, conn=conn)
+                            item_text = item.text if item else f"Товар #{item_id}"
+
                             # Удаляем товар из ассортимента
                             await AssortmentService.remove_by_serial(
                                 serial,
@@ -79,11 +65,11 @@ class SaleService:
                                 conn=conn
                             )
 
-                            # Сохраняем статистику продажи
+                            # Сохраняем статистику
                             await StatsRepository.add_sale(
                                 item_id=item_id,
                                 count=1,
-                                cash=0,           # суммы платежей сохраняются отдельно в handler
+                                cash=0,
                                 terminal=0,
                                 qr=0,
                                 transfer=0,
@@ -97,18 +83,29 @@ class SaleService:
                             sold_items.append((item_id, serial))
                             logger.info(f"✅ Продажа: item_id={item_id}, serial={serial}")
 
+                            # === Отправка уведомления о продаже ===
+                            try:
+                                bot = Bot(token=config.BOT_TOKEN)
+                                await send_sale_notification(
+                                    bot=bot,
+                                    item_text=item_text,
+                                    price=0,  # цену можно позже передавать из парсинга
+                                    payment_type="cash",  # можно улучшить
+                                    payment_amount=0,
+                                )
+                            except Exception as notify_err:
+                                logger.error(f"Ошибка отправки уведомления о продаже: {notify_err}")
+
                         else:
                             not_found.append(serial)
-                            logger.warning(f"❌ Серийный номер не найден в ассортименте: {serial}")
+                            logger.warning(f"❌ Серийный номер не найден: {serial}")
 
                     except Exception as e:
                         logger.exception(
                             f"Ошибка при обработке серийника {serial} в сообщении {message_id}: {e}"
                         )
-                        # При ошибке в одном товаре — откатываем всю транзакцию
                         raise
 
-        # === Итоговый результат ===
         if not_found:
             logger.info(
                 f"Сообщение {message_id}: продано {len(sold_items)} товаров, "
