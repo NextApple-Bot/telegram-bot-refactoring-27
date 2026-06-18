@@ -8,8 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 def format_number(value: float | None) -> str:
+    """Форматирование числа с пробелами (как в старой версии)."""
     if value is None or value == 0:
-        return ""
+        return "0"
     return f"{int(value):,}".replace(",", " ")
 
 
@@ -25,39 +26,79 @@ async def send_booking_notification(
     birth_date: str | None = None,
     bonus: float | None = None,
     is_cancel: bool = False,
+    comment: str | None = None,
 ):
-    """Уведомление о брони (улучшенная версия)"""
+    """
+    Уведомление о брони (максимально близко к формату v26).
+    """
     try:
         bot = Bot(token=config.BOT_TOKEN)
 
         if is_cancel:
             text = f"❌ Отмена брони:\n\n{item_text}"
         else:
-            lines = [f"БРОНЬ:\n{item_text}"]
+            lines = ["БРОНЬ:", ""]
 
+            # Название товара + серийный номер
+            if serial:
+                lines.append(f"{item_text} ({serial})")
+            else:
+                lines.append(item_text)
+
+            lines.append("")
+
+            # Стоимость + бонус
             if price:
                 if bonus and bonus > 0:
                     lines.append(f"Стоимость – {format_number(price)} (скидка бонусами {format_number(bonus)})")
                 else:
                     lines.append(f"Стоимость – {format_number(price)}")
+                lines.append("")
 
+            # Предоплата
             if prepayment and prepayment > 0:
                 pt_map = {
-                    "cash": "наличными",
-                    "terminal": "терминалом",
-                    "qr": "QR-кодом",
-                    "transfer": "переводом",
+                    "cash": "Наличными",
+                    "terminal": "Терминалом",
+                    "qr": "QR-Кодом",
+                    "transfer": "Переводом",
                 }
                 pt_name = pt_map.get(payment_type, payment_type or "")
                 prep_line = f"П/О – {format_number(prepayment)}"
                 if pt_name:
                     prep_line += f" ({pt_name})"
                 lines.append(prep_line)
+                lines.append("")
 
-            if full_name: lines.append(full_name)
-            if birth_date: lines.append(birth_date)
-            if phone: lines.append(phone)
-            if platform: lines.append(f"Площадка – {platform}")
+            # Остаток и Общая сумма
+            if price and prepayment:
+                remaining = price - prepayment
+                if remaining > 0:
+                    lines.append(f"Остаток – {format_number(remaining)}.")
+                    lines.append("")
+                lines.append(f"Общая – {format_number(price)}.")
+                lines.append("")
+
+            # Клиент
+            if full_name:
+                lines.append(full_name)
+            if birth_date:
+                if not str(birth_date).endswith("г."):
+                    birth_date = f"{birth_date}г."
+                lines.append(birth_date)
+            if phone:
+                lines.append(phone)
+            if full_name or birth_date or phone:
+                lines.append("")
+
+            # Площадка
+            if platform:
+                lines.append(f"Площадка – {platform}.")
+                lines.append("")
+
+            # Комментарий (например: *заберут сегодня.)
+            if comment:
+                lines.append(comment)
 
             text = "\n".join(lines)
 
@@ -89,22 +130,24 @@ async def send_sale_notification(
     accessories_total: float = 0.0,
     final_amount: float | None = None,
 ):
-    """Уведомление о продаже с поддержкой бонуса, сдачи и аксессуаров"""
+    """
+    Уведомление о продаже (максимально близко к формату v26).
+    """
     try:
         bot = Bot(token=config.BOT_TOKEN)
         accessories = accessories or []
 
         payment_names = {
             "cash": "Наличными",
-            "terminal": "Терминал",
-            "qr": "QR-код",
-            "transfer": "Перевод",
+            "terminal": "Терминалом",
+            "qr": "QR-Кодом",
+            "transfer": "Переводом",
             "invoice": "По счёту",
             "installment": "Рассрочка",
             "paid": "Оплачен",
         }
 
-        lines = [item_text]
+        lines = [item_text, ""]
 
         # Стоимость + бонус
         if bonus and bonus > 0:
@@ -114,11 +157,14 @@ async def send_sale_notification(
         lines.append("")
 
         # Аксессуары
-        if accessories:
-            for acc in accessories:
-                lines.append(acc.get("text", "Аксессуар"))
-                lines.append(f"Стоимость – {format_number(acc.get('price', 0))}")
-                lines.append("")
+        for acc in accessories:
+            lines.append(acc.get("text", "Аксессуар"))
+            lines.append(f"Стоимость – {format_number(acc.get('price', 0))}")
+            lines.append("")
+
+        # Предоплата
+        if prepayment and prepayment > 0:
+            lines.append(f"П/О – {format_number(prepayment)}")
             lines.append("")
 
         # Основная оплата
@@ -136,28 +182,27 @@ async def send_sale_notification(
                 lines.append(pay_line)
                 lines.append("")
 
-            # Оплата аксессуаров
-            for acc in accessories:
-                acc_pay = acc.get("payment_type")
-                acc_price = acc.get("price", 0)
-                if acc_pay and acc_pay != "paid" and acc_price > 0:
-                    lines.append(f"{payment_names.get(acc_pay, acc_pay)} – {format_number(acc_price)}")
-                    lines.append("")
-
-        # Итоговая сумма
+        # Общая сумма
         total = final_amount if final_amount is not None else (price + accessories_total - (bonus or 0))
         if total > 0:
-            lines.append(f"Общая сумма – {format_number(total)}")
+            lines.append(f"Общая – {format_number(total)}.")
             lines.append("")
 
         # Клиент
-        if full_name: lines.append(full_name)
-        if birth_date: lines.append(birth_date)
-        if phone: lines.append(phone)
-        lines.append("")
+        if full_name:
+            lines.append(full_name)
+        if birth_date:
+            if not str(birth_date).endswith("г."):
+                birth_date = f"{birth_date}г."
+            lines.append(birth_date)
+        if phone:
+            lines.append(phone)
+        if full_name or birth_date or phone:
+            lines.append("")
 
+        # Площадка
         if platform:
-            lines.append(f"Площадка – {platform}")
+            lines.append(f"Площадка – {platform}.")
 
         text = "\n".join(lines)
 
