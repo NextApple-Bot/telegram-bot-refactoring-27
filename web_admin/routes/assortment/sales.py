@@ -4,9 +4,11 @@ import uuid
 from datetime import date
 from typing import Any, Optional
 
+from aiogram import Bot
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
+from bot import config
 from bot.db import get_async_session_factory
 from bot.models import DailyPayment, DeletedItem, Item, Sale
 from bot.repositories.client import ClientRepository
@@ -198,8 +200,10 @@ async def handle_sale_from_form(
         if own_session:
             await session.commit()
 
-        # === 8. Уведомление ===
+        # === 8. Уведомление о продаже ===
+        bot = Bot(token=config.BOT_TOKEN)
         asyncio.create_task(send_sale_notification(
+            bot=bot,
             item_text=text,
             price=sale_price,
             payment_type=sale_payment_type,
