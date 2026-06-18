@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from aiogram import Bot
 
@@ -8,45 +7,43 @@ from bot import config
 logger = logging.getLogger(__name__)
 
 
-def format_number(value: Optional[float]) -> str:
-    """Форматирование числа с пробелами."""
+def format_number(value: float | None) -> str:
     if value is None or value == 0:
         return "0"
     return f"{int(value):,}".replace(",", " ")
 
 
 async def send_booking_notification(
-    bot: Bot,                           # ← Бот передаётся снаружи
+    bot: Bot,
     item_text: str,
     serial: str = "",
-    price: Optional[float] = None,
-    prepayment: Optional[float] = None,
-    platform: Optional[str] = None,
-    full_name: Optional[str] = None,
-    phone: Optional[str] = None,
-    payment_type: Optional[str] = None,
-    birth_date: Optional[str] = None,
-    bonus: Optional[float] = None,
+    price: float | None = None,
+    prepayment: float | None = None,
+    platform: str | None = None,
+    full_name: str | None = None,
+    phone: str | None = None,
+    payment_type: str | None = None,
+    birth_date: str | None = None,
+    bonus: float | None = None,
     is_cancel: bool = False,
-    comment: Optional[str] = None,
+    comment: str | None = None,
+    telegram_username: str | None = None,
 ):
-    """
-    Уведомление о брони (максимально близко к формату v26).
-    Бот передаётся как аргумент.
-    """
+    """Уведомление о брони (максимально близко к формату v26)."""
     try:
         if is_cancel:
             text = f"❌ Отмена брони:\n\n{item_text}"
         else:
             lines = ["БРОНЬ:", ""]
 
+            # Товар
             if serial:
                 lines.append(f"{item_text} ({serial})")
             else:
                 lines.append(item_text)
-
             lines.append("")
 
+            # Стоимость
             if price:
                 if bonus and bonus > 0:
                     lines.append(f"Стоимость – {format_number(price)} (скидка бонусами {format_number(bonus)})")
@@ -54,6 +51,7 @@ async def send_booking_notification(
                     lines.append(f"Стоимость – {format_number(price)}")
                 lines.append("")
 
+            # Предоплата
             if prepayment and prepayment > 0:
                 pt_map = {
                     "cash": "Наличными",
@@ -68,6 +66,7 @@ async def send_booking_notification(
                 lines.append(prep_line)
                 lines.append("")
 
+            # Остаток и Общая
             if price and prepayment:
                 remaining = price - prepayment
                 if remaining > 0:
@@ -76,6 +75,7 @@ async def send_booking_notification(
                 lines.append(f"Общая – {format_number(price)}.")
                 lines.append("")
 
+            # Клиент
             if full_name:
                 lines.append(full_name)
             if birth_date:
@@ -84,13 +84,22 @@ async def send_booking_notification(
                 lines.append(birth_date)
             if phone:
                 lines.append(phone)
-            if full_name or birth_date or phone:
+
+            # Telegram
+            if telegram_username:
+                if not telegram_username.startswith("@"):
+                    telegram_username = f"@{telegram_username}"
+                lines.append(f"ТГ – {telegram_username}")
+
+            if full_name or birth_date or phone or telegram_username:
                 lines.append("")
 
+            # Площадка
             if platform:
                 lines.append(f"Площадка – {platform}.")
                 lines.append("")
 
+            # Комментарий
             if comment:
                 lines.append(comment)
 
@@ -107,27 +116,24 @@ async def send_booking_notification(
 
 
 async def send_sale_notification(
-    bot: Bot,                           # ← Бот передаётся снаружи
+    bot: Bot,
     item_text: str,
     price: float,
     payment_type: str,
-    prepayment: Optional[float] = None,
-    payment_amount: Optional[float] = None,
-    platform: Optional[str] = None,
-    full_name: Optional[str] = None,
-    phone: Optional[str] = None,
-    birth_date: Optional[str] = None,
-    bonus: Optional[float] = None,
-    change: Optional[float] = None,
-    change_type: Optional[str] = None,
-    accessories: Optional[list[dict]] = None,
+    prepayment: float | None = None,
+    payment_amount: float | None = None,
+    platform: str | None = None,
+    full_name: str | None = None,
+    phone: str | None = None,
+    birth_date: str | None = None,
+    bonus: float | None = None,
+    change: float | None = None,
+    change_type: str | None = None,
+    accessories: list[dict] | None = None,
     accessories_total: float = 0.0,
-    final_amount: Optional[float] = None,
+    final_amount: float | None = None,
 ):
-    """
-    Уведомление о продаже (максимально близко к формату v26).
-    Бот передаётся как аргумент.
-    """
+    """Уведомление о продаже (в стиле v26)."""
     try:
         accessories = accessories or []
 
@@ -198,8 +204,6 @@ async def send_sale_notification(
             text=text,
             message_thread_id=config.THREAD_SALES,
         )
-
-        logger.info(f"✅ Уведомление о продаже отправлено: {item_text}")
 
     except Exception as e:
         logger.error(f"Ошибка отправки уведомления о продаже: {e}")
