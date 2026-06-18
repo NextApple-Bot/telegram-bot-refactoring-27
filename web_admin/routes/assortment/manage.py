@@ -15,7 +15,7 @@ from bot.repositories.client import ClientRepository
 from bot.services.assortment import AssortmentService
 from web_admin.templates import templates
 
-from .notifications import send_booking_notification, send_sale_notification
+from .notifications import send_booking_notification
 from .sales import handle_sale_from_form
 
 logger = logging.getLogger(__name__)
@@ -223,6 +223,8 @@ async def edit_item_submit(
                         payment_type=booking_payment_type,
                         birth_date=booking_birth_date,
                         bonus=booking_bonus,
+                        telegram_username=None,   # можно позже добавить поле в форму
+                        comment=None,             # можно позже добавить поле в форму
                     ))
 
             await AssortmentService.invalidate_cache()
