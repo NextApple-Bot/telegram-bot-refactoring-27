@@ -70,6 +70,8 @@ async def edit_item_submit(
     booking_phone: str | None = Form(None),
     booking_payment_type: str | None = Form(None),
     booking_birth_date: str | None = Form(None),
+    booking_telegram_username: str | None = Form(None),   # ← Новое поле
+    booking_comment: str | None = Form(None),             # ← Новое поле
     # Продажа
     sale_price: float | None = Form(None),
     sale_bonus: float | None = Form(None),
@@ -160,7 +162,8 @@ async def edit_item_submit(
                 booking_fields = [
                     "booking_price", "booking_bonus", "booking_prepayment",
                     "booking_platform", "booking_full_name", "booking_phone",
-                    "booking_payment_type", "booking_birth_date"
+                    "booking_payment_type", "booking_birth_date",
+                    "booking_telegram_username", "booking_comment"   # ← Новые поля
                 ]
                 sale_fields = [
                     "sale_price", "sale_bonus", "sale_change", "sale_change_type",
@@ -199,6 +202,8 @@ async def edit_item_submit(
                     old.booking_phone = booking_phone
                     old.booking_payment_type = booking_payment_type
                     old.booking_birth_date = booking_birth_date
+                    old.booking_telegram_username = booking_telegram_username
+                    old.booking_comment = booking_comment
 
                     if booking_prepayment and booking_prepayment > 0 and booking_payment_type:
                         from bot.models import DailyPayment
@@ -223,8 +228,8 @@ async def edit_item_submit(
                         payment_type=booking_payment_type,
                         birth_date=booking_birth_date,
                         bonus=booking_bonus,
-                        telegram_username=None,   # можно позже добавить поле в форму
-                        comment=None,             # можно позже добавить поле в форму
+                        telegram_username=booking_telegram_username,
+                        comment=booking_comment,
                     ))
 
             await AssortmentService.invalidate_cache()
