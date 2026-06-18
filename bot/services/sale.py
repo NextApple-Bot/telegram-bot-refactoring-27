@@ -1,14 +1,10 @@
 import logging
 from typing import Any
 
-from aiogram import Bot
-
-from bot import config
-from bot.db import get_async_session_factory, get_pool
+from bot.db import get_pool
 from bot.repositories.item import ItemRepository
 from bot.repositories.stats import StatsRepository
 from bot.services.assortment import AssortmentService
-from bot.services.notifications import send_sale_notification
 from bot.utils.validators import extract_serials
 
 logger = logging.getLogger(__name__)
@@ -17,6 +13,8 @@ logger = logging.getLogger(__name__)
 class SaleService:
     """
     Сервис обработки продаж из топика Sales.
+    Отвечает за поиск товаров по серийным номерам,
+    удаление их из ассортимента и сохранение статистики.
     """
 
     @staticmethod
@@ -29,11 +27,11 @@ class SaleService:
 
         serials = extract_serials(content)
 
-        # === Случай: аксессуар (без серийников) ===
+        # === Случай: сообщение без серийных номеров (аксессуар) ===
         if not serials:
             logger.info(
                 f"Сообщение {message_id} не содержит серийных номеров — "
-                f"считаем аксессуаром."
+                f"считаем аксессуаром. Платежи сохраняем, статистику продаж — нет."
             )
             return {
                 "sold_items": [],
@@ -54,10 +52,6 @@ class SaleService:
                         item_id = await ItemRepository.get_item_id_by_serial(serial, conn=conn)
 
                         if item_id:
-                            # Получаем название товара
-                            item = await ItemRepository.get_item_by_id(item_id, conn=conn)
-                            item_text = item.text if item else f"Товар #{item_id}"
-
                             # Удаляем товар из ассортимента
                             await AssortmentService.remove_by_serial(
                                 serial,
@@ -65,7 +59,7 @@ class SaleService:
                                 conn=conn
                             )
 
-                            # Сохраняем статистику
+                            # Сохраняем статистику продажи
                             await StatsRepository.add_sale(
                                 item_id=item_id,
                                 count=1,
@@ -83,22 +77,9 @@ class SaleService:
                             sold_items.append((item_id, serial))
                             logger.info(f"✅ Продажа: item_id={item_id}, serial={serial}")
 
-                            # === Отправка уведомления о продаже ===
-                            try:
-                                bot = Bot(token=config.BOT_TOKEN)
-                                await send_sale_notification(
-                                    bot=bot,
-                                    item_text=item_text,
-                                    price=0,  # цену можно позже передавать из парсинга
-                                    payment_type="cash",  # можно улучшить
-                                    payment_amount=0,
-                                )
-                            except Exception as notify_err:
-                                logger.error(f"Ошибка отправки уведомления о продаже: {notify_err}")
-
                         else:
                             not_found.append(serial)
-                            logger.warning(f"❌ Серийный номер не найден: {serial}")
+                            logger.warning(f"❌ Серийный номер не найден в ассортименте: {serial}")
 
                     except Exception as e:
                         logger.exception(
