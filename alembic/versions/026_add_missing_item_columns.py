@@ -22,22 +22,26 @@ def upgrade() -> None:
     if not inspector.has_table('items'):
         return
 
-    existing_columns = [col['name'] for col in inspector.get_columns('items')]
+    existing = [col['name'] for col in inspector.get_columns('items')]
 
-    # === Колонки бронирования ===
-    columns_to_add = [
-        ("booking_birth_date", sa.String(length=50)),
-        ("booking_bonus", sa.Numeric(precision=12, scale=2)),
-        # Дополнительно (на всякий случай)
-        ("sale_birth_date", sa.String(length=50)),
-        ("sale_change_type", sa.String(length=50)),
-        ("sale_payment_type", sa.String(length=50)),
-        ("sale_platform", sa.String(length=100)),
-    ]
+    # Добавляем только те колонки, которых реально нет
+    if 'booking_birth_date' not in existing:
+        op.add_column('items', sa.Column('booking_birth_date', sa.String(50), nullable=True))
 
-    for column_name, column_type in columns_to_add:
-        if column_name not in existing_columns:
-            op.add_column('items', sa.Column(column_name, column_type, nullable=True))
+    if 'booking_bonus' not in existing:
+        op.add_column('items', sa.Column('booking_bonus', sa.Numeric(12, 2), nullable=True))
+
+    if 'sale_birth_date' not in existing:
+        op.add_column('items', sa.Column('sale_birth_date', sa.String(50), nullable=True))
+
+    if 'sale_change_type' not in existing:
+        op.add_column('items', sa.Column('sale_change_type', sa.String(50), nullable=True))
+
+    if 'sale_payment_type' not in existing:
+        op.add_column('items', sa.Column('sale_payment_type', sa.String(50), nullable=True))
+
+    if 'sale_platform' not in existing:
+        op.add_column('items', sa.Column('sale_platform', sa.String(100), nullable=True))
 
 
 def downgrade() -> None:
@@ -47,17 +51,9 @@ def downgrade() -> None:
     if not inspector.has_table('items'):
         return
 
-    existing_columns = [col['name'] for col in inspector.get_columns('items')]
+    existing = [col['name'] for col in inspector.get_columns('items')]
 
-    columns_to_drop = [
-        "sale_platform",
-        "sale_payment_type",
-        "sale_change_type",
-        "sale_birth_date",
-        "booking_bonus",
-        "booking_birth_date",
-    ]
-
-    for column_name in columns_to_drop:
-        if column_name in existing_columns:
-            op.drop_column('items', column_name)
+    for col in ['sale_platform', 'sale_payment_type', 'sale_change_type',
+                'sale_birth_date', 'booking_bonus', 'booking_birth_date']:
+        if col in existing:
+            op.drop_column('items', col)
