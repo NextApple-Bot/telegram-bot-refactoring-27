@@ -46,7 +46,7 @@
 <div id="assortment-table-container">
     <div class="card">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0" id="assortment-table">
+            <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
                         <th style="width: 70px;">ID</th>
@@ -55,7 +55,7 @@
                         <th style="width: 180px;">Категория</th>
                         <th style="width: 130px;">Статус</th>
                         <th style="width: 130px;">Дата</th>
-                        <th style="width: 180px;" class="text-end">Действия</th>
+                        <th style="width: 200px;" class="text-end">Действия</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -83,17 +83,25 @@
                         <td class="text-muted small">{{ item.created_at|format_date }}</td>
                         <td class="text-end">
                             <div class="btn-group btn-group-sm">
-                                <!-- Редактирование через HTMX -->
+                                <!-- Редактирование -->
                                 <button 
                                     class="btn btn-outline-primary"
                                     hx-get="/admin/assortment/edit/{{ item.id }}"
                                     hx-target="#htmxModalContent"
-                                    @click="show = true; modalTitle = 'Редактировать товар #{{ item.id }}'"
-                                    x-data>
+                                    hx-on::click="show = true; modalTitle = 'Редактировать товар #{{ item.id }}'">
                                     Изменить
                                 </button>
 
-                                <!-- Удаление через HTMX -->
+                                <!-- Продажа (исправленная кнопка) -->
+                                <button 
+                                    class="btn btn-success"
+                                    hx-get="/admin/assortment/sale/{{ item.id }}"
+                                    hx-target="#htmxModalContent"
+                                    hx-on::click="show = true; modalTitle = 'Продать товар #{{ item.id }}'">
+                                    Продать
+                                </button>
+
+                                <!-- Удаление -->
                                 <button 
                                     class="btn btn-outline-danger"
                                     hx-delete="/admin/assortment/delete/{{ item.id }}"
