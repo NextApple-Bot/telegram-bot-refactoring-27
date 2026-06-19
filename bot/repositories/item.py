@@ -221,7 +221,5 @@ class ItemRepository:
     @staticmethod
     async def restore_deleted_item(item_id: int, conn: Optional[AsyncSession] = None) -> bool:
         """Восстанавливает удалённый товар (из таблицы deleted_items)."""
-        # Эта функция обычно вызывается из web_admin/routes/sold.py
-        # Здесь оставляем заглушку или полную реализацию при необходимости
         logger.warning("restore_deleted_item вызван — реализация зависит от контекста")
         return True
