@@ -1,12 +1,9 @@
-<!-- Форма редактирования товара (загружается в модалку через HTMX) -->
+<!-- Форма редактирования товара -->
 <form 
     hx-post="/admin/assortment/edit/{{ item.id }}"
     hx-target="#htmxModalContent"
     hx-swap="outerHTML"
-    hx-on::after-request="if (event.detail.xhr.status === 200 || event.detail.xhr.status === 303) { 
-        const modal = document.getElementById('htmxModal'); 
-        if (modal) bootstrap.Modal.getInstance(modal)?.hide(); 
-    }">
+    hx-indicator="#save-spinner">
 
     <div class="modal-body">
 
@@ -35,55 +32,47 @@
 
         <hr class="my-4">
 
-        <!-- Блок бронирования -->
+        <!-- Бронирование -->
         <h6 class="mb-3 fw-semibold">Бронирование</h6>
 
         <div class="row">
             <div class="col-md-4 mb-3">
                 <label class="form-label">Стоимость брони</label>
-                <input type="number" step="0.01" name="booking_price" class="form-control" 
-                       value="{{ item.booking_price or '' }}">
+                <input type="number" step="0.01" name="booking_price" class="form-control" value="{{ item.booking_price or '' }}">
             </div>
             <div class="col-md-4 mb-3">
                 <label class="form-label">Предоплата (П/О)</label>
-                <input type="number" step="0.01" name="booking_prepayment" class="form-control" 
-                       value="{{ item.booking_prepayment or '' }}">
+                <input type="number" step="0.01" name="booking_prepayment" class="form-control" value="{{ item.booking_prepayment or '' }}">
             </div>
             <div class="col-md-4 mb-3">
                 <label class="form-label">Бонус / Скидка</label>
-                <input type="number" step="0.01" name="booking_bonus" class="form-control" 
-                       value="{{ item.booking_bonus or '' }}">
+                <input type="number" step="0.01" name="booking_bonus" class="form-control" value="{{ item.booking_bonus or '' }}">
             </div>
         </div>
 
         <div class="row">
             <div class="col-md-6 mb-3">
                 <label class="form-label">ФИО клиента</label>
-                <input type="text" name="booking_full_name" class="form-control" 
-                       value="{{ item.booking_full_name or '' }}">
+                <input type="text" name="booking_full_name" class="form-control" value="{{ item.booking_full_name or '' }}">
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Телефон</label>
-                <input type="text" name="booking_phone" class="form-control" 
-                       value="{{ item.booking_phone or '' }}">
+                <input type="text" name="booking_phone" class="form-control" value="{{ item.booking_phone or '' }}">
             </div>
         </div>
 
         <div class="row">
             <div class="col-md-4 mb-3">
                 <label class="form-label">Площадка</label>
-                <input type="text" name="booking_platform" class="form-control" 
-                       value="{{ item.booking_platform or '' }}">
+                <input type="text" name="booking_platform" class="form-control" value="{{ item.booking_platform or '' }}">
             </div>
             <div class="col-md-4 mb-3">
                 <label class="form-label">Telegram</label>
-                <input type="text" name="booking_telegram_username" class="form-control" 
-                       value="{{ item.booking_telegram_username or '' }}" placeholder="@username">
+                <input type="text" name="booking_telegram_username" class="form-control" value="{{ item.booking_telegram_username or '' }}" placeholder="@username">
             </div>
             <div class="col-md-4 mb-3">
                 <label class="form-label">Комментарий</label>
-                <input type="text" name="booking_comment" class="form-control" 
-                       value="{{ item.booking_comment or '' }}">
+                <input type="text" name="booking_comment" class="form-control" value="{{ item.booking_comment or '' }}">
             </div>
         </div>
 
@@ -92,8 +81,14 @@
     <!-- Кнопки -->
     <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-        <button type="submit" class="btn btn-success">
-            Сохранить изменения
+        
+        <button type="submit" class="btn btn-success d-flex align-items-center gap-2">
+            <span>Сохранить изменения</span>
+            
+            <!-- Спиннер при сохранении -->
+            <span class="htmx-indicator">
+                <span class="spinner-border spinner-border-sm" role="status"></span>
+            </span>
         </button>
     </div>
 
