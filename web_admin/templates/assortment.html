@@ -4,18 +4,14 @@
 
 {% block content %}
 
-<!-- Заголовок и кнопки -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h4 class="mb-1">Ассортимент</h4>
         <p class="text-muted mb-0">Всего товаров: <strong>{{ total }}</strong></p>
     </div>
-    <div class="d-flex gap-2">
+    <div>
         <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addItemModal">
             <i class="bi bi-plus-lg me-1"></i> Добавить товар
-        </button>
-        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addCategoryModal">
-            <i class="bi bi-folder-plus me-1"></i> Добавить категорию
         </button>
     </div>
 </div>
@@ -25,12 +21,11 @@
     <div class="card-body">
         <form method="get" class="row g-3 align-items-end">
             <div class="col-md-5">
-                <label class="form-label small fw-semibold">Поиск</label>
-                <input type="text" name="search" class="form-control" 
-                       placeholder="Название или серийный номер" value="{{ search or '' }}">
+                <label class="form-label small">Поиск</label>
+                <input type="text" name="search" class="form-control" placeholder="Название или серийный номер" value="{{ search or '' }}">
             </div>
             <div class="col-md-4">
-                <label class="form-label small fw-semibold">Категория</label>
+                <label class="form-label small">Категория</label>
                 <select name="category_id" class="form-select">
                     <option value="">Все категории</option>
                     {% for cat in categories %}
@@ -41,78 +36,80 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-search me-1"></i> Применить
-                </button>
+                <button type="submit" class="btn btn-primary w-100">Применить</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Таблица -->
-<div class="card">
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th style="width: 70px;">ID</th>
-                    <th>Товар</th>
-                    <th style="width: 160px;">Серийный номер</th>
-                    <th style="width: 180px;">Категория</th>
-                    <th style="width: 130px;">Статус</th>
-                    <th style="width: 130px;">Дата добавления</th>
-                    <th style="width: 180px;" class="text-end">Действия</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in items %}
-                <tr>
-                    <td class="text-muted">#{{ item.id }}</td>
-                    <td>
-                        <strong>{{ item.text }}</strong>
-                    </td>
-                    <td>
-                        {% if item.serial %}
-                            <code class="text-dark">{{ item.serial }}</code>
-                        {% else %}
-                            <span class="text-muted">—</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <span class="badge bg-light text-dark border">{{ item.category_name }}</span>
-                    </td>
-                    <td>
-                        {% if item.is_booked %}
-                            <span class="badge bg-warning text-dark">Забронирован</span>
-                        {% else %}
-                            <span class="badge bg-success">В наличии</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-muted small">
-                        {{ item.created_at|format_date }}
-                    </td>
-                    <td class="text-end">
-                        <div class="btn-group btn-group-sm">
-                            <a href="/admin/assortment/edit/{{ item.id }}" class="btn btn-outline-primary">
-                                Изменить
-                            </a>
-                            <form action="/admin/assortment/delete/{{ item.id }}" method="post" class="d-inline"
-                                  onsubmit="return confirm('Удалить этот товар?')">
-                                <button type="submit" class="btn btn-outline-danger">×</button>
-                            </form>
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="7" class="text-center py-5 text-muted">
-                        <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-                        Товары не найдены
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+<!-- Таблица (оборачиваем в контейнер для обновления через HTMX) -->
+<div id="assortment-table-container">
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="assortment-table">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 70px;">ID</th>
+                        <th>Товар</th>
+                        <th style="width: 160px;">Серийный номер</th>
+                        <th style="width: 180px;">Категория</th>
+                        <th style="width: 130px;">Статус</th>
+                        <th style="width: 130px;">Дата</th>
+                        <th style="width: 180px;" class="text-end">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr>
+                        <td class="text-muted">#{{ item.id }}</td>
+                        <td><strong>{{ item.text }}</strong></td>
+                        <td>
+                            {% if item.serial %}
+                                <code>{{ item.serial }}</code>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark border">{{ item.category_name }}</span>
+                        </td>
+                        <td>
+                            {% if item.is_booked %}
+                                <span class="badge bg-warning text-dark">Забронирован</span>
+                            {% else %}
+                                <span class="badge bg-success">В наличии</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-muted small">{{ item.created_at|format_date }}</td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <!-- HTMX кнопка редактирования -->
+                                <button 
+                                    class="btn btn-outline-primary"
+                                    hx-get="/admin/assortment/edit/{{ item.id }}"
+                                    hx-target="#htmxModalContent"
+                                    @click="show = true; modalTitle = 'Редактировать товар #{{ item.id }}'"
+                                    x-data>
+                                    Изменить
+                                </button>
+
+                                <form action="/admin/assortment/delete/{{ item.id }}" method="post" class="d-inline"
+                                      onsubmit="return confirm('Удалить этот товар?')">
+                                    <button type="submit" class="btn btn-outline-danger">×</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            Товары не найдены
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -130,65 +127,5 @@
     </ul>
 </nav>
 {% endif %}
-
-<!-- Модальное окно: Добавить товар -->
-<div class="modal fade" id="addItemModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post" action="/admin/assortment/add">
-                <div class="modal-header">
-                    <h5 class="modal-title">Добавить товар</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Название товара <span class="text-danger">*</span></label>
-                        <textarea name="text" class="form-control" rows="3" required></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Серийный номер</label>
-                        <input type="text" name="serial" class="form-control">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Категория <span class="text-danger">*</span></label>
-                        <select name="category_id" class="form-select" required>
-                            {% for cat in categories %}
-                                <option value="{{ cat.id }}">{{ cat.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                    <button type="submit" class="btn btn-success">Добавить</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Модальное окно: Добавить категорию -->
-<div class="modal fade" id="addCategoryModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post" action="/admin/assortment/add_category">
-                <div class="modal-header">
-                    <h5 class="modal-title">Добавить категорию</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Название категории <span class="text-danger">*</span></label>
-                        <input type="text" name="name" class="form-control" required>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                    <button type="submit" class="btn btn-primary">Добавить</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 
 {% endblock %}
