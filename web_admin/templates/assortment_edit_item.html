@@ -1,11 +1,15 @@
-<!-- Этот шаблон загружается в модалку через HTMX -->
+<!-- Форма редактирования товара (загружается в модалку через HTMX) -->
 <form 
     hx-post="/admin/assortment/edit/{{ item.id }}"
     hx-target="#htmxModalContent"
     hx-swap="outerHTML"
-    hx-on::after-request="handleFormResponse(event)">
+    hx-on::after-request="if (event.detail.xhr.status === 200 || event.detail.xhr.status === 303) { 
+        const modal = document.getElementById('htmxModal'); 
+        if (modal) bootstrap.Modal.getInstance(modal)?.hide(); 
+    }">
 
     <div class="modal-body">
+
         <!-- Основная информация -->
         <div class="row">
             <div class="col-md-8 mb-3">
@@ -18,7 +22,7 @@
             </div>
         </div>
 
-        <div class="mb-3">
+        <div class="mb-4">
             <label class="form-label">Категория <span class="text-danger">*</span></label>
             <select name="category_id" class="form-select" required>
                 {% for cat in categories %}
@@ -29,10 +33,11 @@
             </select>
         </div>
 
-        <hr>
+        <hr class="my-4">
 
-        <!-- Бронирование -->
-        <h6 class="mb-3">Бронирование</h6>
+        <!-- Блок бронирования -->
+        <h6 class="mb-3 fw-semibold">Бронирование</h6>
+
         <div class="row">
             <div class="col-md-4 mb-3">
                 <label class="form-label">Стоимость брони</label>
@@ -64,7 +69,6 @@
             </div>
         </div>
 
-        <!-- Дополнительные поля (Telegram, Комментарий, Площадка) -->
         <div class="row">
             <div class="col-md-4 mb-3">
                 <label class="form-label">Площадка</label>
@@ -74,7 +78,7 @@
             <div class="col-md-4 mb-3">
                 <label class="form-label">Telegram</label>
                 <input type="text" name="booking_telegram_username" class="form-control" 
-                       value="{{ item.booking_telegram_username or '' }}">
+                       value="{{ item.booking_telegram_username or '' }}" placeholder="@username">
             </div>
             <div class="col-md-4 mb-3">
                 <label class="form-label">Комментарий</label>
@@ -82,31 +86,15 @@
                        value="{{ item.booking_comment or '' }}">
             </div>
         </div>
+
     </div>
 
+    <!-- Кнопки -->
     <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
         <button type="submit" class="btn btn-success">
             Сохранить изменения
         </button>
     </div>
+
 </form>
-
-<script>
-    // Функция обработки ответа после отправки формы
-    function handleFormResponse(event) {
-        const xhr = event.detail.xhr;
-
-        if (xhr.status === 200 || xhr.status === 303) {
-            // Успешно сохранено — закрываем модалку
-            const modal = document.getElementById('htmxModal');
-            const bootstrapModal = bootstrap.Modal.getInstance(modal);
-            if (bootstrapModal) {
-                bootstrapModal.hide();
-            }
-
-            // Опционально: обновляем страницу или таблицу
-            // location.reload(); // раскомментируй, если нужно перезагружать страницу
-        }
-    }
-</script>
