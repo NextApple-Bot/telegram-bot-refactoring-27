@@ -1,0 +1,83 @@
+<!-- Форма продажи товара -->
+<form 
+    hx-post="/admin/assortment/sale/{{ item.id }}"
+    hx-target="#htmxModalContent"
+    hx-swap="outerHTML"
+    hx-indicator="#sale-spinner">
+
+    <div class="modal-body">
+
+        <!-- Информация о товаре -->
+        <div class="alert alert-light mb-4">
+            <strong>Товар:</strong> {{ item.text }}<br>
+            {% if item.serial %}
+                <strong>Серийный номер:</strong> <code>{{ item.serial }}</code>
+            {% endif %}
+        </div>
+
+        <!-- Основные поля продажи -->
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Цена продажи <span class="text-danger">*</span></label>
+                <input type="number" step="0.01" name="sale_price" class="form-control" 
+                       value="{{ item.booking_price or '' }}" required>
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Способ оплаты <span class="text-danger">*</span></label>
+                <select name="payment_type" class="form-select" required>
+                    <option value="">-- Выберите способ оплаты --</option>
+                    <option value="cash">Наличными</option>
+                    <option value="terminal">Терминал</option>
+                    <option value="qr">QR-код</option>
+                    <option value="transfer">Перевод</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Сумма оплаты</label>
+                <input type="number" step="0.01" name="paid_amount" class="form-control" 
+                       value="{{ item.booking_price or '' }}">
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Сдача / Остаток</label>
+                <input type="number" step="0.01" name="change_amount" class="form-control" value="0">
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- Дополнительная информация -->
+        <h6 class="mb-3">Дополнительно</h6>
+
+        <div class="mb-3">
+            <label class="form-label">Комментарий к продаже</label>
+            <textarea name="sale_comment" class="form-control" rows="2" placeholder="Дополнительная информация..."></textarea>
+        </div>
+
+        <!-- Если нужно создать клиента при продаже -->
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="create_client" id="create_client" checked>
+            <label class="form-check-label" for="create_client">
+                Создать/обновить данные клиента
+            </label>
+        </div>
+
+    </div>
+
+    <!-- Кнопки -->
+    <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+        
+        <button type="submit" class="btn btn-success d-flex align-items-center gap-2">
+            <span>Продать товар</span>
+            <span id="sale-spinner" class="htmx-indicator">
+                <span class="spinner-border spinner-border-sm" role="status"></span>
+            </span>
+        </button>
+    </div>
+
+</form>
