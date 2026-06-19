@@ -73,12 +73,8 @@
         {% block content %}{% endblock %}
     </div>
 
-    <!-- Универсальная модалка с поддержкой спиннера -->
-    <div x-data="{ 
-            show: false, 
-            modalTitle: 'Редактирование',
-            loading: false 
-         }" 
+    <!-- Универсальная модалка -->
+    <div x-data="{ show: false, modalTitle: 'Редактирование', loading: false }" 
          x-show="show" 
          class="modal fade" 
          :class="{ 'show d-block': show }"
@@ -88,16 +84,11 @@
 
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
-
-                <!-- Заголовок -->
                 <div class="modal-header">
                     <h5 class="modal-title" x-text="modalTitle"></h5>
                     <button type="button" class="btn-close" @click="show = false"></button>
                 </div>
-
-                <!-- Тело модалки -->
                 <div class="modal-body position-relative" id="htmxModalContent">
-
                     <!-- Спиннер загрузки -->
                     <div x-show="loading" 
                          class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-white bg-opacity-75"
@@ -107,12 +98,14 @@
                             <div class="small text-muted">Загрузка...</div>
                         </div>
                     </div>
-
-                    <!-- Сюда подгружается контент через HTMX -->
                 </div>
-
             </div>
         </div>
+    </div>
+
+    <!-- Toast контейнер (уведомления) -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1100;">
+        <div id="toast-container"></div>
     </div>
 
     <!-- Bootstrap JS -->
@@ -138,17 +131,47 @@
             }
         });
 
-        // Показываем спиннер при начале HTMX-запроса в модалку
+        // Функция показа Toast-уведомления
+        function showToast(message, type = 'success') {
+            const toastContainer = document.getElementById('toast-container');
+            
+            const toastId = 'toast-' + Date.now();
+            const bgClass = type === 'success' ? 'bg-success' : 
+                           type === 'error' ? 'bg-danger' : 'bg-primary';
+            
+            const toastHTML = `
+                <div id="${toastId}" class="toast align-items-center text-white ${bgClass} border-0" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `;
+            
+            toastContainer.insertAdjacentHTML('beforeend', toastHTML);
+            
+            const toastElement = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(toastElement, { delay: 4000 });
+            toast.show();
+            
+            // Удаляем toast из DOM после скрытия
+            toastElement.addEventListener('hidden.bs.toast', () => {
+                toastElement.remove();
+            });
+        }
+
+        // Показываем спиннер при загрузке контента в модалку
         document.body.addEventListener('htmx:beforeRequest', function(evt) {
             const modalContent = document.getElementById('htmxModalContent');
             if (modalContent && evt.detail.target === modalContent) {
-                // Показываем спиннер через Alpine
                 const alpineData = Alpine.$data(document.getElementById('htmxModal'));
                 if (alpineData) alpineData.loading = true;
             }
         });
 
-        // Скрываем спиннер после завершения запроса
+        // Скрываем спиннер и показываем уведомления после HTMX-запросов
         document.body.addEventListener('htmx:afterRequest', function(evt) {
             const modalContent = document.getElementById('htmxModalContent');
             if (modalContent && evt.detail.target === modalContent) {
@@ -157,32 +180,41 @@
             }
 
             // Автоматическое закрытие модалки после успешного сохранения
-            if (evt.detail.xhr.status === 200 || evt.detail.xhr.status === 303) {
+            if ((evt.detail.xhr.status === 200 || evt.detail.xhr.status === 303) && 
+                evt.detail.pathInfo.requestPath.includes('/edit')) {
+                
                 const modal = document.getElementById('htmxModal');
                 if (modal) {
                     const bootstrapModal = bootstrap.Modal.getInstance(modal);
-                    if (bootstrapModal) {
-                        bootstrapModal.hide();
-                    }
+                    if (bootstrapModal) bootstrapModal.hide();
                 }
+                
+                // Показываем уведомление об успехе
+                showToast('Изменения успешно сохранены', 'success');
+            }
+
+            // Уведомление при удалении
+            if (evt.detail.xhr.status === 200 && evt.detail.pathInfo.requestPath.includes('/delete')) {
+                showToast('Товар успешно удалён', 'success');
             }
         });
 
-        // Обновление таблицы ассортимента после редактирования
+        // Обновление таблицы после редактирования/удаления
         document.body.addEventListener('htmx:afterRequest', function(evt) {
             const path = evt.detail.pathInfo.requestPath;
-            if (path && path.includes('/admin/assortment/edit') && 
-                (evt.detail.xhr.status === 200 || evt.detail.xhr.status === 303)) {
-                
-                setTimeout(() => {
-                    const container = document.getElementById('assortment-table-container');
-                    if (container) {
-                        htmx.ajax('GET', window.location.pathname + window.location.search, {
-                            target: '#assortment-table-container',
-                            swap: 'outerHTML'
-                        });
-                    }
-                }, 350);
+            
+            if (path && (path.includes('/admin/assortment/edit') || path.includes('/admin/assortment/delete'))) {
+                if (evt.detail.xhr.status === 200 || evt.detail.xhr.status === 303) {
+                    setTimeout(() => {
+                        const container = document.getElementById('assortment-table-container');
+                        if (container) {
+                            htmx.ajax('GET', window.location.pathname + window.location.search, {
+                                target: '#assortment-table-container',
+                                swap: 'outerHTML'
+                            });
+                        }
+                    }, 350);
+                }
             }
         });
     </script>
