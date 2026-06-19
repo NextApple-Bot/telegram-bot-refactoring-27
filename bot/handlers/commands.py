@@ -21,11 +21,16 @@ from bot.handlers.service_commands import (
 from bot.utils.helpers import send_and_clean
 from bot.utils.markdown import escape_markdown_v1
 from .base import cancel_action, get_main_menu_keyboard, show_help, show_inventory
+
 router = Router()
 logger = logging.getLogger(__name__)
+
+
 def is_admin(user_id: int) -> bool:
     """Проверка администратора (используем актуальный config)."""
     return user_id in config.ADMIN_IDS
+
+
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     try:
@@ -40,9 +45,13 @@ async def cmd_start(message: Message):
         )
     except Exception:
         logger.exception("Ошибка в /start")
+
+
 @router.message(Command("inventory"))
 async def cmd_inventory(message: Message):
     await show_inventory(message.bot, message.chat.id)
+
+
 @router.message(Command("cancel"))
 async def cmd_cancel(message: Message, state):
     await cancel_action(message.bot, message.chat.id, state)
@@ -54,9 +63,13 @@ async def cmd_cancel(message: Message, state):
         message_thread_id=message.message_thread_id,
         delete_after=60,
     )
+
+
 @router.message(Command("help"))
 async def cmd_help(message: Message):
     await show_help(message.bot, message.chat.id)
+
+
 # ==================== Экспорт данных ====================
 @router.message(Command("export_clients"))
 async def cmd_export_clients(message: Message):
@@ -72,6 +85,8 @@ async def cmd_export_clients(message: Message):
     except Exception:
         logger.exception("Ошибка экспорта клиентов")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка экспорта")
+
+
 @router.message(Command("export_purchases"))
 async def cmd_export_purchases(message: Message):
     if not is_admin(message.from_user.id):
@@ -86,6 +101,8 @@ async def cmd_export_purchases(message: Message):
     except Exception:
         logger.exception("Ошибка экспорта покупок")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка экспорта")
+
+
 @router.message(Command("client_info"))
 async def cmd_client_info(message: Message):
     if not is_admin(message.from_user.id):
@@ -109,6 +126,8 @@ async def cmd_client_info(message: Message):
     except Exception:
         logger.exception("Ошибка получения информации о клиенте")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка")
+
+
 @router.message(Command("export_full_report"))
 async def cmd_export_full_report(message: Message):
     if not is_admin(message.from_user.id):
@@ -123,6 +142,8 @@ async def cmd_export_full_report(message: Message):
     except Exception:
         logger.exception("Ошибка экспорта полного отчёта")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка экспорта")
+
+
 # ==================== Управление категориями ====================
 @router.message(Command("show_categories"))
 async def cmd_show_categories(message: Message):
@@ -140,6 +161,8 @@ async def cmd_show_categories(message: Message):
     except Exception:
         logger.exception("Ошибка списка категорий")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка")
+
+
 @router.message(Command("clean_empty"))
 async def cmd_clean_empty(message: Message):
     if not is_admin(message.from_user.id):
@@ -166,6 +189,8 @@ async def cmd_clean_empty(message: Message):
     except Exception:
         logger.exception("Ошибка поиска пустых категорий")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка")
+
+
 @router.message(Command("delete_category"))
 async def cmd_delete_category(message: Message):
     if not is_admin(message.from_user.id):
@@ -198,6 +223,8 @@ async def cmd_delete_category(message: Message):
     except Exception:
         logger.exception("Ошибка подготовки удаления категории")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка")
+
+
 @router.message(Command("merge_categories"))
 async def cmd_merge_categories(message: Message):
     if not is_admin(message.from_user.id):
@@ -235,6 +262,8 @@ async def cmd_merge_categories(message: Message):
     except Exception:
         logger.exception("Ошибка подготовки слияния категорий")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка")
+
+
 @router.message(Command("reset_assortment"))
 async def cmd_reset_assortment(message: Message):
     if not is_admin(message.from_user.id):
@@ -252,6 +281,8 @@ async def cmd_reset_assortment(message: Message):
         reply_markup=keyboard,
         parse_mode="Markdown",
     )
+
+
 # ==================== Удаление по ID ====================
 @router.message(Command("delete_client"))
 async def cmd_delete_client(message: Message):
@@ -285,6 +316,8 @@ async def cmd_delete_client(message: Message):
     except Exception:
         logger.exception("Ошибка подготовки удаления клиента")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка")
+
+
 @router.message(Command("delete_purchase"))
 async def cmd_delete_purchase(message: Message):
     if not is_admin(message.from_user.id):
@@ -317,6 +350,8 @@ async def cmd_delete_purchase(message: Message):
     except Exception:
         logger.exception("Ошибка подготовки удаления покупки")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка")
+
+
 # ==================== Остальные команды ====================
 @router.message(Command("undo"))
 async def cmd_undo(message: Message):
@@ -329,6 +364,8 @@ async def cmd_undo(message: Message):
     except Exception:
         logger.exception("Ошибка восстановления")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка")
+
+
 @router.message(Command("chatid"))
 async def cmd_chatid(message: Message):
     chat_id = message.chat.id
@@ -342,6 +379,8 @@ async def cmd_chatid(message: Message):
         text=response,
         parse_mode="Markdown"
     )
+
+
 @router.message(Command("fix_sales_unique"))
 async def cmd_fix_sales_unique(message: Message):
     if not is_admin(message.from_user.id):
@@ -353,6 +392,8 @@ async def cmd_fix_sales_unique(message: Message):
     except Exception:
         logger.exception("Ошибка fix_sales_unique")
         await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Ошибка")
+
+
 @router.message(Command("set_webhook"))
 async def cmd_set_webhook(message: Message):
     if not is_admin(message.from_user.id):
