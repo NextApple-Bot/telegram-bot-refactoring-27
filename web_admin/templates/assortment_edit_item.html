@@ -1,79 +1,103 @@
-<!-- Форма редактирования товара -->
+<!-- Форма продажи товара -->
 <form 
-    hx-post="/admin/assortment/edit/{{ item.id }}"
+    hx-post="/admin/assortment/sale/{{ item.id }}"
     hx-target="#htmxModalContent"
     hx-swap="outerHTML"
-    hx-indicator="#save-spinner">
+    hx-indicator="#sale-spinner">
 
     <div class="modal-body">
 
-        <!-- Основная информация -->
+        <!-- Блок ошибок -->
+        {% if error %}
+            <div class="alert alert-danger mb-4">
+                <strong>Ошибка:</strong> {{ error }}
+            </div>
+        {% endif %}
+
+        <!-- Информация о товаре -->
+        <div class="alert alert-light mb-4">
+            <strong>Товар:</strong> {{ item.text }}<br>
+            {% if item.serial %}
+                <strong>Серийный номер:</strong> <code>{{ item.serial }}</code>
+            {% endif %}
+        </div>
+
+        <!-- Цена и способ оплаты -->
         <div class="row">
-            <div class="col-md-8 mb-3">
-                <label class="form-label">Название товара <span class="text-danger">*</span></label>
-                <input type="text" name="text" class="form-control" value="{{ item.text }}" required>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Цена продажи <span class="text-danger">*</span></label>
+                <input type="number" step="0.01" name="sale_price" class="form-control" 
+                       value="{{ form_data.sale_price if form_data else (item.sale_price or item.booking_price or '') }}" required>
             </div>
-            <div class="col-md-4 mb-3">
-                <label class="form-label">Серийный номер</label>
-                <input type="text" name="serial" class="form-control" value="{{ item.serial or '' }}">
+
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Способ оплаты <span class="text-danger">*</span></label>
+                <select name="sale_payment_type" class="form-select" required>
+                    <option value="">-- Выберите --</option>
+                    <option value="cash" {% if form_data and form_data.sale_payment_type == 'cash' %}selected{% endif %}>Наличными</option>
+                    <option value="terminal" {% if form_data and form_data.sale_payment_type == 'terminal' %}selected{% endif %}>Терминал</option>
+                    <option value="qr" {% if form_data and form_data.sale_payment_type == 'qr' %}selected{% endif %}>QR-код</option>
+                    <option value="transfer" {% if form_data and form_data.sale_payment_type == 'transfer' %}selected{% endif %}>Перевод</option>
+                </select>
             </div>
         </div>
 
-        <div class="mb-4">
-            <label class="form-label">Категория <span class="text-danger">*</span></label>
-            <select name="category_id" class="form-select" required>
-                {% for cat in categories %}
-                    <option value="{{ cat.id }}" {% if cat.id == item.category_id %}selected{% endif %}>
-                        {{ cat.name }}
-                    </option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <hr class="my-4">
-
-        <!-- Бронирование -->
-        <h6 class="mb-3 fw-semibold">Бронирование</h6>
-
+        <!-- Сумма оплаты и сдача -->
         <div class="row">
-            <div class="col-md-4 mb-3">
-                <label class="form-label">Стоимость брони</label>
-                <input type="number" step="0.01" name="booking_price" class="form-control" value="{{ item.booking_price or '' }}">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Сумма оплаты</label>
+                <input type="number" step="0.01" name="sale_payment_amount" class="form-control" 
+                       value="{{ form_data.sale_payment_amount if form_data else (item.sale_payment_amount or '') }}">
             </div>
-            <div class="col-md-4 mb-3">
-                <label class="form-label">Предоплата (П/О)</label>
-                <input type="number" step="0.01" name="booking_prepayment" class="form-control" value="{{ item.booking_prepayment or '' }}">
-            </div>
-            <div class="col-md-4 mb-3">
-                <label class="form-label">Бонус / Скидка</label>
-                <input type="number" step="0.01" name="booking_bonus" class="form-control" value="{{ item.booking_bonus or '' }}">
+
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Сдача</label>
+                <input type="number" step="0.01" name="sale_change" class="form-control" 
+                       value="{{ form_data.sale_change if form_data else (item.sale_change or 0) }}">
             </div>
         </div>
+
+        <hr>
+
+        <!-- Данные клиента при продаже -->
+        <h6 class="mb-3">Данные клиента (при продаже)</h6>
 
         <div class="row">
             <div class="col-md-6 mb-3">
                 <label class="form-label">ФИО клиента</label>
-                <input type="text" name="booking_full_name" class="form-control" value="{{ item.booking_full_name or '' }}">
+                <input type="text" name="sale_full_name" class="form-control" 
+                       value="{{ form_data.sale_full_name if form_data else (item.sale_full_name or item.booking_full_name or '') }}">
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Телефон</label>
-                <input type="text" name="booking_phone" class="form-control" value="{{ item.booking_phone or '' }}">
+                <input type="text" name="sale_phone" class="form-control" 
+                       value="{{ form_data.sale_phone if form_data else (item.sale_phone or item.booking_phone or '') }}">
             </div>
         </div>
 
         <div class="row">
             <div class="col-md-4 mb-3">
-                <label class="form-label">Площадка</label>
-                <input type="text" name="booking_platform" class="form-control" value="{{ item.booking_platform or '' }}">
+                <label class="form-label">Пло-pлатформа</label>
+                <input type="text" name="sale_platform" class="form-control" 
+                       value="{{ form_data.sale_platform if form_data else (item.sale_platform or item.booking_platform or '') }}">
             </div>
             <div class="col-md-4 mb-3">
-                <label class="form-label">Telegram</label>
-                <input type="text" name="booking_telegram_username" class="form-control" value="{{ item.booking_telegram_username or '' }}" placeholder="@username">
+                <label class="form-label">Дата рождения</label>
+                <input type="text" name="sale_birth_date" class="form-control" 
+                       value="{{ form_data.sale_birth_date if form_data else (item.sale_birth_date or item.booking_birth_date or '') }}">
             </div>
             <div class="col-md-4 mb-3">
-                <label class="form-label">Комментарий</label>
-                <input type="text" name="booking_comment" class="form-control" value="{{ item.booking_comment or '' }}">
+                <label class="form-label">Тип сдачи</label>
+                <input type="text" name="sale_change_type" class="form-control" 
+                       value="{{ form_data.sale_change_type if form_data else (item.sale_change_type or '') }}">
             </div>
+        </div>
+
+        <!-- Комментарий -->
+        <div class="mb-3">
+            <label class="form-label">Комментарий к продаже</label>
+            <textarea name="sale_comment" class="form-control" rows="2" 
+                      placeholder="Дополнительная информация...">{{ form_data.sale_comment if form_data else '' }}</textarea>
         </div>
 
     </div>
@@ -83,10 +107,8 @@
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
         
         <button type="submit" class="btn btn-success d-flex align-items-center gap-2">
-            <span>Сохранить изменения</span>
-            
-            <!-- Спиннер при сохранении -->
-            <span class="htmx-indicator">
+            <span>Продать товар</span>
+            <span id="sale-spinner" class="htmx-indicator">
                 <span class="spinner-border spinner-border-sm" role="status"></span>
             </span>
         </button>
