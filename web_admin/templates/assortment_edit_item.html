@@ -1,145 +1,157 @@
 {% extends "base.html" %}
+{% block title %}Редактировать товар #{{ item.id }}{% endblock %}
+{% block page_title %}Редактировать товар #{{ item.id }}{% endblock %}
+
 {% block content %}
-<div class="container mt-4">
-    <h2>Редактирование товара #{{ item.id }}</h2>
-    <form method="post" action="/admin/assortment/edit/{{ item.id }}">
-        <div class="row">
-            <!-- Основная информация -->
-            <div class="col-md-6">
-                <div class="mb-3">
-                    <label class="form-label">Название товара</label>
-                    <input type="text" name="text" class="form-control" value="{{ item.text }}" required>
+<div class="container-fluid mt-3">
+    <div class="row justify-content-center">
+        <div class="col-lg-10 col-xl-9">
+
+            <form method="post" action="/admin/assortment/edit/{{ item.id }}">
+                
+                <!-- === ОСНОВНАЯ ИНФОРМАЦИЯ === -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <strong>Основная информация</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Название товара <span class="text-danger">*</span></label>
+                                <input type="text" name="text" class="form-control" value="{{ item.text }}" required>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Серийный номер</label>
+                                <input type="text" name="serial" class="form-control" value="{{ item.serial or '' }}">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Категория <span class="text-danger">*</span></label>
+                                <select name="category_id" class="form-select" required>
+                                    {% for cat in categories %}
+                                        <option value="{{ cat.id }}" {% if cat.id == item.category_id %}selected{% endif %}>
+                                            {{ cat.name }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Серийный номер</label>
-                    <input type="text" name="serial" class="form-control" value="{{ item.serial or '' }}">
+
+                <!-- === БРОНИРОВАНИЕ === -->
+                <div class="card mb-4">
+                    <div class="card-header bg-warning text-dark">
+                        <strong>Бронирование</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Стоимость брони</label>
+                                <input type="number" step="0.01" name="booking_price" class="form-control"
+                                       value="{{ item.booking_price or '' }}">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Предоплата (П/О)</label>
+                                <input type="number" step="0.01" name="booking_prepayment" class="form-control"
+                                       value="{{ item.booking_prepayment or '' }}">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Бонус / Скидка</label>
+                                <input type="number" step="0.01" name="booking_bonus" class="form-control"
+                                       value="{{ item.booking_bonus or '' }}">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">ФИО клиента</label>
+                                <input type="text" name="booking_full_name" class="form-control"
+                                       value="{{ item.booking_full_name or '' }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Телефон</label>
+                                <input type="text" name="booking_phone" class="form-control"
+                                       value="{{ item.booking_phone or '' }}">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Дата рождения</label>
+                                <input type="text" name="booking_birth_date" class="form-control"
+                                       value="{{ item.booking_birth_date or '' }}" placeholder="дд.мм.гггг">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Площадка</label>
+                                <input type="text" name="booking_platform" class="form-control"
+                                       value="{{ item.booking_platform or '' }}">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Способ оплаты предоплаты</label>
+                                <select name="booking_payment_type" class="form-select">
+                                    <option value="">-- Не выбрано --</option>
+                                    <option value="cash" {% if item.booking_payment_type == 'cash' %}selected{% endif %}>Наличными</option>
+                                    <option value="terminal" {% if item.booking_payment_type == 'terminal' %}selected{% endif %}>Терминал</option>
+                                    <option value="qr" {% if item.booking_payment_type == 'qr' %}selected{% endif %}>QR-Код</option>
+                                    <option value="transfer" {% if item.booking_payment_type == 'transfer' %}selected{% endif %}>Перевод</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Telegram + Комментарий -->
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Telegram Username</label>
+                                <input type="text" name="booking_telegram_username" class="form-control"
+                                       value="{{ item.booking_telegram_username or '' }}" placeholder="@username">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Комментарий</label>
+                                <input type="text" name="booking_comment" class="form-control"
+                                       value="{{ item.booking_comment or '' }}" placeholder="Заберут сегодня">
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Категория</label>
-                    <select name="category_id" class="form-select" required>
-                        {% for cat in categories %}
-                            <option value="{{ cat.id }}" {% if cat.id == item.category_id %}selected{% endif %}>
-                                {{ cat.name }}
-                            </option>
-                        {% endfor %}
-                    </select>
+
+                <!-- === ПРОДАЖА (если нужно) === -->
+                <div class="card mb-4 border-danger">
+                    <div class="card-header bg-danger text-white">
+                        <strong>Продажа товара</strong> <small>(товар будет удалён)</small>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-warning py-2">
+                            <strong>Внимание:</strong> При продаже товар удалится из ассортимента.
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Стоимость продажи</label>
+                                <input type="number" step="0.01" name="sale_price" class="form-control"
+                                       value="{{ item.sale_price or '' }}">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Предоплата</label>
+                                <input type="number" step="0.01" name="sale_prepayment" class="form-control"
+                                       value="{{ item.sale_prepayment or '' }}">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Сумма оплаты</label>
+                                <input type="number" step="0.01" name="sale_payment_amount" class="form-control"
+                                       value="{{ item.sale_payment_amount or '' }}">
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <!-- Статус -->
-            <div class="col-md-6">
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" name="is_booked" id="is_booked"
-                           {% if item.is_booked %}checked{% endif %}>
-                    <label class="form-check-label" for="is_booked">Забронирован</label>
+
+                <div class="d-flex gap-2 mb-5">
+                    <button type="submit" class="btn btn-success btn-lg">Сохранить изменения</button>
+                    <a href="/admin/assortment" class="btn btn-secondary btn-lg">Отмена</a>
                 </div>
-                <div class="form-check form-switch mb-3">
-                    <input class="form-check-input" type="checkbox" name="is_sold" id="is_sold"
-                           {% if item.is_sold %}checked{% endif %}>
-                    <label class="form-check-label" for="is_sold">Продан</label>
-                </div>
-            </div>
+
+            </form>
+
         </div>
-
-        <!-- === БЛОК БРОНИРОВАНИЯ === -->
-        <div class="card mb-4">
-            <div class="card-header bg-primary text-white">
-                <strong>Данные бронирования</strong>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-4">
-                        <div class="mb-3">
-                            <label class="form-label">Стоимость брони</label>
-                            <input type="number" step="0.01" name="booking_price" class="form-control"
-                                   value="{{ item.booking_price or '' }}">
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="mb-3">
-                            <label class="form-label">Предоплата (П/О)</label>
-                            <input type="number" step="0.01" name="booking_prepayment" class="form-control"
-                                   value="{{ item.booking_prepayment or '' }}">
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="mb-3">
-                            <label class="form-label">Бонус / Скидка</label>
-                            <input type="number" step="0.01" name="booking_bonus" class="form-control"
-                                   value="{{ item.booking_bonus or '' }}">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label class="form-label">ФИО клиента</label>
-                            <input type="text" name="booking_full_name" class="form-control"
-                                   value="{{ item.booking_full_name or '' }}">
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label class="form-label">Телефон</label>
-                            <input type="text" name="booking_phone" class="form-control"
-                                   value="{{ item.booking_phone or '' }}">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-4">
-                        <div class="mb-3">
-                            <label class="form-label">Дата рождения</label>
-                            <input type="text" name="booking_birth_date" class="form-control"
-                                   value="{{ item.booking_birth_date or '' }}" placeholder="дд.мм.гггг">
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="mb-3">
-                            <label class="form-label">Площадка</label>
-                            <input type="text" name="booking_platform" class="form-control"
-                                   value="{{ item.booking_platform or '' }}">
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="mb-3">
-                            <label class="form-label">Тип оплаты предоплаты</label>
-                            <select name="booking_payment_type" class="form-select">
-                                <option value="">-- Выберите --</option>
-                                <option value="cash" {% if item.booking_payment_type == 'cash' %}selected{% endif %}>Наличными</option>
-                                <option value="terminal" {% if item.booking_payment_type == 'terminal' %}selected{% endif %}>Терминал</option>
-                                <option value="qr" {% if item.booking_payment_type == 'qr' %}selected{% endif %}>QR-Код</option>
-                                <option value="transfer" {% if item.booking_payment_type == 'transfer' %}selected{% endif %}>Перевод</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- === НОВЫЕ ПОЛЯ (Telegram + Комментарий) === -->
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label class="form-label">Telegram Username</label>
-                            <input type="text" name="booking_telegram_username" class="form-control"
-                                   value="{{ item.booking_telegram_username or '' }}" placeholder="@username">
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label class="form-label">Комментарий</label>
-                            <input type="text" name="booking_comment" class="form-control"
-                                   value="{{ item.booking_comment or '' }}" placeholder="*заберут сегодня.">
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="d-flex gap-2">
-            <button type="submit" class="btn btn-success">Сохранить изменения</button>
-            <a href="/admin/assortment" class="btn btn-secondary">Отмена</a>
-        </div>
-    </form>
+    </div>
 </div>
 {% endblock %}
