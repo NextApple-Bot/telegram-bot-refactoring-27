@@ -1,4 +1,5 @@
-/* === static/css/main.css (Гибрид: Оригинал v26 + улучшения) === */
+/* === static/css/main.css === */
+/* Хирургически чистый CSS. Только функциональная красота. */
 
 :root {
   --primary: #2563eb;
@@ -14,6 +15,7 @@
   --bg-card: #ffffff;
   --border: #e2e8f0;
   --sidebar-width: 280px;
+  --sidebar-collapsed-width: 0px;
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
   --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
   --radius-md: 0.5rem;
@@ -70,7 +72,6 @@ a:hover {
   flex-direction: column;
   padding: 1.5rem 1rem;
 }
-
 .sidebar .logo {
   font-size: 1.5rem;
   font-weight: 700;
@@ -78,7 +79,6 @@ a:hover {
   color: var(--primary);
   letter-spacing: -0.5px;
 }
-
 .sidebar .nav-link {
   display: flex;
   align-items: center;
@@ -90,14 +90,12 @@ a:hover {
   transition: background 0.2s, color 0.2s;
   margin-bottom: 0.25rem;
 }
-
 .sidebar .nav-link:hover,
 .sidebar .nav-link.active {
   background-color: var(--primary-light);
   color: var(--primary);
   text-decoration: none;
 }
-
 .sidebar .nav-link i {
   font-size: 1.25rem;
   opacity: 0.7;
@@ -110,6 +108,29 @@ a:hover {
   transition: margin-left 0.3s ease;
   min-height: 100vh;
 }
+/* Когда сайдбар скрыт (мобильное меню) */
+.sidebar-hidden .sidebar {
+  transform: translateX(-100%);
+}
+.sidebar-hidden .main-content {
+  margin-left: 0;
+}
+
+/* Кнопка мобильного меню (бургер) */
+.menu-toggle {
+  display: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.75rem;
+  font-size: 1.5rem;
+  cursor: pointer;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 1100;
+  box-shadow: var(--shadow-sm);
+}
 
 /* === Карточки === */
 .card {
@@ -119,32 +140,14 @@ a:hover {
   box-shadow: var(--shadow-sm);
   margin-bottom: 1.5rem;
 }
-
 .card-header {
   padding: 1rem 1.5rem;
   font-weight: 600;
   border-bottom: 1px solid var(--border);
   background: transparent;
 }
-
 .card-body {
   padding: 1.5rem;
-}
-
-/* === KPI Карточки (улучшенные) === */
-.kpi-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.kpi-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
-
-.kpi-value {
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.1;
 }
 
 /* === Таблицы === */
@@ -152,13 +155,11 @@ a:hover {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
-
 .table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
 }
-
 .table th {
   font-weight: 600;
   color: var(--text-muted);
@@ -167,16 +168,17 @@ a:hover {
   border-bottom: 2px solid var(--border);
   white-space: nowrap;
 }
-
 .table td {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
   color: var(--text-dark);
   word-break: break-word;
 }
-
 .table tbody tr:hover {
   background-color: #f8fafc;
+}
+.table-warning {
+  background-color: #fffbeb;
 }
 
 /* === Кнопки === */
@@ -193,35 +195,29 @@ a:hover {
   transition: all 0.15s;
   font-size: 0.875rem;
 }
-
 .btn-primary {
   background-color: var(--primary);
   color: white;
   border-color: var(--primary);
 }
-
 .btn-primary:hover {
   background-color: var(--primary-hover);
 }
-
 .btn-outline-secondary {
   background: transparent;
   border-color: var(--border);
   color: var(--text-medium);
 }
-
 .btn-outline-secondary:hover {
   background-color: var(--bg-body);
   border-color: #94a3b8;
   color: var(--text-dark);
 }
-
 .btn-danger {
   background-color: var(--danger);
   color: white;
   border-color: var(--danger);
 }
-
 .btn-sm {
   padding: 0.25rem 0.75rem;
   font-size: 0.8rem;
@@ -237,7 +233,6 @@ a:hover {
   background: white;
   transition: border-color 0.2s;
 }
-
 .form-control:focus, .form-select:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
@@ -248,7 +243,6 @@ a:hover {
   display: flex;
   gap: 0.25rem;
 }
-
 .pagination .page-link {
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--border);
@@ -256,17 +250,14 @@ a:hover {
   color: var(--text-dark);
   border-radius: var(--radius-md);
 }
-
 .pagination .active .page-link {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
 }
 
-/* ============================================
-   УЛУЧШЕННАЯ АДАПТИВНОСТЬ
-   ============================================ */
-
+/* === Адаптивность === */
+/* Планшеты и ниже */
 @media (max-width: 992px) {
   :root {
     --sidebar-width: 80px;
@@ -278,7 +269,6 @@ a:hover {
     margin: 0 auto;
   }
 }
-
 @media (max-width: 768px) {
   :root {
     --sidebar-width: 0px;
@@ -310,7 +300,6 @@ a:hover {
     font-size: 1.8rem !important;
   }
 }
-
 @media (max-width: 480px) {
   .row {
     flex-direction: column;
@@ -321,5 +310,12 @@ a:hover {
   .btn {
     width: 100%;
     margin-bottom: 0.5rem;
+  }
+  .top-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .modal-dialog {
+    margin: 0.5rem;
   }
 }
