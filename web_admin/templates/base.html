@@ -73,24 +73,44 @@
         {% block content %}{% endblock %}
     </div>
 
-    <!-- Универсальная модалка (HTMX + Alpine.js) -->
-    <div x-data="{ show: false, modalTitle: 'Редактирование' }" 
+    <!-- Универсальная модалка с поддержкой спиннера -->
+    <div x-data="{ 
+            show: false, 
+            modalTitle: 'Редактирование',
+            loading: false 
+         }" 
          x-show="show" 
          class="modal fade" 
          :class="{ 'show d-block': show }"
          tabindex="-1"
          id="htmxModal"
-         @hidden.bs.modal="show = false">
+         @hidden.bs.modal="show = false; loading = false">
 
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
+
+                <!-- Заголовок -->
                 <div class="modal-header">
                     <h5 class="modal-title" x-text="modalTitle"></h5>
                     <button type="button" class="btn-close" @click="show = false"></button>
                 </div>
-                <div class="modal-body" id="htmxModalContent">
-                    <!-- Контент загружается через HTMX -->
+
+                <!-- Тело модалки -->
+                <div class="modal-body position-relative" id="htmxModalContent">
+
+                    <!-- Спиннер загрузки -->
+                    <div x-show="loading" 
+                         class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-white bg-opacity-75"
+                         style="z-index: 10; border-radius: 0.5rem;">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary mb-2" role="status"></div>
+                            <div class="small text-muted">Загрузка...</div>
+                        </div>
+                    </div>
+
+                    <!-- Сюда подгружается контент через HTMX -->
                 </div>
+
             </div>
         </div>
     </div>
@@ -118,8 +138,25 @@
             }
         });
 
-        // Автоматическое закрытие модалки после успешного сохранения
+        // Показываем спиннер при начале HTMX-запроса в модалку
+        document.body.addEventListener('htmx:beforeRequest', function(evt) {
+            const modalContent = document.getElementById('htmxModalContent');
+            if (modalContent && evt.detail.target === modalContent) {
+                // Показываем спиннер через Alpine
+                const alpineData = Alpine.$data(document.getElementById('htmxModal'));
+                if (alpineData) alpineData.loading = true;
+            }
+        });
+
+        // Скрываем спиннер после завершения запроса
         document.body.addEventListener('htmx:afterRequest', function(evt) {
+            const modalContent = document.getElementById('htmxModalContent');
+            if (modalContent && evt.detail.target === modalContent) {
+                const alpineData = Alpine.$data(document.getElementById('htmxModal'));
+                if (alpineData) alpineData.loading = false;
+            }
+
+            // Автоматическое закрытие модалки после успешного сохранения
             if (evt.detail.xhr.status === 200 || evt.detail.xhr.status === 303) {
                 const modal = document.getElementById('htmxModal');
                 if (modal) {
@@ -131,25 +168,20 @@
             }
         });
 
-        // Функция обновления таблицы ассортимента
-        function refreshAssortmentTable() {
-            const container = document.getElementById('assortment-table-container');
-            if (container) {
-                htmx.ajax('GET', window.location.pathname + window.location.search, {
-                    target: '#assortment-table-container',
-                    swap: 'outerHTML'
-                });
-            }
-        }
-
-        // Обновляем таблицу после редактирования товара
+        // Обновление таблицы ассортимента после редактирования
         document.body.addEventListener('htmx:afterRequest', function(evt) {
             const path = evt.detail.pathInfo.requestPath;
             if (path && path.includes('/admin/assortment/edit') && 
                 (evt.detail.xhr.status === 200 || evt.detail.xhr.status === 303)) {
                 
                 setTimeout(() => {
-                    refreshAssortmentTable();
+                    const container = document.getElementById('assortment-table-container');
+                    if (container) {
+                        htmx.ajax('GET', window.location.pathname + window.location.search, {
+                            target: '#assortment-table-container',
+                            swap: 'outerHTML'
+                        });
+                    }
                 }, 350);
             }
         });
