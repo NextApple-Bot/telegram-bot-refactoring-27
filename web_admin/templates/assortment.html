@@ -42,7 +42,7 @@
     </div>
 </div>
 
-<!-- Таблица (оборачиваем в контейнер для обновления через HTMX) -->
+<!-- Таблица -->
 <div id="assortment-table-container">
     <div class="card">
         <div class="table-responsive">
@@ -83,7 +83,7 @@
                         <td class="text-muted small">{{ item.created_at|format_date }}</td>
                         <td class="text-end">
                             <div class="btn-group btn-group-sm">
-                                <!-- HTMX кнопка редактирования -->
+                                <!-- Редактирование через HTMX -->
                                 <button 
                                     class="btn btn-outline-primary"
                                     hx-get="/admin/assortment/edit/{{ item.id }}"
@@ -93,10 +93,15 @@
                                     Изменить
                                 </button>
 
-                                <form action="/admin/assortment/delete/{{ item.id }}" method="post" class="d-inline"
-                                      onsubmit="return confirm('Удалить этот товар?')">
-                                    <button type="submit" class="btn btn-outline-danger">×</button>
-                                </form>
+                                <!-- Удаление через HTMX -->
+                                <button 
+                                    class="btn btn-outline-danger"
+                                    hx-delete="/admin/assortment/delete/{{ item.id }}"
+                                    hx-confirm="Удалить этот товар?"
+                                    hx-target="#assortment-table-container"
+                                    hx-swap="outerHTML">
+                                    ×
+                                </button>
                             </div>
                         </td>
                     </tr>
