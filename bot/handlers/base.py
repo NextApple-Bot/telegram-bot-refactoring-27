@@ -5,6 +5,8 @@ from aiogram import Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from bot.services.assortment import AssortmentService
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,5 +47,21 @@ async def show_help(bot: Bot, chat_id: int):
 
 
 async def show_inventory(bot: Bot, chat_id: int):
-    """Показывает текущий ассортимент (заглушка)."""
-    await bot.send_message(chat_id, "📦 Функция просмотра ассортимента пока в разработке.")
+    """Показывает текущий ассортимент (упрощённая версия)."""
+    try:
+        categories = await AssortmentService.load_inventory()
+        if not categories:
+            await bot.send_message(chat_id, "📭 Ассортимент пуст.")
+            return
+
+        total_items = sum(len(cat.get("items", [])) for cat in categories)
+        text = f"📦 **Текущий ассортимент**\n\n"
+        text += f"Категорий: **{len(categories)}**\n"
+        text += f"Всего товаров: **{total_items}**\n\n"
+        text += "Используйте команду /inventory или кнопку в меню для более детального просмотра."
+
+        await bot.send_message(chat_id, text, parse_mode="Markdown")
+
+    except Exception as e:
+        logger.exception("Ошибка при показе ассортимента")
+        await bot.send_message(chat_id, "❌ Не удалось загрузить ассортимент.")
