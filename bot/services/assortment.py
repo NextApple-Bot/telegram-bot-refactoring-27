@@ -2,7 +2,7 @@ import logging
 from typing import Any
 
 from bot.db import get_async_session_factory, get_pool
-from bot.models import Category, DeletedItem, Item
+from bot.models import Category, Item
 from bot.services.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,6 @@ CACHE_TTL = 300  # 5 минут
 class AssortmentService:
     """
     Сервис работы с ассортиментом товаров.
-
     Отвечает за:
     - Загрузку полного ассортимента (с кэшированием)
     - Удаление товаров по серийному номеру (продажа / бронь / ручное удаление)
@@ -24,11 +23,6 @@ class AssortmentService:
 
     @staticmethod
     async def load_inventory() -> list[dict[str, Any]]:
-        """
-        Загружает полный ассортимент с группировкой по категориям.
-        Использует Redis-кэш для снижения нагрузки на БД.
-        """
-        # Пытаемся взять из кэша
         cached = await cache.get(CACHE_KEY)
         if cached is not None:
             logger.debug("Ассортимент загружен из кэша Redis")
@@ -37,7 +31,6 @@ class AssortmentService:
         try:
             async_session = get_async_session_factory()
             async with async_session() as session:
-                # Получаем все категории (кроме системной)
                 categories_query = (
                     select(Category)
                     .where(Category.name != "__SYSTEM__")
@@ -47,7 +40,6 @@ class AssortmentService:
 
                 result = []
                 for category in categories:
-                    # Получаем товары категории
                     items_query = (
                         select(Item)
                         .where(Item.category_id == category.id)
@@ -74,7 +66,6 @@ class AssortmentService:
                     }
                     result.append(category_dict)
 
-            # Кэшируем результат
             await cache.set(CACHE_KEY, result, ttl=CACHE_TTL)
             logger.info(f"Ассортимент загружен из БД и закэширован ({len(result)} категорий)")
             return result
@@ -89,17 +80,6 @@ class AssortmentService:
         reason: str = "sale",
         conn=None
     ) -> bool:
-        """
-        Удаляет товар по серийному номеру и создаёт запись в deleted_items.
-
-        Args:
-            serial: Серийный номер товара
-            reason: Причина удаления ('sale', 'booking', 'admin_manual' и т.д.)
-            conn: Опциональное соединение (для использования внутри транзакции)
-
-        Returns:
-            True, если товар был успешно удалён
-        """
         if not serial:
             return False
 
@@ -110,7 +90,6 @@ class AssortmentService:
             own_conn = True
 
         try:
-            # Находим товар
             item = await conn.fetchrow(
                 "SELECT id, text, serial, category_id FROM items WHERE serial = $1",
                 serial.strip().upper()
@@ -120,7 +99,6 @@ class AssortmentService:
                 logger.warning(f"Попытка удаления несуществующего серийника: {serial}")
                 return False
 
-            # Создаём запись об удалении
             await conn.execute(
                 """
                 INSERT INTO deleted_items 
@@ -132,13 +110,10 @@ class AssortmentService:
                 item["serial"],
                 item["category_id"],
                 reason,
-                None  # sale_message_id заполняется при продаже из админки
+                None
             )
 
-            # Удаляем товар
             await conn.execute("DELETE FROM items WHERE id = $1", item["id"])
-
-            # Инвалидируем кэш
             await AssortmentService.invalidate_cache()
 
             logger.info(f"✅ Товар удалён: serial={serial}, reason={reason}")
@@ -147,19 +122,12 @@ class AssortmentService:
         except Exception as e:
             logger.exception(f"Ошибка при удалении товара по serial={serial}: {e}")
             return False
-
         finally:
             if own_conn and conn:
                 await conn.close()
 
     @staticmethod
     async def bulk_replace_assortment(categories: list[dict[str, Any]]) -> bool:
-        """
-        Полностью заменяет текущий ассортимент на новый.
-        Используется при загрузке из топика «Ассортимент».
-
-        Внимание: операция выполняется в транзакции.
-        """
         if not categories:
             logger.warning("Попытка замены ассортимента пустым списком")
             return False
@@ -168,13 +136,10 @@ class AssortmentService:
         async with pool.acquire() as conn:
             async with conn.transaction():
                 try:
-                    # Удаляем все товары (кроме системного)
                     await conn.execute(
                         "DELETE FROM items WHERE category_id NOT IN "
                         "(SELECT id FROM categories WHERE name = '__SYSTEM__')"
                     )
-
-                    # Удаляем все категории (кроме системной)
                     await conn.execute(
                         "DELETE FROM categories WHERE name != '__SYSTEM__'"
                     )
@@ -184,7 +149,6 @@ class AssortmentService:
                         if not header:
                             continue
 
-                        # Создаём категорию
                         cat_id = await conn.fetchval(
                             """
                             INSERT INTO categories (name, sort_order)
@@ -196,7 +160,6 @@ class AssortmentService:
                             cat.get("sort_order", 0)
                         )
 
-                        # Добавляем товары
                         for item in cat.get("items", []):
                             text = item.get("text", "").strip()
                             if not text:
@@ -227,7 +190,6 @@ class AssortmentService:
 
     @staticmethod
     async def invalidate_cache() -> None:
-        """Инвалидирует кэш ассортимента."""
         try:
             await cache.delete(CACHE_KEY)
             logger.debug("Кэш ассортимента инвалидирован")
