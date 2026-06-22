@@ -1,20 +1,12 @@
-{# 
-    Компонент: Выпадающее меню выбора категории
-    Использование:
-    {% include 'partials/category_dropdown.html' with context %}
-#}
-
 <div x-data="categorySelect()" 
      x-init="init({{ categories | tojson }}, {{ selected_category_id | default('null') }})"
-     class="relative">
+     class="relative w-full">
 
-    <!-- Скрытое поле для отправки формы -->
-    <input type="hidden" name="category_id" :value="selected ? selected.id : ''">
+    <input type="hidden" name="{{ field_name | default('category_id') }}" :value="selected ? selected.id : ''">
 
-    <!-- Кнопка / текущее значение -->
     <button type="button"
             @click="open = !open"
-            class="w-full flex items-center justify-between px-4 py-3 border border-slate-300 bg-white rounded-2xl text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+            class="w-full flex items-center justify-between px-4 py-3 border border-slate-300 bg-white rounded-2xl text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all hover:border-slate-400"
             :class="{ 'ring-2 ring-indigo-500 border-indigo-500': open }">
         
         <span x-text="selected ? selected.name : 'Выберите категорию'"
@@ -22,42 +14,38 @@
               :class="{ 'text-slate-400': !selected }">
         </span>
         
-        <i class="fas fa-chevron-down text-slate-400 transition-transform" 
+        <i class="fas fa-chevron-down text-slate-400 transition-transform duration-200"
            :class="{ 'rotate-180': open }"></i>
     </button>
 
-    <!-- Выпадающий список -->
     <div x-show="open"
          @click.away="open = false"
          x-transition
-         class="absolute z-50 mt-2 w-full bg-white border border-slate-200 rounded-2xl shadow-xl py-2 max-h-80 overflow-auto">
+         class="absolute z-50 mt-2 w-full bg-white border border-slate-200 rounded-2xl shadow-xl py-2 max-h-[340px] overflow-auto">
         
         <!-- Поиск -->
-        <div class="px-4 pb-2 sticky top-0 bg-white">
+        <div class="px-4 pb-3 sticky top-0 bg-white">
             <input type="text"
                    x-model="search"
                    @input="filter()"
                    placeholder="Поиск категории..."
-                   class="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                   class="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <i class="fas fa-search absolute left-4 top-3.5 text-slate-400 text-sm"></i>
         </div>
 
-        <!-- Список категорий -->
-        <div class="max-h-64 overflow-y-auto">
+        <div class="max-h-72 overflow-y-auto">
             <template x-for="cat in filtered" :key="cat.id">
                 <button type="button"
                         @click="select(cat)"
-                        class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+                        class="w-full flex items-center justify-between px-4 py-[11px] text-left hover:bg-slate-50 transition-colors text-[15px]"
                         :class="{ 'bg-indigo-50 text-indigo-700 font-semibold': selected && selected.id === cat.id }">
-                    
                     <span x-text="cat.name"></span>
-                    
-                    <i x-show="selected && selected.id === cat.id" 
-                       class="fas fa-check text-indigo-600"></i>
+                    <i x-show="selected && selected.id === cat.id" class="fas fa-check text-indigo-600"></i>
                 </button>
             </template>
 
             <div x-show="filtered.length === 0" class="px-4 py-4 text-center text-sm text-slate-500">
-                Ничего не найдено
+                Категории не найдены
             </div>
         </div>
     </div>
