@@ -34,6 +34,7 @@ def remove_trade_in_lines(text: str) -> str:
 
 
 @router.message(
+    F.chat.id == config.MAIN_GROUP_ID,
     F.message_thread_id == config.THREAD_SALES,
     (F.text | F.caption)
 )
@@ -94,14 +95,12 @@ async def handle_sales_message(message: Message) -> None:
     if result.get("is_accessory"):
         await safe_react(message, '⚡️')
         logger.info(f"Аксессуар обработан (message_id={message.message_id})")
-
     elif result.get("sold_items"):
         await safe_react(message, '🔥')
         logger.info(
             f"✅ Продажа успешно обработана: {len(result['sold_items'])} товаров "
             f"(message_id={message.message_id})"
         )
-
     elif result.get("not_found"):
         await safe_react(message, '‼️')
         text = "❌ Серийные номера не найдены в ассортименте:\n" + "\n".join(result["not_found"])
@@ -114,6 +113,5 @@ async def handle_sales_message(message: Message) -> None:
             delete_after=60
         )
         logger.warning(f"Серийные номера не найдены (message_id={message.message_id})")
-
     else:
         logger.info(f"Сообщение обработано без дополнительных действий (message_id={message.message_id})")
