@@ -1,20 +1,17 @@
 {% extends "base.html" %}
-
 {% block title %}Ассортимент{% endblock %}
-
 {% block content %}
 <div class="max-w-7xl mx-auto">
-
     <div class="flex items-center justify-between mb-8">
         <div>
             <h1 class="text-3xl font-semibold tracking-tight">Ассортимент</h1>
             <p class="text-slate-500 mt-1">Всего товаров: <span class="font-medium text-slate-700">{{ total }}</span></p>
         </div>
-        <button 
+        <button
             class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-2xl flex items-center gap-x-2 transition-colors"
             hx-get="/admin/assortment/add"
             hx-target="#htmxModalContent"
-            hx-on::click="$store.modal.title = 'Добавить товар'; $store.modal.show = true">
+            @click="$dispatch('open-modal', { title: 'Добавить товар' })">
             <i class="fas fa-plus"></i>
             <span>Добавить товар</span>
         </button>
@@ -79,27 +76,27 @@
                     <td class="px-6 py-4 text-right">
                         <div class="flex items-center justify-end gap-x-2">
                             <!-- Изменить -->
-                            <button 
+                            <button
                                 class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
                                 hx-get="/admin/assortment/edit/{{ item.id }}"
                                 hx-target="#htmxModalContent"
-                                hx-on::click="$store.modal.title = 'Редактировать товар #{{ item.id }}'; $store.modal.show = true">
+                                @click="$dispatch('open-modal', { title: 'Редактировать товар #' + {{ item.id }} })">
                                 Изменить
                             </button>
 
                             <!-- Продать -->
                             {% if not item.is_sold %}
-                            <button 
+                            <button
                                 class="px-4 py-2 text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-colors"
                                 hx-get="/admin/assortment/sale/{{ item.id }}"
                                 hx-target="#htmxModalContent"
-                                hx-on::click="$store.modal.title = 'Продать товар #{{ item.id }}'; $store.modal.show = true">
+                                @click="$dispatch('open-modal', { title: 'Продать товар #' + {{ item.id }} })">
                                 Продать
                             </button>
                             {% endif %}
 
                             <!-- Удалить -->
-                            <button 
+                            <button
                                 class="px-3 py-2 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
                                 hx-delete="/admin/assortment/delete/{{ item.id }}"
                                 hx-confirm="Удалить этот товар?"
@@ -118,6 +115,5 @@
             </tbody>
         </table>
     </div>
-
 </div>
 {% endblock %}
