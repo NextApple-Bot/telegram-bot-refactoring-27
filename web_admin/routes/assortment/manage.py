@@ -2,10 +2,11 @@ import asyncio
 import logging
 import re
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Request, Depends
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiogram import Bot
 
@@ -15,6 +16,7 @@ from bot.models import Category, DailyPayment, DeletedItem, Item
 from bot.repositories.client import ClientRepository
 from bot.services.assortment import AssortmentService
 from web_admin.templates import templates
+from web_admin.dependencies import get_async_session
 
 from .notifications import send_booking_notification
 from .sales import handle_sale_from_form
@@ -63,7 +65,7 @@ async def edit_item_form(request: Request, item_id: int):
             "request": request,
             "item": item,
             "categories": categories,
-            "selected_category_id": item.category_id,   # ← Добавлено для компонента категорий
+            "selected_category_id": item.category_id,
         },
     )
 
@@ -77,7 +79,6 @@ async def edit_item_submit(
     category_id: int = Form(...),
     is_booked: bool = Form(False),
     is_sold: bool = Form(False),
-    # Бронирование
     booking_price: float | None = Form(None),
     booking_bonus: float | None = Form(None),
     booking_prepayment: float | None = Form(None),
@@ -88,7 +89,6 @@ async def edit_item_submit(
     booking_birth_date: str | None = Form(None),
     booking_telegram_username: str | None = Form(None),
     booking_comment: str | None = Form(None),
-    # Продажа
     sale_price: float | None = Form(None),
     sale_bonus: float | None = Form(None),
     sale_change: float | None = Form(None),
@@ -100,25 +100,19 @@ async def edit_item_submit(
     sale_full_name: str | None = Form(None),
     sale_phone: str | None = Form(None),
     sale_birth_date: str | None = Form(None),
-    # Аксессуары
     accessory_name: list[str] = Form([]),
     accessory_serial: list[str] = Form([]),
     accessory_price: list[float] = Form([]),
     accessory_payment_type: list[str] = Form([]),
 ):
-    # === Валидация ===
     if booking_phone and not validate_phone(booking_phone):
         raise HTTPException(status_code=400, detail="Неверный формат телефона брони")
-
     if sale_phone and not validate_phone(sale_phone):
         raise HTTPException(status_code=400, detail="Неверный формат телефона продажи")
-
     if booking_telegram_username and not validate_telegram_username(booking_telegram_username):
         raise HTTPException(status_code=400, detail="Неверный формат Telegram username")
-
     if booking_comment and not validate_comment(booking_comment):
         raise HTTPException(status_code=400, detail="Комментарий слишком длинный")
-
     if is_sold and is_booked:
         raise HTTPException(status_code=400, detail="Нельзя одновременно забронировать и продать товар")
 
@@ -129,7 +123,6 @@ async def edit_item_submit(
                 old = await session.get(Item, item_id, with_for_update=True)
                 if not old:
                     raise HTTPException(status_code=404, detail="Товар не найден")
-
                 if getattr(old, "is_sold", False):
                     raise HTTPException(status_code=400, detail="Товар уже продан")
 
@@ -137,7 +130,6 @@ async def edit_item_submit(
                 old_serial = old.serial or ""
                 old_category_id = old.category_id
 
-                # === ПРОДАЖА ===
                 if is_sold:
                     accessories = []
                     for name, acc_serial, price, pay_type in zip(
@@ -173,25 +165,18 @@ async def edit_item_submit(
                         accessories=accessories,
                         conn=session,
                     )
-
                     if "error" in result:
                         raise HTTPException(status_code=400, detail=result["error"])
-
                     await AssortmentService.invalidate_cache()
                     return RedirectResponse(url="/admin/assortment", status_code=303)
 
-                # === ОБЩАЯ ЛОГИКА РЕДАКТИРОВАНИЯ ===
-                booking_fields = [
-                    "booking_price", "booking_bonus", "booking_prepayment",
-                    "booking_platform", "booking_full_name", "booking_phone",
-                    "booking_payment_type", "booking_birth_date",
-                    "booking_telegram_username", "booking_comment"
-                ]
-                sale_fields = [
-                    "sale_price", "sale_bonus", "sale_change", "sale_change_type",
-                    "sale_prepayment", "sale_payment_amount", "sale_payment_type",
-                    "sale_platform", "sale_full_name", "sale_phone", "sale_birth_date"
-                ]
+                # Обычное редактирование
+                booking_fields = ["booking_price", "booking_bonus", "booking_prepayment", "booking_platform",
+                                  "booking_full_name", "booking_phone", "booking_payment_type", "booking_birth_date",
+                                  "booking_telegram_username", "booking_comment"]
+                sale_fields = ["sale_price", "sale_bonus", "sale_change", "sale_change_type",
+                               "sale_prepayment", "sale_payment_amount", "sale_payment_type", "sale_platform",
+                               "sale_full_name", "sale_phone", "sale_birth_date"]
 
                 for field in booking_fields + sale_fields:
                     setattr(old, field, None)
@@ -205,16 +190,11 @@ async def edit_item_submit(
                 if is_booked:
                     if not booking_price or booking_price <= 0:
                         raise HTTPException(status_code=400, detail="Укажите стоимость брони")
-
                     if booking_phone or booking_full_name:
                         await ClientRepository.get_or_create_client(
-                            phone=booking_phone,
-                            full_name=booking_full_name,
-                            social_network=booking_platform,
-                            birth_date=booking_birth_date,
-                            conn=session,
+                            phone=booking_phone, full_name=booking_full_name,
+                            social_network=booking_platform, birth_date=booking_birth_date, conn=session
                         )
-
                     old.booking_price = booking_price
                     old.booking_bonus = booking_bonus
                     old.booking_prepayment = booking_prepayment
@@ -227,36 +207,21 @@ async def edit_item_submit(
                     old.booking_comment = booking_comment
 
                     if booking_prepayment and booking_prepayment > 0 and booking_payment_type:
-                        payment = DailyPayment(
-                            type='preorder',
-                            payment_type=booking_payment_type,
-                            amount=booking_prepayment
-                        )
+                        payment = DailyPayment(type='preorder', payment_type=booking_payment_type, amount=booking_prepayment)
                         session.add(payment)
 
                     asyncio.create_task(send_booking_notification(
                         bot=Bot(token=config.BOT_TOKEN),
-                        item_text=text,
-                        serial=serial.strip().upper() if serial else "",
-                        price=booking_price,
-                        bonus=booking_bonus,
-                        prepayment=booking_prepayment,
-                        platform=booking_platform,
-                        full_name=booking_full_name,
-                        phone=booking_phone,
-                        payment_type=booking_payment_type,
-                        birth_date=booking_birth_date,
-                        is_cancel=False,
+                        item_text=text, serial=serial.strip().upper() if serial else "",
+                        price=booking_price, bonus=booking_bonus, prepayment=booking_prepayment,
+                        platform=booking_platform, full_name=booking_full_name, phone=booking_phone,
+                        payment_type=booking_payment_type, birth_date=booking_birth_date, is_cancel=False
                     ))
-
                 else:
-                    # Снятие брони
                     if old.is_booked:
                         asyncio.create_task(send_booking_notification(
                             bot=Bot(token=config.BOT_TOKEN),
-                            item_text=old_text,
-                            serial=old_serial,
-                            is_cancel=True,
+                            item_text=old_text, serial=old_serial, is_cancel=True
                         ))
 
         except HTTPException:
@@ -276,15 +241,11 @@ async def delete_item(request: Request, item_id: int):
         item = await session.get(Item, item_id)
         if item:
             deleted = DeletedItem(
-                item_id=item.id,
-                text=item.text,
-                serial=item.serial,
-                category_id=item.category_id,
-                reason='admin_manual'
+                item_id=item.id, text=item.text, serial=item.serial,
+                category_id=item.category_id, reason='admin_manual'
             )
             session.add(deleted)
             await session.delete(item)
-
     await AssortmentService.invalidate_cache()
     referer = request.headers.get("referer")
     if referer:
@@ -329,24 +290,15 @@ async def add_item(
 
         if is_booked and booking_prepayment and booking_prepayment > 0 and booking_payment_type:
             payment = DailyPayment(
-                type='preorder',
-                payment_type=booking_payment_type,
-                amount=booking_prepayment
+                type='preorder', payment_type=booking_payment_type, amount=booking_prepayment
             )
             session.add(payment)
-
             asyncio.create_task(send_booking_notification(
                 bot=Bot(token=config.BOT_TOKEN),
-                item_text=text,
-                serial=serial.strip().upper() if serial else "",
-                price=booking_price,
-                bonus=booking_bonus,
-                prepayment=booking_prepayment,
-                platform=booking_platform,
-                full_name=booking_full_name,
-                phone=booking_phone,
-                payment_type=booking_payment_type,
-                is_cancel=False,
+                item_text=text, serial=serial.strip().upper() if serial else "",
+                price=booking_price, bonus=booking_bonus, prepayment=booking_prepayment,
+                platform=booking_platform, full_name=booking_full_name,
+                phone=booking_phone, payment_type=booking_payment_type, is_cancel=False
             ))
 
     await AssortmentService.invalidate_cache()
@@ -373,3 +325,33 @@ async def add_category(request: Request, name: str = Form(...)):
 
     await AssortmentService.invalidate_cache()
     return RedirectResponse(url="/admin/assortment", status_code=303)
+
+
+@router.get("/categories/manage")
+async def manage_categories(request: Request):
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        result = await session.execute(select(Category).order_by(Category.sort_order))
+        categories = result.scalars().all()
+
+    return templates.TemplateResponse(
+        "partials/manage_categories.html",
+        {"request": request, "categories": categories}
+    )
+
+
+@router.post("/categories/reorder")
+async def reorder_categories(request: Request):
+    data = await request.json()
+    category_ids = data.get("order", [])
+
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        for index, cat_id in enumerate(category_ids):
+            await session.execute(
+                update(Category).where(Category.id == cat_id).values(sort_order=index)
+            )
+        await session.commit()
+
+    await AssortmentService.invalidate_cache()
+    return {"status": "success"}
