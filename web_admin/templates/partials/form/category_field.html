@@ -1,0 +1,24 @@
+{# 
+    Переиспользуемый компонент поля "Категория"
+    
+    Параметры:
+    - label: текст лейбла (по умолчанию "Категория")
+    - name: имя поля (по умолчанию "category_id")
+    - categories: список категорий [{"id": , "name": }]
+    - selected_id: ID выбранной категории (опционально)
+    - required: обязательное ли поле (по умолчанию true)
+#}
+
+{% set field_label = label | default('Категория') %}
+{% set field_name = name | default('category_id') %}
+{% set is_required = required | default(true) %}
+
+<div class="mb-6">
+    <label class="block text-sm font-medium text-slate-700 mb-2">
+        {{ field_label }}
+        {% if is_required %}<span class="text-red-500">*</span>{% endif %}
+    </label>
+
+    {# Подключаем сам дропдаун #}
+    {% include 'partials/category_dropdown.html' %}
+</div>
