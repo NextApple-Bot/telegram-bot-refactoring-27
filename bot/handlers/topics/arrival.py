@@ -195,7 +195,12 @@ async def handle_arrival(message: Message, bot, state: FSMContext):
             cat_to_items.setdefault(category_name, []).append((line, serial))
 
     if not cat_to_items:
-        await send_and_clean(bot=message.bot, chat_id=message.chat.id, text="❌ Нет новых позиций (все дубликаты).", delete_after=60)
+        await send_and_clean(
+            bot=message.bot,
+            chat_id=message.chat.id,
+            text="❌ Нет новых позиций (все дубликаты).",
+            delete_after=60
+        )
         return
 
     await state.set_state(ArrivalConfirmState.waiting_for_confirm)
@@ -228,6 +233,7 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
     except Exception:
         pass
+
     data = await state.get_data()
     cat_to_items = data.get("cat_to_items")
     action = callback.data.split(":")[1]
@@ -246,13 +252,18 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
                         total_inserted += 1
                     except Exception as e:
                         errors.append(f"Ошибка при вставке {text}: {e}")
+
         await AssortmentService.invalidate_cache()
         await callback.message.edit_text(f"✅ Добавлено {total_inserted} товаров. Ошибок: {len(errors)}")
+
         if errors:
-            await send_and_clean(bot=callback.bot, chat_id=callback.message.chat.id,
-                                text="\n".join(errors[:5]), delete_after=60)
+            await send_and_clean(
+                bot=callback.bot,
+                chat_id=callback.message.chat.id,
+                text="\n".join(errors[:5]),
+                delete_after=60
+            )
     elif action == "no":
         await callback.message.edit_text("❌ Добавление отменено.")
-    await state.clear()
 
-# Восстановлено и адаптировано из v26 → v27
+    await state.clear()
