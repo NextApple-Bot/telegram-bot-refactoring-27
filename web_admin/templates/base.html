@@ -13,6 +13,15 @@
     <style>
         [x-cloak] { display: none !important; }
         .nav-text { transition: all 0.2s ease; }
+        
+        /* Стили модалки */
+        .modal {
+            animation: modalPop 0.2s ease-out;
+        }
+        @keyframes modalPop {
+            from { transform: scale(0.95); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
     </style>
     
     {% block extra_head %}{% endblock %}
@@ -54,7 +63,7 @@
                     </button>
                 </div>
 
-                <!-- Навигация (модульно) -->
+                <!-- Навигация -->
                 <nav class="flex-1 px-4 py-8 space-y-1.5 text-[15px]">
                     {% include 'partials/sidebar_nav.html' %}
                 </nav>
@@ -86,7 +95,6 @@
                         </button>
                     </div>
 
-                    <!-- Мобильная навигация (тоже из partial) -->
                     <nav class="p-4 space-y-1 text-[15px]">
                         {% include 'partials/sidebar_nav.html' %}
                     </nav>
@@ -101,6 +109,37 @@
             </div>
         </div>
     </div>
+
+    <!-- ==================== МОДАЛЬНОЕ ОКНО (ОБЯЗАТЕЛЬНО!) ==================== -->
+    <div 
+        x-data="{ show: false, modalTitle: '' }"
+        x-show="show"
+        @keydown.escape.window="show = false"
+        class="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 p-4"
+        style="display: none;"
+    >
+        <div 
+            @click.away="show = false"
+            class="modal bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden"
+        >
+            <!-- Заголовок модалки -->
+            <div class="flex items-center justify-between px-6 py-4 border-b bg-slate-50">
+                <h3 class="text-xl font-semibold text-slate-900" x-text="modalTitle"></h3>
+                <button 
+                    @click="show = false" 
+                    class="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 transition-colors"
+                >
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+
+            <!-- Контент, который загружает HTMX -->
+            <div id="htmxModalContent" class="p-6 max-h-[75vh] overflow-auto">
+                <!-- Сюда подгружается содержимое форм (edit / sale) -->
+            </div>
+        </div>
+    </div>
+    <!-- ==================== КОНЕЦ МОДАЛЬНОГО ОКНА ==================== -->
 
     {% block extra_scripts %}{% endblock %}
 </body>
