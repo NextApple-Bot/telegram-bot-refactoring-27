@@ -63,7 +63,7 @@ async def edit_item_form(request: Request, item_id: int):
             "request": request,
             "item": item,
             "categories": categories,
-            "selected_category_id": item.category_id,   # ← Добавлено для компонента выпадающего меню
+            "selected_category_id": item.category_id,   # ← Добавлено для компонента категорий
         },
     )
 
