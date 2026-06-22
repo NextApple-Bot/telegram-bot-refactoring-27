@@ -4,7 +4,7 @@ import re
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from aiogram import Bot
@@ -23,8 +23,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ====================== ВАЛИДАЦИЯ ======================
-
 def validate_phone(phone: str) -> bool:
     if not phone:
         return True
@@ -32,25 +30,19 @@ def validate_phone(phone: str) -> bool:
 
 
 def validate_telegram_username(username: str | None) -> bool:
-    """Валидация Telegram username (5-32 символа, буквы, цифры, подчёркивание)."""
     if not username:
         return True
-
     username = username.strip()
     if username.startswith("@"):
         username = username[1:]
-
     return bool(re.match(r'^[a-zA-Z0-9_]{5,32}$', username))
 
 
 def validate_comment(comment: str | None) -> bool:
-    """Валидация комментария (максимум 200 символов)."""
     if not comment:
         return True
     return len(comment.strip()) <= 200
 
-
-# ====================== РОУТЫ ======================
 
 @router.get("/edit/{item_id}")
 async def edit_item_form(request: Request, item_id: int):
@@ -121,10 +113,10 @@ async def edit_item_submit(
         raise HTTPException(status_code=400, detail="Неверный формат телефона продажи")
 
     if booking_telegram_username and not validate_telegram_username(booking_telegram_username):
-        raise HTTPException(status_code=400, detail="Неверный формат Telegram username (5-32 символа, буквы/цифры/_)")
+        raise HTTPException(status_code=400, detail="Неверный формат Telegram username")
 
     if booking_comment and not validate_comment(booking_comment):
-        raise HTTPException(status_code=400, detail="Комментарий слишком длинный (максимум 200 символов)")
+        raise HTTPException(status_code=400, detail="Комментарий слишком длинкий")
 
     if is_sold and is_booked:
         raise HTTPException(status_code=400, detail="Нельзя одновременно забронировать и продать товар")
@@ -136,6 +128,7 @@ async def edit_item_submit(
                 old = await session.get(Item, item_id, with_for_update=True)
                 if not old:
                     raise HTTPException(status_code=404, detail="Товар не найден")
+
                 if getattr(old, "is_sold", False):
                     raise HTTPException(status_code=400, detail="Товар уже продан")
 
@@ -181,15 +174,12 @@ async def edit_item_submit(
                     )
 
                     if "error" in result:
-                        return RedirectResponse(
-                            url=f"/admin/assortment/edit/{item_id}?error={result['error']}",
-                            status_code=303
-                        )
+                        raise HTTPException(status_code=400, detail=result["error"])
 
                     await AssortmentService.invalidate_cache()
                     return RedirectResponse(url="/admin/assortment", status_code=303)
 
-                # === ОБЩАЯ ЛОГИКА ===
+                # === ОБЩАЯ ЛОГИКА РЕДАКТИРОВАНИЯ ===
                 booking_fields = [
                     "booking_price", "booking_bonus", "booking_prepayment",
                     "booking_platform", "booking_full_name", "booking_phone",
@@ -211,7 +201,6 @@ async def edit_item_submit(
                 old.is_booked = is_booked
                 old.is_sold = False
 
-                # === БРОНИРОВАНИЕ ===
                 if is_booked:
                     if not booking_price or booking_price <= 0:
                         raise HTTPException(status_code=400, detail="Укажите стоимость брони")
@@ -233,43 +222,50 @@ async def edit_item_submit(
                     old.booking_phone = booking_phone
                     old.booking_payment_type = booking_payment_type
                     old.booking_birth_date = booking_birth_date
-                    old.booking_telegram_username = booking_telegram_username.strip() if booking_telegram_username else None
-                    old.booking_comment = booking_comment.strip() if booking_comment else None
+                    old.booking_telegram_username = booking_telegram_username
+                    old.booking_comment = booking_comment
 
                     if booking_prepayment and booking_prepayment > 0 and booking_payment_type:
                         payment = DailyPayment(
-                            type="preorder",
+                            type='preorder',
                             payment_type=booking_payment_type,
-                            amount=booking_prepayment,
+                            amount=booking_prepayment
                         )
                         session.add(payment)
 
-                    # === Отправка уведомления о брони ===
-                    bot = Bot(token=config.BOT_TOKEN)
                     asyncio.create_task(send_booking_notification(
-                        bot=bot,
+                        bot=Bot(token=config.BOT_TOKEN),
                         item_text=text,
-                        serial=serial or "",
+                        serial=serial.strip().upper() if serial else "",
                         price=booking_price,
+                        bonus=booking_bonus,
                         prepayment=booking_prepayment,
                         platform=booking_platform,
                         full_name=booking_full_name,
                         phone=booking_phone,
                         payment_type=booking_payment_type,
                         birth_date=booking_birth_date,
-                        bonus=booking_bonus,
-                        telegram_username=booking_telegram_username,
-                        comment=booking_comment,
+                        is_cancel=False,
                     ))
 
-            await AssortmentService.invalidate_cache()
-            return RedirectResponse(url="/admin/assortment", status_code=303)
+                else:
+                    # Снятие брони
+                    if old.is_booked:
+                        asyncio.create_task(send_booking_notification(
+                            bot=Bot(token=config.BOT_TOKEN),
+                            item_text=old_text,
+                            serial=old_serial,
+                            is_cancel=True,
+                        ))
 
         except HTTPException:
             raise
         except SQLAlchemyError as e:
             logger.exception(f"Ошибка БД при редактировании товара {item_id}")
-            raise HTTPException(status_code=500, detail="Ошибка базы данных") from e
+            raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера") from e
+
+    await AssortmentService.invalidate_cache()
+    return RedirectResponse(url="/admin/assortment", status_code=303)
 
 
 @router.post("/delete/{item_id}")
@@ -283,10 +279,96 @@ async def delete_item(request: Request, item_id: int):
                 text=item.text,
                 serial=item.serial,
                 category_id=item.category_id,
-                reason="admin_manual",
+                reason='admin_manual'
             )
             session.add(deleted)
             await session.delete(item)
+
+    await AssortmentService.invalidate_cache()
+    referer = request.headers.get("referer")
+    if referer:
+        return RedirectResponse(url=referer, status_code=303)
+    return RedirectResponse(url="/admin/assortment", status_code=303)
+
+
+@router.post("/add")
+async def add_item(
+    request: Request,
+    text: str = Form(...),
+    serial: str | None = Form(None),
+    category_id: int = Form(...),
+    is_booked: bool = Form(False),
+    booking_price: float | None = Form(None),
+    booking_bonus: float | None = Form(None),
+    booking_prepayment: float | None = Form(None),
+    booking_platform: str | None = Form(None),
+    booking_full_name: str | None = Form(None),
+    booking_phone: str | None = Form(None),
+    booking_payment_type: str | None = Form(None),
+):
+    if booking_phone and not validate_phone(booking_phone):
+        raise HTTPException(status_code=400, detail="Неверный формат телефона брони")
+
+    async_session = get_async_session_factory()
+    async with async_session() as session, session.begin():
+        new_item = Item(
+            text=text,
+            serial=serial.strip().upper() if serial else None,
+            category_id=category_id,
+            is_booked=is_booked,
+            booking_price=booking_price,
+            booking_bonus=booking_bonus,
+            booking_prepayment=booking_prepayment,
+            booking_platform=booking_platform,
+            booking_full_name=booking_full_name,
+            booking_phone=booking_phone,
+            booking_payment_type=booking_payment_type
+        )
+        session.add(new_item)
+
+        if is_booked and booking_prepayment and booking_prepayment > 0 and booking_payment_type:
+            payment = DailyPayment(
+                type='preorder',
+                payment_type=booking_payment_type,
+                amount=booking_prepayment
+            )
+            session.add(payment)
+
+            asyncio.create_task(send_booking_notification(
+                bot=Bot(token=config.BOT_TOKEN),
+                item_text=text,
+                serial=serial.strip().upper() if serial else "",
+                price=booking_price,
+                bonus=booking_bonus,
+                prepayment=booking_prepayment,
+                platform=booking_platform,
+                full_name=booking_full_name,
+                phone=booking_phone,
+                payment_type=booking_payment_type,
+                is_cancel=False,
+            ))
+
+    await AssortmentService.invalidate_cache()
+    return RedirectResponse(url="/admin/assortment", status_code=303)
+
+
+@router.post("/add_category")
+async def add_category(request: Request, name: str = Form(...)):
+    name = name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Название категории не может быть пустым")
+
+    async_session = get_async_session_factory()
+    async with async_session() as session, session.begin():
+        existing = await session.execute(
+            select(Category.id).where(func.lower(Category.name) == func.lower(name))
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Категория с таким названием уже существует")
+
+        max_order = await session.execute(select(func.coalesce(func.max(Category.sort_order), -1)))
+        new_category = Category(name=name, sort_order=max_order.scalar() + 1)
+        session.add(new_category)
 
     await AssortmentService.invalidate_cache()
     return RedirectResponse(url="/admin/assortment", status_code=303)
