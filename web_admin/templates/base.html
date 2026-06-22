@@ -14,7 +14,6 @@
         [x-cloak] { display: none !important; }
         .nav-text { transition: all 0.2s ease; }
         
-        /* Стили модалки */
         .modal {
             animation: modalPop 0.2s ease-out;
         }
@@ -110,7 +109,7 @@
         </div>
     </div>
 
-    <!-- ==================== МОДАЛЬНОЕ ОКНО (ОБЯЗАТЕЛЬНО!) ==================== -->
+    <!-- ==================== МОДАЛЬНОЕ ОКНО (РАБОЧАЯ ВЕРСИЯ) ==================== -->
     <div 
         x-data="{ show: false, modalTitle: '' }"
         x-show="show"
@@ -135,7 +134,7 @@
 
             <!-- Контент, который загружает HTMX -->
             <div id="htmxModalContent" class="p-6 max-h-[75vh] overflow-auto">
-                <!-- Сюда подгружается содержимое форм (edit / sale) -->
+                <!-- Сюда подгружаются формы редактирования и продажи -->
             </div>
         </div>
     </div>
