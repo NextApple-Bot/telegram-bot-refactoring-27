@@ -17,22 +17,19 @@ from web_admin.routes import (
 
 from web_admin.routes.assortment import manage as assortment_manage
 from web_admin.routes.assortment import views as assortment_views
-from web_admin.routes.assortment import sales as assortment_sales   # ← Подключено
 
 app = FastAPI(title="Telegram Bot Admin Panel")
-
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
-# Подключение роутеров
+# === Подключение роутеров ===
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(clients.router, prefix="/clients", tags=["clients"])
 app.include_router(purchases.router, prefix="/purchases", tags=["purchases"])
 
-# Ассортимент
+# Ассортимент (основные роуты)
 app.include_router(assortment_views.router, prefix="/assortment", tags=["assortment"])
 app.include_router(assortment_manage.router, prefix="/assortment", tags=["assortment_manage"])
-app.include_router(assortment_sales.router, prefix="/assortment", tags=["assortment_sales"])   # ← Подключено
 
 app.include_router(sold.router, prefix="/sold", tags=["sold"])
 app.include_router(stats.router, prefix="/stats", tags=["stats"])
