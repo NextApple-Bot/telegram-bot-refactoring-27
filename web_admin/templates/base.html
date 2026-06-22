@@ -4,220 +4,185 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Admin Panel{% endblock %}</title>
-
-    <!-- Bootstrap 5 -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-
-    <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
-
-    <!-- Alpine.js -->
-    <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
-
-    <!-- Основные стили -->
-    <link rel="stylesheet" href="/static/css/main.css">
-
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- HTMX + Alpine.js -->
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js" defer></script>
+    
+    <style>
+        [x-cloak] { display: none !important; }
+        
+        .sidebar {
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .nav-link {
+            transition: all 0.2s ease;
+        }
+        
+        .nav-link:hover {
+            background-color: #f1e7ff;
+            color: #4f46e5;
+        }
+        
+        .nav-link.active {
+            background-color: #ede9fe;
+            color: #4f46e5;
+            font-weight: 600;
+        }
+    </style>
+    
     {% block extra_head %}{% endblock %}
 </head>
-<body>
-
-    <!-- Кнопка мобильного меню -->
-    <button class="menu-toggle d-lg-none" onclick="toggleSidebar()">
-        <i class="bi bi-list"></i>
-    </button>
-
-    <!-- Боковая панель -->
-    <div class="sidebar">
-        <div class="logo">
-            📊 Bot Admin
-        </div>
-
-        <nav class="nav flex-column">
-            <a href="/admin/dashboard" class="nav-link {% if request.url.path.startswith('/admin/dashboard') %}active{% endif %}">
-                <i class="bi bi-speedometer2"></i>
-                <span>Дашборд</span>
-            </a>
-            <a href="/admin/assortment" class="nav-link {% if request.url.path.startswith('/admin/assortment') %}active{% endif %}">
-                <i class="bi bi-box-seam"></i>
-                <span>Ассортимент</span>
-            </a>
-            <a href="/admin/clients" class="nav-link {% if request.url.path.startswith('/admin/clients') %}active{% endif %}">
-                <i class="bi bi-people"></i>
-                <span>Клиенты</span>
-            </a>
-            <a href="/admin/purchases" class="nav-link {% if request.url.path.startswith('/admin/purchases') %}active{% endif %}">
-                <i class="bi bi-cart"></i>
-                <span>Покупки</span>
-            </a>
-            <a href="/admin/sold" class="nav-link {% if request.url.path.startswith('/admin/sold') %}active{% endif %}">
-                <i class="bi bi-check2-circle"></i>
-                <span>Проданные товары</span>
-            </a>
-            <a href="/admin/stats" class="nav-link {% if request.url.path.startswith('/admin/stats') %}active{% endif %}">
-                <i class="bi bi-graph-up"></i>
-                <span>Статистика</span>
-            </a>
-        </nav>
-
-        <div class="mt-auto pt-3 px-2">
-            <a href="/admin/auth/logout" class="nav-link text-danger">
-                <i class="bi bi-box-arrow-right"></i>
-                <span>Выйти</span>
-            </a>
-        </div>
-    </div>
-
-    <!-- Основной контент -->
-    <div class="main-content">
-        {% block content %}{% endblock %}
-    </div>
-
-    <!-- Универсальная модалка -->
-    <div x-data="{ show: false, modalTitle: 'Редактирование', loading: false }" 
-         x-show="show" 
-         class="modal fade" 
-         :class="{ 'show d-block': show }"
-         tabindex="-1"
-         id="htmxModal"
-         @hidden.bs.modal="show = false; loading = false">
-
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" x-text="modalTitle"></h5>
-                    <button type="button" class="btn-close" @click="show = false"></button>
-                </div>
-                <div class="modal-body position-relative" id="htmxModalContent">
-                    <!-- Спиннер загрузки -->
-                    <div x-show="loading" 
-                         class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-white bg-opacity-75"
-                         style="z-index: 10; border-radius: 0.5rem;">
-                        <div class="text-center">
-                            <div class="spinner-border text-primary mb-2" role="status"></div>
-                            <div class="small text-muted">Загрузка...</div>
-                        </div>
-                    </div>
-                </div>
+<body class="bg-slate-50 text-slate-900">
+    
+    <div x-data="{ 
+        sidebarOpen: false, 
+        collapsed: localStorage.getItem('sidebarCollapsed') === 'true' 
+    }" 
+    @sidebar-toggle.window="collapsed = !collapsed; localStorage.setItem('sidebarCollapsed', collapsed)">
+        
+        <!-- ========== MOBILE TOP BAR ========== -->
+        <div class="lg:hidden bg-white border-b px-4 py-3 flex items-center justify-between sticky top-0 z-40">
+            <div class="flex items-center gap-x-3">
+                <button @click="sidebarOpen = true" 
+                        class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+                <span class="font-semibold text-2xl tracking-tight">NextStore</span>
             </div>
         </div>
-    </div>
 
-    <!-- Toast контейнер (уведомления) -->
-    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1100;">
-        <div id="toast-container"></div>
-    </div>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-    <!-- Основные скрипты -->
-    <script>
-        // Переключение бокового меню на мобильных
-        function toggleSidebar() {
-            const sidebar = document.querySelector('.sidebar');
-            sidebar.classList.toggle('mobile-open');
-        }
-
-        // Закрытие мобильного меню при клике вне его
-        document.addEventListener('click', function(e) {
-            const sidebar = document.querySelector('.sidebar');
-            const toggle = document.querySelector('.menu-toggle');
-
-            if (window.innerWidth <= 768 && sidebar && toggle) {
-                if (!sidebar.contains(e.target) && !toggle.contains(e.target)) {
-                    sidebar.classList.remove('mobile-open');
-                }
-            }
-        });
-
-        // Функция показа Toast-уведомления
-        function showToast(message, type = 'success') {
-            const toastContainer = document.getElementById('toast-container');
+        <div class="flex">
             
-            const toastId = 'toast-' + Date.now();
-            const bgClass = type === 'success' ? 'bg-success' : 
-                           type === 'error' ? 'bg-danger' : 'bg-primary';
-            
-            const toastHTML = `
-                <div id="${toastId}" class="toast align-items-center text-white ${bgClass} border-0" role="alert">
-                    <div class="d-flex">
-                        <div class="toast-body">
-                            ${message}
+            <!-- ========== DESKTOP SIDEBAR ========== -->
+            <div class="hidden lg:flex flex-col bg-white border-r border-slate-200 h-screen sticky top-0"
+                 :class="collapsed ? 'w-20' : 'w-72'">
+                
+                <!-- Logo + Collapse Button -->
+                <div class="flex items-center justify-between px-5 py-6 border-b">
+                    <div class="flex items-center gap-x-3" :class="{ 'justify-center w-full': collapsed }">
+                        <div class="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+                            <span class="text-white text-2xl font-bold">N</span>
                         </div>
-                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                        <span x-show="!collapsed" 
+                              class="font-semibold text-3xl tracking-tighter">NextStore</span>
                     </div>
+                    
+                    <button @click="$dispatch('sidebar-toggle')"
+                            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                            x-show="!collapsed">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    
+                    <!-- Expand button when collapsed -->
+                    <button @click="$dispatch('sidebar-toggle')"
+                            x-show="collapsed"
+                            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
                 </div>
-            `;
-            
-            toastContainer.insertAdjacentHTML('beforeend', toastHTML);
-            
-            const toastElement = document.getElementById(toastId);
-            const toast = new bootstrap.Toast(toastElement, { delay: 4000 });
-            toast.show();
-            
-            // Удаляем toast из DOM после скрытия
-            toastElement.addEventListener('hidden.bs.toast', () => {
-                toastElement.remove();
-            });
-        }
 
-        // Показываем спиннер при загрузке контента в модалку
-        document.body.addEventListener('htmx:beforeRequest', function(evt) {
-            const modalContent = document.getElementById('htmxModalContent');
-            if (modalContent && evt.detail.target === modalContent) {
-                const alpineData = Alpine.$data(document.getElementById('htmxModal'));
-                if (alpineData) alpineData.loading = true;
-            }
-        });
+                <!-- Navigation -->
+                <nav class="flex-1 px-4 py-8 space-y-1.5 text-[15px]">
+                    {% set path = request.url.path %}
+                    
+                    <a href="/admin/dashboard" class="nav-link flex items-center gap-x-3.5 px-4 py-3 rounded-2xl {% if path.startswith('/admin/dashboard') %}active{% endif %}">
+                        <i class="fas fa-chart-line w-5 text-lg"></i>
+                        <span x-show="!collapsed" class="font-medium">Дашборд</span>
+                    </a>
+                    
+                    <a href="/admin/assortment" class="nav-link flex items-center gap-x-3.5 px-4 py-3 rounded-2xl {% if path.startswith('/admin/assortment') %}active{% endif %}">
+                        <i class="fas fa-boxes w-5 text-lg"></i>
+                        <span x-show="!collapsed" class="font-medium">Ассортимент</span>
+                    </a>
+                    
+                    <a href="/admin/clients" class="nav-link flex items-center gap-x-3.5 px-4 py-3 rounded-2xl {% if path.startswith('/admin/clients') %}active{% endif %}">
+                        <i class="fas fa-users w-5 text-lg"></i>
+                        <span x-show="!collapsed" class="font-medium">Клиенты</span>
+                    </a>
+                    
+                    <a href="/admin/purchases" class="nav-link flex items-center gap-x-3.5 px-4 py-3 rounded-2xl {% if path.startswith('/admin/purchases') %}active{% endif %}">
+                        <i class="fas fa-shopping-cart w-5 text-lg"></i>
+                        <span x-show="!collapsed" class="font-medium">Покупки</span>
+                    </a>
+                    
+                    <a href="/admin/sold" class="nav-link flex items-center gap-x-3.5 px-4 py-3 rounded-2xl {% if path.startswith('/admin/sold') %}active{% endif %}">
+                        <i class="fas fa-receipt w-5 text-lg"></i>
+                        <span x-show="!collapsed" class="font-medium">Проданные товары</span>
+                    </a>
+                    
+                    <a href="/admin/stats" class="nav-link flex items-center gap-x-3.5 px-4 py-3 rounded-2xl {% if path.startswith('/admin/stats') %}active{% endif %}">
+                        <i class="fas fa-chart-bar w-5 text-lg"></i>
+                        <span x-show="!collapsed" class="font-medium">Статистика</span>
+                    </a>
+                </nav>
 
-        // Скрываем спиннер и показываем уведомления после HTMX-запросов
-        document.body.addEventListener('htmx:afterRequest', function(evt) {
-            const modalContent = document.getElementById('htmxModalContent');
-            if (modalContent && evt.detail.target === modalContent) {
-                const alpineData = Alpine.$data(document.getElementById('htmxModal'));
-                if (alpineData) alpineData.loading = false;
-            }
+                <!-- Logout -->
+                <div class="p-4 border-t">
+                    <a href="/admin/auth/logout" 
+                       class="flex items-center gap-x-3.5 px-4 py-3 text-red-600 hover:bg-red-50 rounded-2xl transition-colors">
+                        <i class="fas fa-sign-out-alt w-5 text-lg"></i>
+                        <span x-show="!collapsed" class="font-medium">Выйти</span>
+                    </a>
+                </div>
+            </div>
 
-            // Автоматическое закрытие модалки после успешного сохранения
-            if ((evt.detail.xhr.status === 200 || evt.detail.xhr.status === 303) && 
-                evt.detail.pathInfo.requestPath.includes('/edit')) {
+            <!-- ========== MOBILE DRAWER ========== -->
+            <div x-show="sidebarOpen" 
+                 class="lg:hidden fixed inset-0 z-[999] bg-black/40"
+                 @click="sidebarOpen = false"
+                 x-transition>
                 
-                const modal = document.getElementById('htmxModal');
-                if (modal) {
-                    const bootstrapModal = bootstrap.Modal.getInstance(modal);
-                    if (bootstrapModal) bootstrapModal.hide();
-                }
-                
-                // Показываем уведомление об успехе
-                showToast('Изменения успешно сохранены', 'success');
-            }
+                <div @click.stop 
+                     class="w-80 bg-white h-full shadow-2xl"
+                     x-transition:enter="transition ease-out duration-300"
+                     x-transition:enter-start="-translate-x-full"
+                     x-transition:enter-end="translate-x-0">
+                    
+                    <!-- Mobile Header -->
+                    <div class="flex items-center justify-between px-6 py-5 border-b">
+                        <div class="flex items-center gap-x-3">
+                            <div class="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center">
+                                <span class="text-white text-2xl font-bold">N</span>
+                            </div>
+                            <span class="font-semibold text-3xl tracking-tighter">NextStore</span>
+                        </div>
+                        <button @click="sidebarOpen = false" class="p-3 text-slate-400 hover:text-slate-600">
+                            <i class="fas fa-times text-2xl"></i>
+                        </button>
+                    </div>
 
-            // Уведомление при удалении
-            if (evt.detail.xhr.status === 200 && evt.detail.pathInfo.requestPath.includes('/delete')) {
-                showToast('Товар успешно удалён', 'success');
-            }
-        });
+                    <!-- Mobile Navigation -->
+                    <nav class="p-4 space-y-1 text-[15px]">
+                        <!-- Здесь те же ссылки, что и в десктопной версии -->
+                        <a href="/admin/dashboard" class="block px-4 py-3.5 rounded-2xl hover:bg-slate-100">Дашборд</a>
+                        <a href="/admin/assortment" class="block px-4 py-3.5 rounded-2xl hover:bg-slate-100">Ассортимент</a>
+                        <a href="/admin/clients" class="block px-4 py-3.5 rounded-2xl hover:bg-slate-100">Клиенты</a>
+                        <a href="/admin/purchases" class="block px-4 py-3.5 rounded-2xl hover:bg-slate-100">Покупки</a>
+                        <a href="/admin/sold" class="block px-4 py-3.5 rounded-2xl hover:bg-slate-100">Проданные товары</a>
+                        <a href="/admin/stats" class="block px-4 py-3.5 rounded-2xl hover:bg-slate-100">Статистика</a>
+                        
+                        <div class="pt-4 border-t mt-4">
+                            <a href="/admin/auth/logout" class="block px-4 py-3.5 text-red-600 hover:bg-red-50 rounded-2xl">Выйти</a>
+                        </div>
+                    </nav>
+                </div>
+            </div>
 
-        // Обновление таблицы после редактирования/удаления
-        document.body.addEventListener('htmx:afterRequest', function(evt) {
-            const path = evt.detail.pathInfo.requestPath;
+            <!-- ========== MAIN CONTENT ========== -->
+            <div class="flex-1 min-w-0">
+                <div class="max-w-7xl mx-auto px-6 py-8">
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
             
-            if (path && (path.includes('/admin/assortment/edit') || path.includes('/admin/assortment/delete'))) {
-                if (evt.detail.xhr.status === 200 || evt.detail.xhr.status === 303) {
-                    setTimeout(() => {
-                        const container = document.getElementById('assortment-table-container');
-                        if (container) {
-                            htmx.ajax('GET', window.location.pathname + window.location.search, {
-                                target: '#assortment-table-container',
-                                swap: 'outerHTML'
-                            });
-                        }
-                    }, 350);
-                }
-            }
-        });
-    </script>
+        </div>
+    </div>
 
     {% block extra_scripts %}{% endblock %}
 </body>
