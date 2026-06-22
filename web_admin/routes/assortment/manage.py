@@ -4,6 +4,7 @@ import re
 
 from fastapi import APIRouter, Form, HTTPException, Request, Depends
 from fastapi.responses import RedirectResponse
+from starlette.responses import Response
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -247,6 +248,12 @@ async def delete_item(request: Request, item_id: int):
             session.add(deleted)
             await session.delete(item)
     await AssortmentService.invalidate_cache()
+
+    # УЛУЧШЕНИЕ ДЛЯ HTMX:
+    # Если запрос от HTMX — говорим ему сделать чистый refresh целевого контейнера
+    if request.headers.get("hx-request"):
+        return Response(status_code=200, headers={"HX-Refresh": "true"})
+
     referer = request.headers.get("referer")
     if referer:
         return RedirectResponse(url=referer, status_code=303)
