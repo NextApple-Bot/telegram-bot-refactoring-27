@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Редактирование товара #{{ item.id }}{% endblock %}
+{% block title %}Добавление товара{% endblock %}
 
 {% block content %}
 <div class="max-w-3xl mx-auto">
@@ -8,8 +8,8 @@
     <!-- Заголовок -->
     <div class="mb-8 flex items-center justify-between">
         <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Редактирование товара</h1>
-            <p class="text-slate-500 mt-1">ID: #{{ item.id }}</p>
+            <h1 class="text-3xl font-semibold tracking-tight">Добавление нового товара</h1>
+            <p class="text-slate-500 mt-1">Заполните информацию о товаре</p>
         </div>
 
         <a href="/admin/assortment"
@@ -19,34 +19,35 @@
         </a>
     </div>
 
-    <form action="/admin/assortment/edit/{{ item.id }}" method="post" class="space-y-8">
+    <form action="/admin/assortment/add" method="post" class="space-y-8">
 
         <div class="bg-white border border-slate-200 rounded-3xl p-8 space-y-6">
 
             <!-- Название товара -->
             <div>
-                <label class="block text-sm font-medium text-slate-700 mb-2">Название товара</label>
-                <input type="text" name="text" value="{{ item.text }}" required
-                       class="w-full border border-slate-300 rounded-2xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <label class="block text-sm font-medium text-slate-700 mb-2">Название товара <span class="text-red-500">*</span></label>
+                <input type="text" name="text" required
+                       class="w-full border border-slate-300 rounded-2xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       placeholder="Например: iPhone 17 Pro Max 256GB">
             </div>
 
             <!-- Серийный номер -->
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-2">Серийный номер</label>
-                <input type="text" name="serial" value="{{ item.serial or '' }}"
-                       class="w-full border border-slate-300 rounded-2xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <input type="text" name="serial"
+                       class="w-full border border-slate-300 rounded-2xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       placeholder="Введите серийный номер (если есть)">
             </div>
 
             <!-- Категория (модульный компонент) -->
             {% include 'partials/form/category_field.html' %}
 
-            <!-- Статус -->
+            <!-- Статус брони -->
             <div class="flex items-center gap-x-3 pt-2">
                 <input type="checkbox" name="is_booked" value="true" id="is_booked"
-                       {% if item.is_booked %}checked{% endif %}
                        class="w-5 h-5 accent-indigo-600 rounded">
                 <label for="is_booked" class="text-sm font-medium cursor-pointer select-none">
-                    Забронирован
+                    Сразу забронировать
                 </label>
             </div>
 
@@ -56,8 +57,8 @@
         <div class="flex items-center justify-between pt-4">
             <button type="submit"
                     class="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium rounded-2xl transition-colors flex items-center gap-x-2">
-                <i class="fas fa-save mr-2"></i>
-                Сохранить изменения
+                <i class="fas fa-plus mr-2"></i>
+                Добавить товар
             </button>
 
             <a href="/admin/assortment"
