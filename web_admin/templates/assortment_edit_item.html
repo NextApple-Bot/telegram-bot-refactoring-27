@@ -1,117 +1,72 @@
-from fastapi import APIRouter, Request, Depends, Form, HTTPException
-from fastapi.responses import HTMLResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
+{% extends "base.html" %}
 
-from web_admin.dependencies import get_async_session, templates
-from models.item import Item
+{% block title %}Редактирование товара #{{ item.id }}{% endblock %}
 
-router = APIRouter(prefix="/admin/assortment", tags=["sales"])
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    
+    <!-- Заголовок -->
+    <div class="mb-8 flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">Редактирование товара</h1>
+            <p class="text-slate-500 mt-1">ID: #{{ item.id }}</p>
+        </div>
+        
+        <a href="/admin/assortment" 
+           class="px-4 py-2 text-sm text-slate-600 hover:text-slate-900 flex items-center gap-x-2">
+            <i class="fas fa-arrow-left"></i>
+            <span>Назад к списку</span>
+        </a>
+    </div>
 
+    <form action="/admin/assortment/edit/{{ item.id }}" method="post" class="space-y-8">
+        
+        <div class="bg-white border border-slate-200 rounded-3xl p-8 space-y-6">
+            
+            <!-- Название товара -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">Название товара</label>
+                <input type="text" name="text" value="{{ item.text }}" required
+                       class="w-full border border-slate-300 rounded-2xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
 
-@router.get("/sale/{item_id}", response_class=HTMLResponse)
-async def get_sale_form(
-    item_id: int,
-    request: Request,
-    session: AsyncSession = Depends(get_async_session)
-):
-    """Открытие модалки продажи"""
-    item = await session.get(Item, item_id)
+            <!-- Серийный номер -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">Серийный номер</label>
+                <input type="text" name="serial" value="{{ item.serial or '' }}"
+                       class="w-full border border-slate-300 rounded-2xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
 
-    if not item or item.is_sold:
-        raise HTTPException(status_code=404, detail="Товар не найден или уже продан")
+            <!-- Категория (новый компонент) -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">Категория</label>
+                {% include 'partials/category_dropdown.html' %}
+            </div>
 
-    return templates.TemplateResponse(
-        "assortment_sale_item.html",
-        {
-            "request": request,
-            "item": item,
-            "error": None,
-            "form_data": None,
-        }
-    )
+            <!-- Статус брони -->
+            <div class="flex items-center gap-x-3 pt-2">
+                <input type="checkbox" name="is_booked" value="true" id="is_booked"
+                       {% if item.is_booked %}checked{% endif %}
+                       class="w-5 h-5 accent-indigo-600 rounded">
+                <label for="is_booked" class="text-sm font-medium cursor-pointer">Забронирован</label>
+            </div>
 
+        </div>
 
-@router.post("/sale/{item_id}", response_class=HTMLResponse)
-async def process_sale(
-    item_id: int,
-    request: Request,
-    session: AsyncSession = Depends(get_async_session),
-    sale_price: float = Form(...),
-    sale_payment_type: str = Form(...),
-    sale_payment_amount: float = Form(0),
-    sale_change: float = Form(0),
-    sale_change_type: str = Form(""),
-    sale_platform: str = Form(""),
-    sale_full_name: str = Form(""),
-    sale_phone: str = Form(""),
-    sale_birth_date: str = Form(""),
-    sale_comment: str = Form(""),
-):
-    """Обработка продажи товара"""
-    item = await session.get(Item, item_id)
+        <!-- Кнопки действий -->
+        <div class="flex items-center justify-between pt-4">
+            <button type="submit"
+                    class="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium rounded-2xl transition-colors flex items-center gap-x-2">
+                <i class="fas fa-save"></i>
+                <span>Сохранить изменения</span>
+            </button>
 
-    if not item or item.is_sold:
-        return templates.TemplateResponse(
-            "assortment_sale_item.html",
-            {
-                "request": request,
-                "item": item,
-                "error": "Товар не найден или уже продан",
-                "form_data": {
-                    "sale_price": sale_price,
-                    "sale_payment_type": sale_payment_type,
-                    "sale_payment_amount": sale_payment_amount,
-                    "sale_change": sale_change,
-                    "sale_change_type": sale_change_type,
-                    "sale_platform": sale_platform,
-                    "sale_full_name": sale_full_name,
-                    "sale_phone": sale_phone,
-                    "sale_birth_date": sale_birth_date,
-                    "sale_comment": sale_comment,
-                },
-            },
-            status_code=400,
-        )
+            <a href="/admin/assortment" 
+               class="px-6 py-3.5 text-slate-600 hover:text-slate-900 font-medium rounded-2xl hover:bg-slate-100 transition-colors">
+                Отмена
+            </a>
+        </div>
 
-    try:
-        # === Записываем данные продажи в Item ===
-        item.is_sold = True
-        item.sale_price = sale_price
-        item.sale_payment_type = sale_payment_type
-        item.sale_payment_amount = sale_payment_amount or sale_price
-        item.sale_change = sale_change
-        item.sale_change_type = sale_change_type
-        item.sale_platform = sale_platform
-        item.sale_full_name = sale_full_name
-        item.sale_phone = sale_phone
-        item.sale_birth_date = sale_birth_date
-
-        await session.commit()
-
-        # Успешная продажа — модалка закроется автоматически
-        return HTMLResponse(status_code=200)
-
-    except Exception as e:
-        await session.rollback()
-        return templates.TemplateResponse(
-            "assortment_sale_item.html",
-            {
-                "request": request,
-                "item": item,
-                "error": f"Ошибка при продаже: {str(e)}",
-                "form_data": {
-                    "sale_price": sale_price,
-                    "sale_payment_type": sale_payment_type,
-                    "sale_payment_amount": sale_payment_amount,
-                    "sale_change": sale_change,
-                    "sale_change_type": sale_change_type,
-                    "sale_platform": sale_platform,
-                    "sale_full_name": sale_full_name,
-                    "sale_phone": sale_phone,
-                    "sale_birth_date": sale_birth_date,
-                    "sale_comment": sale_comment,
-                },
-            },
-            status_code=400,
-        )
+    </form>
+</div>
+{% endblock %}
