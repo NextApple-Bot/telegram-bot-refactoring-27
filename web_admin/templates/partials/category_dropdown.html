@@ -1,109 +1,98 @@
-<!-- Компонент: Выпадающее меню категорий -->
-<div x-data="categoryDropdown()" class="relative w-full">
-    <!-- Скрытое поле для формы -->
-    <input type="hidden" name="category_id" :value="selectedCategory?.id || ''">
+{# 
+    Компонент: Выпадающее меню выбора категории
+    Использование:
+    {% include 'partials/category_dropdown.html' with context %}
+#}
 
-    <!-- Кнопка выбора -->
+<div x-data="categorySelect()" 
+     x-init="init({{ categories | tojson }}, {{ selected_category_id | default('null') }})"
+     class="relative">
+
+    <!-- Скрытое поле для отправки формы -->
+    <input type="hidden" name="category_id" :value="selected ? selected.id : ''">
+
+    <!-- Кнопка / текущее значение -->
     <button type="button"
             @click="open = !open"
-            class="w-full flex items-center justify-between px-4 py-3 bg-white border border-slate-300 rounded-2xl text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+            class="w-full flex items-center justify-between px-4 py-3 border border-slate-300 bg-white rounded-2xl text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
             :class="{ 'ring-2 ring-indigo-500 border-indigo-500': open }">
         
-        <div class="flex items-center gap-x-3">
-            <span x-show="selectedCategory" class="font-medium text-slate-900">
-                {{ selectedCategory?.name || 'Выберите категорию' }}
-            </span>
-            <span x-show="!selectedCategory" class="text-slate-400">
-                Выберите категорию
-            </span>
-        </div>
+        <span x-text="selected ? selected.name : 'Выберите категорию'"
+              class="font-medium"
+              :class="{ 'text-slate-400': !selected }">
+        </span>
         
         <i class="fas fa-chevron-down text-slate-400 transition-transform" 
            :class="{ 'rotate-180': open }"></i>
     </button>
 
     <!-- Выпадающий список -->
-    <div x-show="open" 
+    <div x-show="open"
          @click.away="open = false"
-         x-transition:enter="transition ease-out duration-200"
-         x-transition:enter-start="opacity-0 scale-95"
-         x-transition:enter-end="opacity-100 scale-100"
+         x-transition
          class="absolute z-50 mt-2 w-full bg-white border border-slate-200 rounded-2xl shadow-xl py-2 max-h-80 overflow-auto">
         
         <!-- Поиск -->
-        <div class="px-4 pb-2">
-            <div class="relative">
-                <input type="text" 
-                       x-model="search"
-                       @input="filterCategories"
-                       placeholder="Поиск категории..."
-                       class="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                <i class="fas fa-search absolute left-4 top-3.5 text-slate-400"></i>
-            </div>
+        <div class="px-4 pb-2 sticky top-0 bg-white">
+            <input type="text"
+                   x-model="search"
+                   @input="filter()"
+                   placeholder="Поиск категории..."
+                   class="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500">
         </div>
 
         <!-- Список категорий -->
-        <div class="max-h-60 overflow-y-auto">
-            <template x-for="category in filteredCategories" :key="category.id">
+        <div class="max-h-64 overflow-y-auto">
+            <template x-for="cat in filtered" :key="cat.id">
                 <button type="button"
-                        @click="selectCategory(category)"
-                        class="w-full flex items-center px-4 py-3 text-left hover:bg-slate-50 transition-colors"
-                        :class="{ 'bg-indigo-50 text-indigo-700 font-medium': selectedCategory?.id === category.id }">
+                        @click="select(cat)"
+                        class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+                        :class="{ 'bg-indigo-50 text-indigo-700 font-semibold': selected && selected.id === cat.id }">
                     
-                    <span x-text="category.name"></span>
+                    <span x-text="cat.name"></span>
                     
-                    <i x-show="selectedCategory?.id === category.id" 
-                       class="fas fa-check ml-auto text-indigo-600"></i>
+                    <i x-show="selected && selected.id === cat.id" 
+                       class="fas fa-check text-indigo-600"></i>
                 </button>
             </template>
 
-            <div x-show="filteredCategories.length === 0" class="px-4 py-4 text-center text-sm text-slate-500">
-                Категории не найдены
+            <div x-show="filtered.length === 0" class="px-4 py-4 text-center text-sm text-slate-500">
+                Ничего не найдено
             </div>
         </div>
     </div>
 </div>
 
 <script>
-function categoryDropdown() {
+function categorySelect() {
     return {
         open: false,
         search: '',
-        selectedCategory: null,
-        categories: [],           // сюда передаём список категорий
-        filteredCategories: [],
+        selected: null,
+        all: [],
+        filtered: [],
 
-        init() {
-            // Пример данных (в реальном коде передавай через атрибуты или props)
-            this.categories = [
-                { id: 1, name: 'iPhone' },
-                { id: 2, name: 'AirPods' },
-                { id: 3, name: 'MacBook' },
-                { id: 4, name: 'iPad' },
-                { id: 5, name: 'Apple Watch' },
-            ];
-            
-            this.filteredCategories = this.categories;
+        init(categories, selectedId) {
+            this.all = categories || [];
+            this.filtered = [...this.all];
 
-            // Если есть выбранная категория (при редактировании)
-            const selectedId = this.$el.closest('form')?.querySelector('input[name="category_id"]')?.value;
             if (selectedId) {
-                this.selectedCategory = this.categories.find(c => c.id == selectedId);
+                this.selected = this.all.find(c => c.id == selectedId);
             }
         },
 
-        filterCategories() {
-            const term = this.search.toLowerCase();
-            this.filteredCategories = this.categories.filter(cat =>
-                cat.name.toLowerCase().includes(term)
-            );
+        filter() {
+            const term = this.search.toLowerCase().trim();
+            this.filtered = term 
+                ? this.all.filter(c => c.name.toLowerCase().includes(term))
+                : [...this.all];
         },
 
-        selectCategory(category) {
-            this.selectedCategory = category;
+        select(category) {
+            this.selected = category;
             this.open = false;
             this.search = '';
-            this.filteredCategories = this.categories;
+            this.filtered = [...this.all];
         }
     }
 }
