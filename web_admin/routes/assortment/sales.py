@@ -5,6 +5,8 @@ from datetime import date
 from typing import Any, Optional
 
 from aiogram import Bot
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -14,10 +16,12 @@ from bot.models import DailyPayment, DeletedItem, Item, Sale
 from bot.repositories.client import ClientRepository
 from bot.services.assortment import AssortmentService
 from bot.services.cache import cache
-
-from .notifications import send_sale_notification
+from web_admin.routes.assortment.notifications import send_sale_notification
+from web_admin.templates import templates
 
 logger = logging.getLogger(__name__)
+
+router = APIRouter()
 
 
 def generate_sale_message_id() -> int:
@@ -46,28 +50,21 @@ async def handle_sale_from_form(
     accessories: Optional[list[dict[str, Any]]] = None,
     conn=None,
 ) -> dict[str, Any]:
-
     accessories = accessories or []
 
     # ====================== ВАЛИДАЦИЯ ======================
     errors = []
-
     if not sale_price or sale_price <= 0:
         errors.append("Стоимость продажи должна быть больше 0")
-
     if sale_bonus is not None and sale_bonus < 0:
         errors.append("Бонус не может быть отрицательным")
-
     if sale_bonus and sale_bonus > sale_price:
         errors.append("Бонус не может быть больше стоимости товара")
-
     if sale_change is not None and sale_change < 0:
         errors.append("Сумма сдачи не может быть отрицательной")
-
     for i, acc in enumerate(accessories):
         if float(acc.get("price", 0) or 0) < 0:
             errors.append(f"Цена аксессуара №{i+1} не может быть отрицательной")
-
     if errors:
         return {"error": " | ".join(errors)}
     # =====================================================
@@ -102,7 +99,6 @@ async def handle_sale_from_form(
                 item_info = (await session.execute(
                     select(Item).where(func.upper(Item.serial) == normalized)
                 )).scalar_one_or_none()
-
                 if item_info:
                     display_text = item_info.text
                     deleted = DeletedItem(
@@ -231,19 +227,101 @@ async def handle_sale_from_form(
             await session.rollback()
         logger.warning(f"Ошибка валидации: {e}")
         return {"error": str(e)}
-
     except SQLAlchemyError:
         logger.exception("Ошибка БД при продаже из админки")
         if own_session:
             await session.rollback()
         return {"error": "Ошибка базы данных"}
-
     except Exception as e:
         logger.exception("Неожиданная ошибка в handle_sale_from_form")
         if own_session:
             await session.rollback()
         return {"error": str(e)}
-
     finally:
         if own_session:
             await session.close()
+
+
+# ====================== РОУТЕРЫ ======================
+
+@router.get("/sale/{item_id}", response_class=HTMLResponse)
+async def sale_form(request: Request, item_id: int):
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        item = await session.get(Item, item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        if getattr(item, "is_sold", False):
+            raise HTTPException(status_code=400, detail="Товар уже продан")
+
+    return templates.TemplateResponse(
+        "assortment_edit_item.html",
+        {"request": request, "item": item, "sale_mode": True}
+    )
+
+
+@router.post("/sale/{item_id}")
+async def process_sale(
+    request: Request,
+    item_id: int,
+    sale_price: float = Form(...),
+    sale_prepayment: float = Form(0.0),
+    sale_payment_amount: float = Form(0.0),
+    sale_payment_type: str = Form(...),
+    sale_platform: str = Form(""),
+    sale_full_name: str = Form(""),
+    sale_phone: str = Form(""),
+    sale_birth_date: str = Form(""),
+    sale_bonus: float = Form(0.0),
+    sale_change: float = Form(0.0),
+    sale_change_type: str = Form(""),
+    accessory_name: list[str] = Form([]),
+    accessory_serial: list[str] = Form([]),
+    accessory_price: list[float] = Form([]),
+    accessory_payment_type: list[str] = Form([]),
+):
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        item = await session.get(Item, item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+
+        accessories = []
+        for name, serial, price, pay_type in zip(
+            accessory_name, accessory_serial, accessory_price, accessory_payment_type, strict=False
+        ):
+            if name and str(name).strip():
+                accessories.append({
+                    "name": str(name).strip(),
+                    "serial": str(serial).strip().upper() if serial else None,
+                    "price": float(price) if price else 0,
+                    "payment_type": pay_type if pay_type else None,
+                })
+
+        result = await handle_sale_from_form(
+            item_id=item_id,
+            text=item.text,
+            serial=item.serial,
+            category_id=item.category_id,
+            old_text=item.text,
+            old_serial=item.serial or "",
+            old_category_id=item.category_id,
+            sale_price=sale_price,
+            sale_prepayment=sale_prepayment,
+            sale_payment_amount=sale_payment_amount,
+            sale_payment_type=sale_payment_type,
+            sale_platform=sale_platform,
+            sale_full_name=sale_full_name,
+            sale_phone=sale_phone,
+            sale_birth_date=sale_birth_date,
+            sale_bonus=sale_bonus,
+            sale_change=sale_change,
+            sale_change_type=sale_change_type,
+            accessories=accessories,
+            conn=session,
+        )
+
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+
+    return RedirectResponse(url="/admin/assortment", status_code=303)
