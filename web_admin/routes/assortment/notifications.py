@@ -32,7 +32,7 @@ async def send_booking_notification(
     """Уведомление о брони (максимально близко к формату v26)."""
     try:
         if is_cancel:
-            text = f"❌ Отмена брони:\n\n{item_text}"
+            text = f"❌ Отмена Брони:\n\n{item_text}"
         else:
             lines = ["БРОНЬ:", ""]
 
@@ -46,7 +46,7 @@ async def send_booking_notification(
             # Стоимость
             if price:
                 if bonus and bonus > 0:
-                    lines.append(f"Стоимость – {format_number(price)} (скидка бонусами {format_number(bonus)})")
+                    lines.append(f"Стоимость – {format_number(price)} (Скидка бонусы {format_number(bonus)})")
                 else:
                     lines.append(f"Стоимость – {format_number(price)}")
                 lines.append("")
@@ -85,7 +85,6 @@ async def send_booking_notification(
             if phone:
                 lines.append(phone)
 
-            # Telegram
             if telegram_username:
                 if not telegram_username.startswith("@"):
                     telegram_username = f"@{telegram_username}"
@@ -99,7 +98,6 @@ async def send_booking_notification(
                 lines.append(f"Площадка – {platform}.")
                 lines.append("")
 
-            # Комментарий
             if comment:
                 lines.append(comment)
 
@@ -150,7 +148,7 @@ async def send_sale_notification(
         lines = [item_text, ""]
 
         if bonus and bonus > 0:
-            lines.append(f"Стоимость – {format_number(price)} (скидка бонусами {format_number(bonus)})")
+            lines.append(f"Стоимость – {format_number(price)} (Скидка бонусы {format_number(bonus)})")
         else:
             lines.append(f"Стоимость – {format_number(price)}")
         lines.append("")
