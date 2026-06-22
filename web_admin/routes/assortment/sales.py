@@ -24,6 +24,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/sale/{item_id}", response_class=HTMLResponse)
+async def sale_item_form(request: Request, item_id: int):
+    """Форма продажи товара (для hx-get из таблицы ассортимента)"""
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        item = await session.get(Item, item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+
+    return templates.TemplateResponse(
+        "assortment_sale_item.html",
+        {
+            "request": request,
+            "item": item,
+        },
+    )
+
+
 def generate_sale_message_id() -> int:
     return uuid.uuid4().int & 0x7FFFFFFFFFFFFFFF
 
