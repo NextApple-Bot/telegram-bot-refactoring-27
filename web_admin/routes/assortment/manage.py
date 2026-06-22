@@ -234,7 +234,7 @@ async def edit_item_submit(
     return RedirectResponse(url="/admin/assortment", status_code=303)
 
 
-@router.post("/delete/{item_id}")
+@router.delete("/delete/{item_id}")
 async def delete_item(request: Request, item_id: int):
     async_session = get_async_session_factory()
     async with async_session() as session, session.begin():
