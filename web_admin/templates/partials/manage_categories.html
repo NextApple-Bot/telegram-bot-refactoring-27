@@ -1,0 +1,52 @@
+<div class="p-2">
+    <div class="mb-4 text-sm text-slate-500">
+        Перетаскивайте категории, чтобы изменить их порядок отображения.
+    </div>
+
+    <div id="category-list" class="space-y-2">
+        {% for cat in categories %}
+        <div class="category-item flex items-center justify-between bg-white border border-slate-200 px-4 py-3 rounded-2xl cursor-move"
+             data-id="{{ cat.id }}">
+            <div class="flex items-center gap-x-3">
+                <i class="fas fa-grip-vertical text-slate-400"></i>
+                <span class="font-medium">{{ cat.name }}</span>
+            </div>
+            <span class="text-xs text-slate-400">#{{ cat.id }}</span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="mt-6 flex justify-end">
+        <button onclick="saveCategoryOrder()"
+                class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-2xl transition-colors">
+            Сохранить порядок
+        </button>
+    </div>
+</div>
+
+<script>
+    // Инициализация SortableJS
+    new Sortable(document.getElementById('category-list'), {
+        animation: 150,
+        ghostClass: 'bg-indigo-50'
+    });
+
+    async function saveCategoryOrder() {
+        const items = document.querySelectorAll('#category-list .category-item');
+        const order = Array.from(items).map(el => el.dataset.id);
+
+        const response = await fetch('/admin/assortment/categories/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order: order })
+        });
+
+        if (response.ok) {
+            // Закрываем модалку и обновляем страницу
+            document.querySelector('[x-data]').__x.$data.show = false;
+            window.location.reload();
+        } else {
+            alert('Ошибка при сохранении порядка');
+        }
+    }
+</script>
