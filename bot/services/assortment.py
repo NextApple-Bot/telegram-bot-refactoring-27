@@ -1,6 +1,8 @@
 import logging
 from typing import Any
 
+from sqlalchemy import select
+
 from bot.db import get_async_session_factory, get_pool
 from bot.models import Category, Item
 from bot.services.cache import cache
