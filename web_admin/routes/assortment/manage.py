@@ -55,7 +55,7 @@ async def edit_item_form(request: Request, item_id: int):
         categories_result = await session.execute(
             select(Category.id, Category.name).order_by(Category.sort_order, Category.name)
         )
-        categories = [dict(row._mapping) for row in categories_result.all()]
+        categories = [{"id": row.id, "name": row.name} for row in categories_result.all()]
 
     return templates.TemplateResponse(
         "assortment_edit_item.html",
@@ -63,6 +63,7 @@ async def edit_item_form(request: Request, item_id: int):
             "request": request,
             "item": item,
             "categories": categories,
+            "selected_category_id": item.category_id,   # ← Добавлено для компонента выпадающего меню
         },
     )
 
@@ -116,7 +117,7 @@ async def edit_item_submit(
         raise HTTPException(status_code=400, detail="Неверный формат Telegram username")
 
     if booking_comment and not validate_comment(booking_comment):
-        raise HTTPException(status_code=400, detail="Комментарий слишком длинкий")
+        raise HTTPException(status_code=400, detail="Комментарий слишком длинный")
 
     if is_sold and is_booked:
         raise HTTPException(status_code=400, detail="Нельзя одновременно забронировать и продать товар")
