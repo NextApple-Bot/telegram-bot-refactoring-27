@@ -13,22 +13,22 @@
     <style>
         [x-cloak] { display: none !important; }
     </style>
+
+    <!-- Инициализация Alpine Store (самый надёжный способ) -->
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.store('modal', {
+                show: false,
+                title: ''
+            });
+        });
+    </script>
 </head>
 <body class="bg-slate-50">
 
-    <!-- Главный Alpine компонент -->
-    <div x-data="{
-        sidebarOpen: false,
-        collapsed: localStorage.getItem('sidebarCollapsed') === 'true',
-        init() {
-            // Глобальная инициализация модалки
-            if (!Alpine.store('modal')) {
-                Alpine.store('modal', {
-                    show: false,
-                    title: ''
-                });
-            }
-        }
+    <div x-data="{ 
+        sidebarOpen: false, 
+        collapsed: localStorage.getItem('sidebarCollapsed') === 'true' 
     }">
 
         <!-- Mobile Top Bar -->
@@ -123,7 +123,7 @@
                     </button>
                 </div>
                 <div id="htmxModalContent" class="p-6 max-h-[75vh] overflow-auto">
-                    <!-- Контент форм загружается сюда -->
+                    <!-- Сюда загружается контент через HTMX -->
                 </div>
             </div>
         </div>
