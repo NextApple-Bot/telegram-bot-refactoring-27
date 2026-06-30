@@ -14,7 +14,7 @@
         [x-cloak] { display: none !important; }
     </style>
 
-    <!-- Инициализация Alpine Store (самый надёжный способ) -->
+    <!-- Надёжная инициализация Alpine Store -->
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.store('modal', {
@@ -105,25 +105,27 @@
             </div>
         </div>
 
-        <!-- ==================== ГЛОБАЛЬНАЯ МОДАЛКА ==================== -->
+        <!-- ==================== ГЛОБАЛЬНАЯ МОДАЛКА (улучшенная) ==================== -->
         <div
             x-show="$store.modal.show"
             @keydown.escape.window="$store.modal.show = false"
-            class="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 p-4"
+            class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4"
             style="display: none;"
         >
             <div 
                 @click.away="$store.modal.show = false"
-                class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden"
+                class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden relative"
             >
+                <!-- Заголовок модалки -->
                 <div class="flex items-center justify-between px-6 py-4 border-b bg-slate-50">
                     <h3 class="text-xl font-semibold text-slate-900" x-text="$store.modal.title"></h3>
                     <button @click="$store.modal.show = false" class="text-slate-400 hover:text-slate-600 p-2">
                         <i class="fas fa-times text-2xl"></i>
                     </button>
                 </div>
+
+                <!-- Контент формы (загружается через HTMX) -->
                 <div id="htmxModalContent" class="p-6 max-h-[75vh] overflow-auto">
-                    <!-- Сюда загружается контент через HTMX -->
                 </div>
             </div>
         </div>
