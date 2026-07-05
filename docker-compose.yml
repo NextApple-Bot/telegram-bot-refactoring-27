@@ -53,14 +53,14 @@ services:
       - ./logs:/app/logs
       - ./alembic/versions:/app/alembic/versions
 
-  # === Cloudflare Tunnel ===
+  # === Cloudflare Tunnel (обновлённый) ===
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared-tunnel
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
-      - TUNNEL_TOKEN=eyJhIjoiMmEzODRjZWY3MzZjYjdiMTg5ZjIzZjM0YmVkMjMxZDYiLCJ0IjoiMjg1Zjg0MzUtMmQ3YS00MDkwLThlYWEtNjYxZjA5NDM5NDhiIiwicyI6IlpEZzFZV0l5WmpFdE4yTTRNQzAwTW1VeExUa3dZV0V0TkRFeFlqUTRZVEJoTURFMiJ9
+      - TUNNEL_TOKEN=eyJhIjoiMmEzODRjZWY3MzZjYjdiMTg5ZjIzZjM0YmVkMjMxZDYiLCJ0IjoiMDEyMjBhZjAtNjFjZS00ZDVjLTk2ZWEtYTJiNTQ0ZDc3MzE5IiwicyI6Ik16TmlNR1V6WkRBdE56YzBZeTAwTTJaakxXSXlZMk10WVdSbE1USTNZVEk0TkdJMyJ9
     depends_on:
       - bot
 
