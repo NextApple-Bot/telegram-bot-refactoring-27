@@ -1,4 +1,4 @@
-version: '3.9'
+version: "3.9"
 
 services:
   postgres:
@@ -40,6 +40,8 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    environment:
+      PYTHONUNBUFFERED: 1
     env_file:
       - .env
     depends_on:
@@ -50,8 +52,17 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./alembic/versions:/app/alembic/versions
+
+  # === Cloudflare Tunnel ===
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
     environment:
-      - PYTHONUNBUFFERED=1
+      - TUNNEL_TOKEN=eyJhIjoiMmEzODRjZWY3MzZjYjdiMTg5ZjIzZjM0YmVkMjMxZDYiLCJ0IjoiMjg1Zjg0MzUtMmQ3YS00MDkwLThlYWEtNjYxZjA5NDM5NDhiIiwicyI6IlpEZzFZV0l5WmpFdE4yTTRNQzAwTW1VeExUa3dZV0V0TkRFeFlqUTRZVEJoTURFMiJ9
+    depends_on:
+      - bot
 
 volumes:
   postgres_data:
