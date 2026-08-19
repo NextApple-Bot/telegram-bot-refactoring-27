@@ -1,12 +1,12 @@
 meta:
   environment: docker
   toolchain: python
-  
+
 build:
   dockerfile: Dockerfile
 
 run:
-  command: python main.py
+  command: ./start.sh
   persistence:
     - type: volume
       mount: /data
