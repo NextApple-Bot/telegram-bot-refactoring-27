@@ -1,0 +1,42 @@
+meta:
+  environment: docker
+  toolchain: python
+
+build:
+  dockerfile: Dockerfile
+
+run:
+  command: ./start.sh
+  persistence:
+    - type: volume
+      mount: /data
+      capacity: 1GB
+
+services:
+  - name: postgres
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: bot_db
+      POSTGRES_USER: bot_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    persistence:
+      - type: volume
+        mount: /var/lib/postgresql/data
+        capacity: 2GB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bot_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  - name: redis
+    image: redis:7-alpine
+    persistence:
+      - type: volume
+        mount: /data
+        capacity: 1GB
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
