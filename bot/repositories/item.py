@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db import get_async_session_factory, get_pool
@@ -185,12 +185,14 @@ class ItemRepository:
     async def _bulk_replace_assortment_internal(categories: list[dict], session: AsyncSession):
         # Удаляем все товары (кроме системных)
         await session.execute(
-            "DELETE FROM items WHERE category_id NOT IN "
-            "(SELECT id FROM categories WHERE name = '__SYSTEM__')"
+            text(
+                "DELETE FROM items WHERE category_id NOT IN "
+                "(SELECT id FROM categories WHERE name = '__SYSTEM__')"
+            )
         )
 
         # Удаляем все категории (кроме системной)
-        await session.execute("DELETE FROM categories WHERE name != '__SYSTEM__'")
+        await session.execute(text("DELETE FROM categories WHERE name != '__SYSTEM__'"))
 
         for cat in categories:
             header = cat.get("header", "").strip()
@@ -200,18 +202,18 @@ class ItemRepository:
             cat_id = await ItemRepository.get_or_create_category(header, conn=session)
 
             for item in cat.get("items", []):
-                text = item.get("text", "").strip() if isinstance(item, dict) else str(item).strip()
-                if not text:
+                text_val = item.get("text", "").strip() if isinstance(item, dict) else str(item).strip()
+                if not text_val:
                     continue
 
                 serial = item.get("serial") if isinstance(item, dict) else None
                 if serial:
                     serial = serial.strip().upper()
 
-                is_booked = "Бронь от" in text
+                is_booked = "Бронь от" in text_val
 
                 new_item = Item(
-                    text=text,
+                    text=text_val,
                     serial=serial,
                     category_id=cat_id,
                     is_booked=is_booked
