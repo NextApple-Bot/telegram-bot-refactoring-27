@@ -9,21 +9,60 @@ def normalize_serial(serial: str | None) -> Optional[str]:
     return re.sub(r'[\s\-]', '', serial).upper()
 
 
+def _looks_like_phone(value: str) -> bool:
+    """
+    Определяет, похожа ли строка на телефонный номер.
+    Не считаем серийником чистые цифровые последовательности
+    длиной 10–15 символов (типичные телефоны).
+    """
+    if not value:
+        return False
+    digits_only = re.sub(r'\D', '', value)
+    if not digits_only.isdigit():
+        return False
+    # Российские и международные номера: 10–15 цифр
+    if 10 <= len(digits_only) <= 15:
+        return True
+    return False
+
+
 def extract_serials(text: str) -> List[str]:
-    """Извлечение серийных номеров из текста."""
+    """
+    Извлечение серийных номеров из текста.
+
+    Поддерживает:
+    - серийники в круглых скобках: (CFW0KXY231)
+    - серийники в квадратных скобках: [CFW0KXY231]
+    - серийники без скобок (от 8 символов): CFW0KXY231
+
+    Игнорирует:
+    - номера телефонов (в т.ч. с +, 7, 8)
+    """
     if not text:
         return []
 
-    pattern = r'\(([A-Z0-9\-]{6,})\)|([A-Z0-9\-]{8,})'
-    matches = re.findall(pattern, text, re.IGNORECASE)
+    # 1) В скобках () или []
+    # 2) Без скобок — длинные alphanumeric-последовательности
+    pattern = r'[\(\[]([A-Za-z0-9\-]{6,})[\)\]]|([A-Za-z0-9\-]{8,})'
+    matches = re.findall(pattern, text)
 
-    serials = []
+    serials: List[str] = []
     for match in matches:
         serial = match[0] or match[1]
-        if serial:
-            normalized = normalize_serial(serial)
-            if normalized and normalized not in serials:
-                serials.append(normalized)
+        if not serial:
+            continue
+
+        normalized = normalize_serial(serial)
+        if not normalized:
+            continue
+
+        # Пропускаем телефоны
+        if _looks_like_phone(normalized):
+            continue
+
+        if normalized not in serials:
+            serials.append(normalized)
+
     return serials
 
 
@@ -35,7 +74,8 @@ def parse_arrival_text(text: str) -> List[dict]:
     for line in lines:
         serials = extract_serials(line)
         serial = serials[0] if serials else None
-        clean_text = re.sub(r'\s*\([A-Z0-9\-]{6,}\)\s*', ' ', line).strip()
+        # Убираем серийник в () или [] из текста
+        clean_text = re.sub(r'\s*[\(\[][A-Za-z0-9\-]{6,}[\)\]]\s*', ' ', line).strip()
         if clean_text:
             items.append({"text": clean_text, "serial": serial})
     return items
