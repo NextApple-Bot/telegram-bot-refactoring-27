@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db import get_async_session_factory, get_pool
 from bot.models import Category, Item
-from bot.utils.validators import extract_serials
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,6 @@ class ItemRepository:
         category = result.scalar_one_or_none()
 
         if category:
-            # Обновляем порядок, если категория уже есть
             if category.sort_order != sort_order:
                 category.sort_order = sort_order
                 await session.flush()
@@ -197,7 +195,9 @@ class ItemRepository:
 
     @staticmethod
     async def _bulk_replace_assortment_internal(categories: list[dict], session: AsyncSession):
-        # Удаляем все товары (кроме системных)
+        # Lazy import — избегаем циклического импорта
+        from bot.utils.validators import extract_serials
+
         await session.execute(
             text(
                 "DELETE FROM items WHERE category_id NOT IN "
@@ -205,7 +205,6 @@ class ItemRepository:
             )
         )
 
-        # Удаляем все категории (кроме системной)
         await session.execute(text("DELETE FROM categories WHERE name != '__SYSTEM__'"))
 
         for idx, cat in enumerate(categories):
@@ -213,7 +212,6 @@ class ItemRepository:
             if not header:
                 continue
 
-            # sort_order = позиция в файле (0, 1, 2, ...)
             cat_id = await ItemRepository.get_or_create_category(
                 header, conn=session, sort_order=idx
             )
@@ -229,7 +227,6 @@ class ItemRepository:
                 if not text_val:
                     continue
 
-                # Если серийник не передан — достаём из скобок в тексте
                 if not serial:
                     found = extract_serials(text_val)
                     serial = found[0] if found else None
