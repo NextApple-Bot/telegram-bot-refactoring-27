@@ -20,7 +20,6 @@ def _looks_like_phone(value: str) -> bool:
     digits_only = re.sub(r'\D', '', value)
     if not digits_only.isdigit():
         return False
-    # Российские и международные номера: 10–15 цифр
     if 10 <= len(digits_only) <= 15:
         return True
     return False
@@ -30,25 +29,22 @@ def extract_serials(text: str) -> List[str]:
     """
     Извлечение серийных номеров из текста.
 
-    Поддерживает:
-    - серийники в круглых скобках: (CFW0KXY231)
-    - серийники в квадратных скобках: [CFW0KXY231]
-    - серийники без скобок (от 8 символов): CFW0KXY231
+    Серийник считается ТОЛЬКО если он в скобках:
+    - круглые: (CFW0KXY231)
+    - квадратные: [CFW0KXY231]
 
-    Игнорирует:
-    - номера телефонов (в т.ч. с +, 7, 8)
+    Без скобок серийники не ищутся.
+    Номера телефонов игнорируются.
     """
     if not text:
         return []
 
-    # 1) В скобках () или []
-    # 2) Без скобок — длинные alphanumeric-последовательности
-    pattern = r'[\(\[]([A-Za-z0-9\-]{6,})[\)\]]|([A-Za-z0-9\-]{8,})'
+    # Только содержимое скобок () или []
+    pattern = r'[\(\[]([A-Za-z0-9\-]{6,})[\)\]]'
     matches = re.findall(pattern, text)
 
     serials: List[str] = []
-    for match in matches:
-        serial = match[0] or match[1]
+    for serial in matches:
         if not serial:
             continue
 
@@ -90,23 +86,19 @@ def validate_phone(phone: str | None) -> bool:
     if not phone:
         return True  # пустой телефон считаем допустимым (поле необязательное)
 
-    # Оставляем только цифры и +
     cleaned = re.sub(r'[^\d+]', '', str(phone).strip())
 
     if not cleaned:
         return False
 
-    # Приводим российские номера к единому виду
     if cleaned.startswith('+'):
         cleaned = cleaned[1:]
     if cleaned.startswith('8') and len(cleaned) == 11:
         cleaned = '7' + cleaned[1:]
 
-    # Российский номер: 11 цифр, начинается с 7
     if cleaned.startswith('7') and len(cleaned) == 11:
         return True
 
-    # Международный номер: от 10 до 15 цифр
     if 10 <= len(cleaned) <= 15:
         return True
 
