@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from bot.db import get_pool
+from bot.db import get_async_session_factory
 from bot.repositories.item import ItemRepository
 from bot.repositories.stats import StatsRepository
 from bot.services.assortment import AssortmentService
@@ -44,48 +44,44 @@ class SaleService:
         sold_items: list[tuple[int, str]] = []
         not_found: list[str] = []
 
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                for serial in serials:
-                    try:
-                        item_id = await ItemRepository.get_item_id_by_serial(serial, conn=conn)
+        for serial in serials:
+            try:
+                # SQLAlchemy-сессия (не asyncpg) — чтобы не смешивать API
+                item_id = await ItemRepository.get_item_id_by_serial(serial)
 
-                        if item_id:
-                            # Удаляем товар из ассортимента
-                            await AssortmentService.remove_by_serial(
-                                serial,
-                                reason="sale",
-                                conn=conn
-                            )
+                if item_id:
+                    # Удаляем товар из ассортимента (asyncpg внутри сервиса — ок)
+                    await AssortmentService.remove_by_serial(
+                        serial,
+                        reason="sale",
+                    )
 
-                            # Сохраняем статистику продажи
-                            await StatsRepository.add_sale(
-                                item_id=item_id,
-                                count=1,
-                                cash=0,
-                                terminal=0,
-                                qr=0,
-                                transfer=0,
-                                invoice=0,
-                                installment=0,
-                                is_accessory=False,
-                                message_id=message_id,
-                                conn=conn
-                            )
+                    # Сохраняем статистику продажи
+                    await StatsRepository.add_sale(
+                        item_id=item_id,
+                        count=1,
+                        cash=0,
+                        terminal=0,
+                        qr=0,
+                        transfer=0,
+                        invoice=0,
+                        installment=0,
+                        is_accessory=False,
+                        message_id=message_id,
+                    )
 
-                            sold_items.append((item_id, serial))
-                            logger.info(f"✅ Продажа: item_id={item_id}, serial={serial}")
+                    sold_items.append((item_id, serial))
+                    logger.info(f"✅ Продажа: item_id={item_id}, serial={serial}")
 
-                        else:
-                            not_found.append(serial)
-                            logger.warning(f"❌ Серийный номер не найден в ассортименте: {serial}")
+                else:
+                    not_found.append(serial)
+                    logger.warning(f"❌ Серийный номер не найден в ассортименте: {serial}")
 
-                    except Exception as e:
-                        logger.exception(
-                            f"Ошибка при обработке серийника {serial} в сообщении {message_id}: {e}"
-                        )
-                        raise
+            except Exception as e:
+                logger.exception(
+                    f"Ошибка при обработке серийника {serial} в сообщении {message_id}: {e}"
+                )
+                raise
 
         if not_found:
             logger.info(
