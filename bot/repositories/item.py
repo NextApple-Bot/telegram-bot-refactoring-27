@@ -196,7 +196,7 @@ class ItemRepository:
     @staticmethod
     async def _bulk_replace_assortment_internal(categories: list[dict], session: AsyncSession):
         # Lazy import — избегаем циклического импорта
-        from bot.utils.validators import extract_serials
+        from bot.utils.validators import extract_primary_serial
 
         await session.execute(
             text(
@@ -206,6 +206,8 @@ class ItemRepository:
         )
 
         await session.execute(text("DELETE FROM categories WHERE name != '__SYSTEM__'"))
+
+        seen_serials: set[str] = set()
 
         for idx, cat in enumerate(categories):
             header = cat.get("header", "").strip()
@@ -228,11 +230,18 @@ class ItemRepository:
                     continue
 
                 if not serial:
-                    found = extract_serials(text_val)
-                    serial = found[0] if found else None
+                    serial = extract_primary_serial(text_val)
 
                 if serial:
                     serial = serial.strip().upper()
+                    # Дубликаты серийников — оставляем только первое вхождение
+                    if serial in seen_serials:
+                        logger.warning(
+                            f"Дубликат серийника {serial}, товар сохранён без serial: {text_val[:80]}"
+                        )
+                        serial = None
+                    else:
+                        seen_serials.add(serial)
 
                 is_booked = (
                     "бронь от" in text_val.lower()
