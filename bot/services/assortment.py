@@ -129,8 +129,7 @@ class AssortmentService:
             logger.warning("Попытка замены ассортимента пустым списком")
             return False
 
-        # Lazy import — избегаем циклического импорта
-        from bot.utils.validators import extract_serials
+        from bot.utils.validators import extract_primary_serial
 
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -143,6 +142,8 @@ class AssortmentService:
                     await conn.execute(
                         "DELETE FROM categories WHERE name != '__SYSTEM__'"
                     )
+
+                    seen_serials: set[str] = set()
 
                     for idx, cat in enumerate(categories):
                         header = cat.get("header", "").strip()
@@ -172,11 +173,17 @@ class AssortmentService:
                                 continue
 
                             if not serial:
-                                found = extract_serials(text)
-                                serial = found[0] if found else None
+                                serial = extract_primary_serial(text)
 
                             if serial:
                                 serial = serial.strip().upper()
+                                if serial in seen_serials:
+                                    logger.warning(
+                                        f"Дубликат серийника {serial}, товар без serial: {text[:80]}"
+                                    )
+                                    serial = None
+                                else:
+                                    seen_serials.add(serial)
 
                             await conn.execute(
                                 """
