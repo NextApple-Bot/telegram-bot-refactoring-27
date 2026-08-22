@@ -62,15 +62,28 @@ def extract_serials(text: str) -> List[str]:
     return serials
 
 
+def extract_primary_serial(text: str) -> Optional[str]:
+    """
+    Для одной строки товара выбирает основной серийник.
+
+    Если в строке несколько кодов в скобках, например:
+      PlayStation 5 (CFI-2118) (S01-E55B01CL410256288)
+    берём самый длинный — это реальный серийник устройства,
+    а не код модели (CFI-2118).
+    """
+    serials = extract_serials(text)
+    if not serials:
+        return None
+    return max(serials, key=len)
+
+
 def parse_arrival_text(text: str) -> List[dict]:
     """Парсинг текста прибытия."""
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     items = []
 
     for line in lines:
-        serials = extract_serials(line)
-        serial = serials[0] if serials else None
-        # Убираем серийник в () или [] из текста
+        serial = extract_primary_serial(line)
         clean_text = re.sub(r'\s*[\(\[][A-Za-z0-9\-]{6,}[\)\]]\s*', ' ', line).strip()
         if clean_text:
             items.append({"text": clean_text, "serial": serial})
