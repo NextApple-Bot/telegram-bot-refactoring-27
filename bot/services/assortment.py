@@ -6,7 +6,6 @@ from sqlalchemy import select
 from bot.db import get_async_session_factory, get_pool
 from bot.models import Category, Item
 from bot.services.cache import cache
-from bot.utils.validators import extract_serials
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +16,6 @@ CACHE_TTL = 300  # 5 минут
 class AssortmentService:
     """
     Сервис работы с ассортиментом товаров.
-    Отвечает за:
-    - Загрузку полного ассортимента (с кэшированием)
-    - Удаление товаров по серийному номеру (продажа / бронь / ручное удаление)
-    - Полную замену ассортимента (из топика «Ассортимент» или админки)
-    - Инвалидацию кэша после изменений
     """
 
     @staticmethod
@@ -34,7 +28,6 @@ class AssortmentService:
         try:
             async_session = get_async_session_factory()
             async with async_session() as session:
-                # Порядок категорий = как в файле (sort_order)
                 categories_query = (
                     select(Category)
                     .where(Category.name != "__SYSTEM__")
@@ -44,7 +37,6 @@ class AssortmentService:
 
                 result = []
                 for category in categories:
-                    # Порядок товаров = порядок вставки (id)
                     items_query = (
                         select(Item)
                         .where(Item.category_id == category.id)
@@ -136,6 +128,9 @@ class AssortmentService:
         if not categories:
             logger.warning("Попытка замены ассортимента пустым списком")
             return False
+
+        # Lazy import — избегаем циклического импорта
+        from bot.utils.validators import extract_serials
 
         pool = await get_pool()
         async with pool.acquire() as conn:
