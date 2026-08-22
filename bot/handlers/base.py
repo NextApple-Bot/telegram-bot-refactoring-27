@@ -24,7 +24,7 @@ async def cancel_action(bot: Bot, chat_id: int, state: FSMContext):
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     """Возвращает главное меню."""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📦 Ассортимент", callback_data="menu:assortment")],
+        [InlineKeyboardButton(text="📦 Ассортимент", callback_data="menu:inventory")],
         [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
         [InlineKeyboardButton(text="👥 Клиенты", callback_data="menu:clients")],
         [InlineKeyboardButton(text="❓ Помощь", callback_data="menu:help")],
@@ -52,16 +52,26 @@ async def show_inventory(bot: Bot, chat_id: int):
         categories = await AssortmentService.load_inventory()
         if not categories:
             await bot.send_message(chat_id, "📭 Ассортимент пуст.")
-            return
+            return None
 
         total_items = sum(len(cat.get("items", [])) for cat in categories)
         text = f"📦 **Текущий ассортимент**\n\n"
         text += f"Категорий: **{len(categories)}**\n"
         text += f"Всего товаров: **{total_items}**\n\n"
-        text += "Используйте команду /inventory или кнопку в меню для более детального просмотра."
 
-        await bot.send_message(chat_id, text, parse_mode="Markdown")
+        # Краткий список категорий с количеством товаров
+        for cat in categories[:30]:  # ограничение, чтобы не превысить лимит Telegram
+            name = cat.get("header", "Без названия")
+            count = len(cat.get("items", []))
+            text += f"• {name}: {count}\n"
+
+        if len(categories) > 30:
+            text += f"\n… и ещё {len(categories) - 30} категорий"
+
+        msg = await bot.send_message(chat_id, text, parse_mode="Markdown")
+        return msg
 
     except Exception as e:
         logger.exception("Ошибка при показе ассортимента")
         await bot.send_message(chat_id, "❌ Не удалось загрузить ассортимент.")
+        return None
