@@ -17,7 +17,7 @@ from bot.repositories import ClientRepository, StatsRepository
 from bot.utils.helpers import send_and_clean
 from bot.utils.sort import detect_sim_type, get_full_model_name
 
-from .base import get_main_menu_keyboard, show_inventory
+from .base import get_main_menu_keyboard, show_help, show_inventory
 from .service_commands import delete_category_by_id, merge_categories_action, reset_assortment_action
 from .topics.common import export_assortment_to_topic
 
@@ -126,6 +126,57 @@ async def process_stats(callback: CallbackQuery):
         message_thread_id=callback.message.message_thread_id,
         delete_after=60,
     )
+
+
+@router.callback_query(F.data == "menu:help")
+async def process_help(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.message.chat.id
+    await show_help(callback.bot, chat_id)
+    await safe_delete(callback.message)
+    keyboard = get_main_menu_keyboard()
+    await send_and_clean(
+        bot=callback.bot,
+        chat_id=chat_id,
+        text="Выберите действие:",
+        reply_markup=keyboard,
+        message_thread_id=callback.message.message_thread_id,
+        delete_after=60,
+    )
+
+
+@router.callback_query(F.data == "menu:clients")
+async def process_clients(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.message.chat.id
+
+    # Простая меню выбора месяца / подсказка
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📁 Экспорт клиентов (CSV)", callback_data="menu:export_clients_hint")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:cancel")],
+    ])
+    await safe_delete(callback.message)
+    await send_and_clean(
+        bot=callback.bot,
+        chat_id=chat_id,
+        text=(
+            "👥 <b>Клиенты</b>\n\n"
+            "Для экспорта используйте команды:\n"
+            "/export_clients — все клиенты\n"
+            "/client_info <телефон или имя> — карточка клиента\n"
+            "/export_purchases — покупки\n"
+            "/export_full_report — полный отчёт"
+        ),
+        reply_markup=keyboard,
+        parse_mode="HTML",
+        message_thread_id=callback.message.message_thread_id,
+        delete_after=120,
+    )
+
+
+@router.callback_query(F.data == "menu:export_clients_hint")
+async def process_export_clients_hint(callback: CallbackQuery):
+    await callback.answer("Используйте команду /export_clients", show_alert=True)
 
 
 @router.callback_query(F.data == "menu:export_assortment")
@@ -310,8 +361,6 @@ async def process_month_selection(callback: CallbackQuery):
                 delete_after=60,
             )
             return
-
-        # ... (остальная логика CSV формирования остаётся почти без изменений)
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as tmp:
             writer = csv.writer(tmp)
