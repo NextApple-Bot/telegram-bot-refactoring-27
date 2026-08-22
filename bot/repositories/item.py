@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db import get_async_session_factory, get_pool
 from bot.models import Category, Item
+from bot.utils.validators import extract_serials
 
 logger = logging.getLogger(__name__)
 
@@ -18,28 +19,41 @@ class ItemRepository:
     """Репозиторий для работы с товарами и категориями."""
 
     @staticmethod
-    async def get_or_create_category(name: str, conn: Optional[AsyncSession] = None) -> int:
+    async def get_or_create_category(
+        name: str,
+        conn: Optional[AsyncSession] = None,
+        sort_order: int = 0,
+    ) -> int:
         """Получает ID категории по имени или создаёт новую."""
         async_session = get_async_session_factory()
 
         if conn is None:
             async with async_session() as session, session.begin():
-                return await ItemRepository._get_or_create_category_internal(name, session)
+                return await ItemRepository._get_or_create_category_internal(
+                    name, session, sort_order
+                )
         else:
-            return await ItemRepository._get_or_create_category_internal(name, conn)
+            return await ItemRepository._get_or_create_category_internal(
+                name, conn, sort_order
+            )
 
     @staticmethod
-    async def _get_or_create_category_internal(name: str, session: AsyncSession) -> int:
+    async def _get_or_create_category_internal(
+        name: str, session: AsyncSession, sort_order: int = 0
+    ) -> int:
         result = await session.execute(
             select(Category).where(Category.name == name)
         )
         category = result.scalar_one_or_none()
 
         if category:
+            # Обновляем порядок, если категория уже есть
+            if category.sort_order != sort_order:
+                category.sort_order = sort_order
+                await session.flush()
             return category.id
 
-        # Создаём новую категорию
-        new_category = Category(name=name, sort_order=0)
+        new_category = Category(name=name, sort_order=sort_order)
         session.add(new_category)
         await session.flush()
         return new_category.id
@@ -194,29 +208,45 @@ class ItemRepository:
         # Удаляем все категории (кроме системной)
         await session.execute(text("DELETE FROM categories WHERE name != '__SYSTEM__'"))
 
-        for cat in categories:
+        for idx, cat in enumerate(categories):
             header = cat.get("header", "").strip()
             if not header:
                 continue
 
-            cat_id = await ItemRepository.get_or_create_category(header, conn=session)
+            # sort_order = позиция в файле (0, 1, 2, ...)
+            cat_id = await ItemRepository.get_or_create_category(
+                header, conn=session, sort_order=idx
+            )
 
             for item in cat.get("items", []):
-                text_val = item.get("text", "").strip() if isinstance(item, dict) else str(item).strip()
+                if isinstance(item, dict):
+                    text_val = (item.get("text") or "").strip()
+                    serial = item.get("serial")
+                else:
+                    text_val = str(item).strip()
+                    serial = None
+
                 if not text_val:
                     continue
 
-                serial = item.get("serial") if isinstance(item, dict) else None
+                # Если серийник не передан — достаём из скобок в тексте
+                if not serial:
+                    found = extract_serials(text_val)
+                    serial = found[0] if found else None
+
                 if serial:
                     serial = serial.strip().upper()
 
-                is_booked = "Бронь от" in text_val
+                is_booked = (
+                    "бронь от" in text_val.lower()
+                    or "бронь" in text_val.lower()
+                )
 
                 new_item = Item(
                     text=text_val,
                     serial=serial,
                     category_id=cat_id,
-                    is_booked=is_booked
+                    is_booked=is_booked,
                 )
                 session.add(new_item)
 
