@@ -6,6 +6,7 @@ from sqlalchemy import select
 from bot.db import get_async_session_factory, get_pool
 from bot.models import Category, Item
 from bot.services.cache import cache
+from bot.utils.validators import extract_serials
 
 logger = logging.getLogger(__name__)
 
@@ -33,19 +34,21 @@ class AssortmentService:
         try:
             async_session = get_async_session_factory()
             async with async_session() as session:
+                # Порядок категорий = как в файле (sort_order)
                 categories_query = (
                     select(Category)
                     .where(Category.name != "__SYSTEM__")
-                    .order_by(Category.sort_order, Category.name)
+                    .order_by(Category.sort_order, Category.id)
                 )
                 categories = (await session.execute(categories_query)).scalars().all()
 
                 result = []
                 for category in categories:
+                    # Порядок товаров = порядок вставки (id)
                     items_query = (
                         select(Item)
                         .where(Item.category_id == category.id)
-                        .order_by(Item.created_at.desc())
+                        .order_by(Item.id.asc())
                     )
                     items = (await session.execute(items_query)).scalars().all()
 
@@ -146,7 +149,7 @@ class AssortmentService:
                         "DELETE FROM categories WHERE name != '__SYSTEM__'"
                     )
 
-                    for cat in categories:
+                    for idx, cat in enumerate(categories):
                         header = cat.get("header", "").strip()
                         if not header:
                             continue
@@ -159,15 +162,24 @@ class AssortmentService:
                             RETURNING id
                             """,
                             header,
-                            cat.get("sort_order", 0)
+                            cat.get("sort_order", idx),
                         )
 
                         for item in cat.get("items", []):
-                            text = item.get("text", "").strip()
+                            if isinstance(item, dict):
+                                text = (item.get("text") or "").strip()
+                                serial = item.get("serial")
+                            else:
+                                text = str(item).strip()
+                                serial = None
+
                             if not text:
                                 continue
 
-                            serial = item.get("serial")
+                            if not serial:
+                                found = extract_serials(text)
+                                serial = found[0] if found else None
+
                             if serial:
                                 serial = serial.strip().upper()
 
@@ -179,7 +191,7 @@ class AssortmentService:
                                 text,
                                 serial,
                                 cat_id,
-                                "Бронь от" in text
+                                "бронь" in text.lower(),
                             )
 
                     await AssortmentService.invalidate_cache()
