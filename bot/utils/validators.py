@@ -6,14 +6,16 @@ def normalize_serial(serial: str | None) -> Optional[str]:
     """Нормализация серийного номера."""
     if not serial:
         return None
-    return re.sub(r'[\s\-]', '', serial).upper()
+    # Сохраняем № для кодов вида №8 / S№10
+    s = serial.strip()
+    s = re.sub(r'[\s\-]', '', s)
+    # Приводим латиницу к upper, № оставляем
+    return s.upper().replace('№', '№')
 
 
 def _looks_like_phone(value: str) -> bool:
     """
     Определяет, похожа ли строка на телефонный номер.
-    Не считаем серийником чистые цифровые последовательности
-    длиной 10–15 символов (типичные телефоны).
     """
     if not value:
         return False
@@ -27,37 +29,37 @@ def _looks_like_phone(value: str) -> bool:
 
 def extract_serials(text: str) -> List[str]:
     """
-    Извлечение серийных номеров из текста.
+    Извлечение серийных номеров / внутренних кодов из текста.
 
-    Серийник считается ТОЛЬКО если он в скобках:
-    - круглые: (CFW0KXY231)
-    - квадратные: [CFW0KXY231]
-
-    Без скобок серийники не ищутся.
-    Номера телефонов игнорируются.
+    Поддерживает:
+    - (CFW0KXY231) / [CFW0KXY231] — длинные серийники
+    - (№8) / (S№10) / (№1) — внутренние номера аксессуаров
     """
     if not text:
         return []
 
-    # Только содержимое скобок () или []
-    pattern = r'[\(\[]([A-Za-z0-9\-]{6,})[\)\]]'
-    matches = re.findall(pattern, text)
-
     serials: List[str] = []
-    for serial in matches:
-        if not serial:
-            continue
 
-        normalized = normalize_serial(serial)
-        if not normalized:
-            continue
-
-        # Пропускаем телефоны
-        if _looks_like_phone(normalized):
-            continue
-
-        if normalized not in serials:
+    # 1) Длинные alphanumeric в скобках (от 6 символов)
+    for m in re.findall(r'[\(\[]([A-Za-z0-9\-]{6,})[\)\]]', text):
+        normalized = normalize_serial(m)
+        if normalized and not _looks_like_phone(normalized) and normalized not in serials:
             serials.append(normalized)
+
+    # 2) Внутренние коды: (№8), (S№10), (№ 4)
+    for m in re.findall(r'[\(\[](S?№\s*\d+)[\)\]]', text, flags=re.IGNORECASE):
+        # Нормализация: S№10 / №8
+        code = re.sub(r'\s+', '', m).upper()
+        # upper() может испортить № в некоторых локалях — фиксируем
+        code = code.replace('Nº', '№').replace('N°', '№')
+        if '№' not in code and 'S' in code.upper():
+            # fallback если № потерялся
+            digits = re.search(r'\d+', m)
+            if digits:
+                prefix = 'S' if m.upper().startswith('S') else ''
+                code = f"{prefix}№{digits.group()}"
+        if code and code not in serials:
+            serials.append(code)
 
     return serials
 
@@ -66,15 +68,20 @@ def extract_primary_serial(text: str) -> Optional[str]:
     """
     Для одной строки товара выбирает основной серийник.
 
-    Если в строке несколько кодов в скобках, например:
-      PlayStation 5 (CFI-2118) (S01-E55B01CL410256288)
-    берём самый длинный — это реальный серийник устройства,
-    а не код модели (CFI-2118).
+    Приоритет:
+    1) Самый длинный alphanumeric-код (реальный S/N)
+    2) Иначе код вида №8 / S№10
     """
     serials = extract_serials(text)
     if not serials:
         return None
-    return max(serials, key=len)
+
+    # Сначала длинные (без №)
+    long_ones = [s for s in serials if '№' not in s]
+    if long_ones:
+        return max(long_ones, key=len)
+
+    return serials[0]
 
 
 def parse_arrival_text(text: str) -> List[dict]:
@@ -84,7 +91,7 @@ def parse_arrival_text(text: str) -> List[dict]:
 
     for line in lines:
         serial = extract_primary_serial(line)
-        clean_text = re.sub(r'\s*[\(\[][A-Za-z0-9\-]{6,}[\)\]]\s*', ' ', line).strip()
+        clean_text = re.sub(r'\s*[\(\[][A-Za-z0-9№\-\s]{2,}[\)\]]\s*', ' ', line).strip()
         if clean_text:
             items.append({"text": clean_text, "serial": serial})
     return items
@@ -93,11 +100,9 @@ def parse_arrival_text(text: str) -> List[dict]:
 def validate_phone(phone: str | None) -> bool:
     """
     Валидация телефона (российские и международные номера).
-    Принимает номера с +, 7, 8, пробелами, скобками, дефисами.
-    Возвращает True, если номер выглядит корректно.
     """
     if not phone:
-        return True  # пустой телефон считаем допустимым (поле необязательное)
+        return True
 
     cleaned = re.sub(r'[^\d+]', '', str(phone).strip())
 
