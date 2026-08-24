@@ -1,34 +1,31 @@
-<!-- НЕТ {% extends "base.html" %} -->
+<!-- Partial for HTMX modal — NO extends -->
+<form
+    hx-post="/admin/assortment/edit/{{ item.id }}"
+    hx-target="#htmxModalContent"
+    hx-swap="innerHTML"
+    class="space-y-5">
 
-<div class="max-w-3xl mx-auto">
-    <!-- УДАЛЁН дублирующий заголовок, т.к. он уже есть в шапке модалки -->
+    <div class="space-y-4">
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                Название товара <span class="text-red-500">*</span>
+            </label>
+            <input type="text" name="text" value="{{ item.text }}" required
+                   class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
 
-    <form 
-        hx-post="/admin/assortment/edit/{{ item.id }}"
-        hx-target="#htmxModalContent"
-        hx-swap="outerHTML"
-        class="space-y-6">
-
-        <div class="bg-white border border-slate-200 rounded-3xl p-8 space-y-6">
-
-            <!-- Название -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-                <label class="block text-sm font-medium text-slate-700 mb-2">Название товара <span class="text-red-500">*</span></label>
-                <input type="text" name="text" value="{{ item.text }}" required
-                       class="w-full border border-slate-300 rounded-2xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            </div>
-
-            <!-- Серийный номер -->
-            <div>
-                <label class="block text-sm font-medium text-slate-700 mb-2">Серийный номер</label>
+                <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Серийный номер</label>
                 <input type="text" name="serial" value="{{ item.serial or '' }}"
-                       class="w-full border border-slate-300 rounded-2xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                       class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
             </div>
-
-            <!-- Категория -->
             <div>
-                <label class="block text-sm font-medium text-slate-700 mb-2">Категория <span class="text-red-500">*</span></label>
-                <select name="category_id" class="w-full border border-slate-300 rounded-2xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                    Категория <span class="text-red-500">*</span>
+                </label>
+                <select name="category_id" required
+                        class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     {% for cat in categories %}
                         <option value="{{ cat.id }}" {% if cat.id == item.category_id %}selected{% endif %}>
                             {{ cat.name }}
@@ -36,70 +33,69 @@
                     {% endfor %}
                 </select>
             </div>
-
-            <hr class="my-4">
-
-            <!-- Бронирование -->
-            <div>
-                <h3 class="font-semibold text-slate-700 mb-4">Данные бронирования</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">Цена брони</label>
-                        <input type="number" step="0.01" name="booking_price" value="{{ item.booking_price or '' }}"
-                               class="w-full border border-slate-300 rounded-2xl px-4 py-2.5">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">Предоплата</label>
-                        <input type="number" step="0.01" name="booking_prepayment" value="{{ item.booking_prepayment or '' }}"
-                               class="w-full border border-slate-300 rounded-2xl px-4 py-2.5">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">ФИО клиента</label>
-                        <input type="text" name="booking_full_name" value="{{ item.booking_full_name or '' }}"
-                               class="w-full border border-slate-300 rounded-2xl px-4 py-2.5">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">Телефон</label>
-                        <input type="text" name="booking_phone" value="{{ item.booking_phone or '' }}"
-                               class="w-full border border-slate-300 rounded-2xl px-4 py-2.5">
-                    </div>
-                </div>
-            </div>
-
-            <hr class="my-4">
-
-            <!-- Продажа -->
-            <div>
-                <h3 class="font-semibold text-slate-700 mb-4">Данные продажи</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">Цена продажи</label>
-                        <input type="number" step="0.01" name="sale_price" value="{{ item.sale_price or '' }}"
-                               class="w-full border border-slate-300 rounded-2xl px-4 py-2.5">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">Способ оплаты</label>
-                        <input type="text" name="sale_payment_type" value="{{ item.sale_payment_type or '' }}"
-                               class="w-full border border-slate-300 rounded-2xl px-4 py-2.5">
-                    </div>
-                </div>
-            </div>
-
         </div>
 
-        <!-- Кнопки -->
-        <div class="flex items-center justify-end gap-x-4">
-            <button type="button"
-                    @click="$store.modal.show = false"
-                    class="px-6 py-3 text-slate-600 hover:text-slate-900 font-medium rounded-2xl hover:bg-slate-100 transition-colors">
-                Отмена
-            </button>
-            <button type="submit"
-                    class="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-2xl transition-colors flex items-center gap-x-2">
-                <i class="fas fa-save mr-2"></i>
-                Сохранить изменения
-            </button>
-        </div>
+        <label class="flex items-center gap-3 cursor-pointer select-none">
+            <input type="checkbox" name="is_booked" value="true"
+                   class="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                   {% if item.is_booked %}checked{% endif %}
+                   onchange="document.getElementById('booking-fields').classList.toggle('hidden', !this.checked)">
+            <span class="text-sm text-slate-700 dark:text-slate-300">Забронирован</span>
+        </label>
 
-    </form>
-</div>
+        <div id="booking-fields" class="{% if not item.is_booked %}hidden{% endif %} space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">Данные бронирования</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Цена брони</label>
+                    <input type="number" step="0.01" name="booking_price" value="{{ item.booking_price or '' }}"
+                           class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Предоплата</label>
+                    <input type="number" step="0.01" name="booking_prepayment" value="{{ item.booking_prepayment or '' }}"
+                           class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">ФИО клиента</label>
+                    <input type="text" name="booking_full_name" value="{{ item.booking_full_name or '' }}"
+                           class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Телефон</label>
+                    <input type="text" name="booking_phone" value="{{ item.booking_phone or '' }}" placeholder="+7..."
+                           class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Площадка</label>
+                    <input type="text" name="booking_platform" value="{{ item.booking_platform or '' }}"
+                           class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Способ оплаты</label>
+                    <select name="booking_payment_type"
+                            class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <option value="">—</option>
+                        <option value="cash" {% if item.booking_payment_type == 'cash' %}selected{% endif %}>Наличные</option>
+                        <option value="terminal" {% if item.booking_payment_type == 'terminal' %}selected{% endif %}>Терминал</option>
+                        <option value="qr" {% if item.booking_payment_type == 'qr' %}selected{% endif %}>QR</option>
+                        <option value="transfer" {% if item.booking_payment_type == 'transfer' %}selected{% endif %}>Перевод</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+        <button type="button"
+                @click="$store.modal.show = false"
+                class="px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+            Отмена
+        </button>
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition-colors">
+            <i class="fas fa-save text-xs"></i>
+            Сохранить
+        </button>
+    </div>
+</form>
