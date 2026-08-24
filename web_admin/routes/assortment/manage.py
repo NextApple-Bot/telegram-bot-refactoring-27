@@ -2,8 +2,7 @@ import asyncio
 import logging
 import re
 from fastapi import APIRouter, Form, HTTPException, Request, Depends
-from fastapi.responses import RedirectResponse
-from starlette.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +40,16 @@ def validate_comment(comment: str | None) -> bool:
     if not comment:
         return True
     return len(comment.strip()) <= 200
+
+
+def _htmx_done(redirect_url: str = "/admin/assortment") -> Response:
+    """Закрыть модалку и обновить страницу после успешного HTMX-запроса."""
+    return Response(
+        status_code=200,
+        headers={
+            "HX-Redirect": redirect_url,
+        },
+    )
 
 
 @router.get("/edit/{item_id}")
@@ -164,7 +173,7 @@ async def edit_item_submit(
                     await AssortmentService.invalidate_cache()
 
                     if is_htmx:
-                        return Response(status_code=200, headers={"HX-Trigger": "modal-close"})
+                        return _htmx_done()
                     return RedirectResponse(url="/admin/assortment", status_code=303)
 
                 # Обычное редактирование
@@ -185,7 +194,7 @@ async def edit_item_submit(
                 old.text = text
                 old.serial = serial.strip().upper() if serial else None
                 old.category_id = category_id
-                old.is_booked = is_booked
+                old.is_booked = bool(is_booked)
                 old.is_sold = False
 
                 if is_booked:
@@ -236,7 +245,7 @@ async def edit_item_submit(
     await AssortmentService.invalidate_cache()
 
     if is_htmx:
-        return Response(status_code=200, headers={"HX-Trigger": "modal-close"})
+        return _htmx_done()
     return RedirectResponse(url="/admin/assortment", status_code=303)
 
 
@@ -325,6 +334,8 @@ async def add_item(
             ))
 
     await AssortmentService.invalidate_cache()
+    if request.headers.get("hx-request") == "true":
+        return _htmx_done()
     return RedirectResponse(url="/admin/assortment", status_code=303)
 
 
