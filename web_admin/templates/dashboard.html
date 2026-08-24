@@ -4,7 +4,6 @@
 
 {% block content %}
 
-<!-- Header -->
 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
     <div>
         <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Дашборд</h1>
@@ -12,16 +11,13 @@
     </div>
     <button
         class="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl shadow-sm transition-colors"
-        data-modal="editStats"
         onclick="document.getElementById('editStatsModal').classList.remove('hidden')">
         <i class="fas fa-pen text-xs"></i>
         Редактировать статистику
     </button>
 </div>
 
-<!-- KPI Cards -->
 <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-    <!-- Sales -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card hover:shadow-soft transition-shadow">
         <div class="flex items-start justify-between">
             <div>
@@ -39,7 +35,6 @@
         {% endif %}
     </div>
 
-    <!-- Revenue -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card hover:shadow-soft transition-shadow">
         <div class="flex items-start justify-between">
             <div>
@@ -57,7 +52,6 @@
         {% endif %}
     </div>
 
-    <!-- Preorders / Bookings from stats if available -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card hover:shadow-soft transition-shadow">
         <div class="flex items-start justify-between">
             <div>
@@ -83,31 +77,64 @@
     </div>
 </div>
 
-<!-- Payments + Sellers -->
 <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-8">
-    <!-- Payment structure -->
     <div class="lg:col-span-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
         <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Структура оплат за {{ target_date }}</h2>
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {% set payment_meta = [
-                ('cash', 'Наличные', 'fa-money-bill-wave', 'emerald'),
-                ('terminal', 'Терминал', 'fa-credit-card', 'blue'),
-                ('qr', 'QR-код', 'fa-qrcode', 'violet'),
-                ('transfer', 'Перевод', 'fa-exchange-alt', 'sky'),
-                ('invoice', 'По счёту', 'fa-file-invoice', 'slate'),
-                ('installment', 'Рассрочка', 'fa-calendar-alt', 'amber')
-            ] %}
-            {% for key, label, icon, color in payment_meta %}
             <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <div class="w-9 h-9 rounded-lg bg-{{ color }}-100 dark:bg-{{ color }}-950/40 flex items-center justify-center flex-shrink-0">
-                    <i class="fas {{ icon }} text-{{ color }}-600 dark:text-{{ color }}-400 text-sm"></i>
+                <div class="w-9 h-9 rounded-lg bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-money-bill-wave text-emerald-600 dark:text-emerald-400 text-sm"></i>
                 </div>
                 <div class="min-w-0">
-                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ label }}</p>
-                    <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ "{:,.0f}".format(payments[key]).replace(',', ' ') }} ₽</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Наличные</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ "{:,.0f}".format(payments.cash).replace(',', ' ') }} ₽</p>
                 </div>
             </div>
-            {% endfor %}
+            <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <div class="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-credit-card text-blue-600 dark:text-blue-400 text-sm"></i>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Терминал</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ "{:,.0f}".format(payments.terminal).replace(',', ' ') }} ₽</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <div class="w-9 h-9 rounded-lg bg-violet-100 dark:bg-violet-950/40 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-qrcode text-violet-600 dark:text-violet-400 text-sm"></i>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-xs text-slate-500 dark:text-slate-400">QR-код</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ "{:,.0f}".format(payments.qr).replace(',', ' ') }} ₽</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <div class="w-9 h-9 rounded-lg bg-sky-100 dark:bg-sky-950/40 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-exchange-alt text-sky-600 dark:text-sky-400 text-sm"></i>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Перевод</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ "{:,.0f}".format(payments.transfer).replace(',', ' ') }} ₽</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <div class="w-9 h-9 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-file-invoice text-slate-600 dark:text-slate-300 text-sm"></i>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-xs text-slate-500 dark:text-slate-400">По счёту</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ "{:,.0f}".format(payments.invoice).replace(',', ' ') }} ₽</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <div class="w-9 h-9 rounded-lg bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-calendar-alt text-amber-600 dark:text-amber-400 text-sm"></i>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Рассрочка</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ "{:,.0f}".format(payments.installment).replace(',', ' ') }} ₽</p>
+                </div>
+            </div>
         </div>
         <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <span class="text-sm font-medium text-slate-500">Итого</span>
@@ -115,7 +142,6 @@
         </div>
     </div>
 
-    <!-- Sellers -->
     <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Продавцы дня</h2>
@@ -124,10 +150,7 @@
         {% if sellers %}
             <div class="flex flex-wrap gap-2">
                 {% for seller in sellers %}
-                    <button
-                        type="button"
-                        onclick="toggleSeller({{ seller.id }})"
-                        id="seller-btn-{{ seller.id }}"
+                    <button type="button" onclick="toggleSeller({{ seller.id }})" id="seller-btn-{{ seller.id }}"
                         class="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors
                                {% if seller.present %}bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300
                                {% else %}bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300{% endif %}">
@@ -141,7 +164,6 @@
     </div>
 </div>
 
-<!-- Charts -->
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
         <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Динамика продаж (7 дней)</h2>
@@ -153,7 +175,6 @@
     </div>
 </div>
 
-<!-- Top models -->
 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
     <div class="flex items-center justify-between mb-4">
         <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Топ-5 моделей (7 дней)</h2>
@@ -174,7 +195,6 @@
     {% endif %}
 </div>
 
-<!-- Edit stats modal (simple Tailwind) -->
 <div id="editStatsModal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
     <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
         <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
@@ -232,7 +252,6 @@
 const isDark = document.documentElement.classList.contains('dark');
 const gridColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(148,163,184,0.25)';
 const tickColor = isDark ? '#94a3b8' : '#64748b';
-
 const chartDefaults = {
     responsive: true,
     plugins: { legend: { display: false } },
@@ -241,67 +260,41 @@ const chartDefaults = {
         y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } }, beginAtZero: true }
     }
 };
-
 new Chart(document.getElementById('salesChart'), {
     type: 'line',
     data: {
         labels: {{ chart_dates | tojson }},
-        datasets: [{
-            data: {{ chart_sales | tojson }},
-            borderColor: '#6366f1',
-            backgroundColor: 'rgba(99, 102, 241, 0.12)',
-            tension: 0.35,
-            fill: true,
-            pointRadius: 3,
-            pointBackgroundColor: '#6366f1'
-        }]
+        datasets: [{ data: {{ chart_sales | tojson }}, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.12)', tension: 0.35, fill: true, pointRadius: 3, pointBackgroundColor: '#6366f1' }]
     },
     options: chartDefaults
 });
-
 new Chart(document.getElementById('revenueChart'), {
     type: 'line',
     data: {
         labels: {{ chart_dates | tojson }},
-        datasets: [{
-            data: {{ chart_revenue | tojson }},
-            borderColor: '#10b981',
-            backgroundColor: 'rgba(16, 185, 129, 0.12)',
-            tension: 0.35,
-            fill: true,
-            pointRadius: 3,
-            pointBackgroundColor: '#10b981'
-        }]
+        datasets: [{ data: {{ chart_revenue | tojson }}, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.12)', tension: 0.35, fill: true, pointRadius: 3, pointBackgroundColor: '#10b981' }]
     },
     options: chartDefaults
 });
-
 async function toggleSeller(sellerId) {
     const btn = document.getElementById('seller-btn-' + sellerId);
-    const targetDate = '{{ target_date_iso }}';
     try {
         const res = await fetch('/admin/dashboard/toggle_seller_day', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `seller_id=${sellerId}&target_date=${targetDate}`
+            body: `seller_id=${sellerId}&target_date={{ target_date_iso }}`
         });
         const data = await res.json();
         if (data.success) {
-            if (data.status === 'added') {
-                btn.className = 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300';
-            } else {
-                btn.className = 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300';
-            }
+            btn.className = data.status === 'added'
+                ? 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                : 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300';
         }
-    } catch (e) {
-        alert('Ошибка при обновлении');
-    }
+    } catch (e) { alert('Ошибка при обновлении'); }
 }
-
 async function saveStats() {
     const form = document.getElementById('editStatsForm');
-    const formData = new FormData(form);
-    const data = Object.fromEntries(formData.entries());
+    const data = Object.fromEntries(new FormData(form).entries());
     try {
         const res = await fetch('/admin/dashboard/update_stats', {
             method: 'POST',
@@ -311,9 +304,7 @@ async function saveStats() {
         const result = await res.json();
         if (result.success) location.reload();
         else alert('Ошибка: ' + (result.error || 'Неизвестная ошибка'));
-    } catch (e) {
-        alert('Ошибка соединения');
-    }
+    } catch (e) { alert('Ошибка соединения'); }
 }
 </script>
 {% endblock %}
