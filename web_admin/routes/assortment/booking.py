@@ -20,9 +20,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _clean(value: str | None) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s if s else None
+
+
+def _normalize_birth(value: str | None) -> str | None:
+    """YYYY-MM-DD → ДД.ММ.ГГГГ, иначе как есть."""
+    value = _clean(value)
+    if not value:
+        return None
+    if "-" in value and len(value) == 10:
+        try:
+            y, m, d = value.split("-")
+            return f"{d}.{m}.{y}"
+        except ValueError:
+            return value
+    return value
+
+
 @router.get("/booking/{item_id}", response_class=HTMLResponse)
 async def booking_item_form(request: Request, item_id: int):
-    """Форма бронирования товара (модалка из ассортимента)."""
     async_session = get_async_session_factory()
     async with async_session() as session:
         item = await session.get(Item, item_id)
@@ -51,19 +71,25 @@ async def booking_item_submit(
     booking_comment: str | None = Form(None),
     booking_bonus: float | None = Form(None),
 ):
-    """Сохранение брони из админки."""
     is_htmx = request.headers.get("hx-request") == "true"
 
-    # Нормализация даты рождения из <input type="date"> (YYYY-MM-DD) → ДД.ММ.ГГГГ
-    if booking_birth_date and "-" in booking_birth_date and len(booking_birth_date) == 10:
-        try:
-            y, m, d = booking_birth_date.split("-")
-            booking_birth_date = f"{d}.{m}.{y}"
-        except ValueError:
-            pass
+    # Чистые значения клиента
+    full_name = _clean(booking_full_name)
+    phone = _clean(booking_phone)
+    birth_date = _normalize_birth(booking_birth_date)
+    platform = _clean(booking_platform)
+    payment_type = _clean(booking_payment_type)
+    comment = _clean(booking_comment)
+
+    logger.info(
+        "Booking submit item=%s name=%r phone=%r birth=%r platform=%r",
+        item_id, full_name, phone, birth_date, platform,
+    )
 
     async_session = get_async_session_factory()
     try:
+        notif_payload = {}
+
         async with async_session() as session:
             async with session.begin():
                 item = await session.get(Item, item_id, with_for_update=True)
@@ -82,12 +108,12 @@ async def booking_item_submit(
                             "form_data": {
                                 "booking_price": booking_price,
                                 "booking_prepayment": booking_prepayment,
-                                "booking_payment_type": booking_payment_type,
-                                "booking_platform": booking_platform,
-                                "booking_full_name": booking_full_name,
-                                "booking_phone": booking_phone,
-                                "booking_birth_date": booking_birth_date,
-                                "booking_comment": booking_comment,
+                                "booking_payment_type": payment_type,
+                                "booking_platform": platform,
+                                "booking_full_name": full_name,
+                                "booking_phone": phone,
+                                "booking_birth_date": birth_date,
+                                "booking_comment": comment,
                                 "booking_bonus": booking_bonus,
                             },
                         },
@@ -99,24 +125,22 @@ async def booking_item_submit(
                 item.is_booked = True
                 item.booking_price = booking_price
                 item.booking_prepayment = booking_prepayment
-                item.booking_payment_type = booking_payment_type
-                item.booking_platform = booking_platform
-                item.booking_full_name = booking_full_name
-                item.booking_phone = booking_phone
-                item.booking_birth_date = booking_birth_date
-                item.booking_comment = booking_comment
+                item.booking_payment_type = payment_type
+                item.booking_platform = platform
+                item.booking_full_name = full_name
+                item.booking_phone = phone
+                item.booking_birth_date = birth_date
                 item.booking_bonus = booking_bonus
 
-                if booking_phone or booking_full_name:
+                if phone or full_name:
                     await ClientRepository.get_or_create_client(
-                        phone=booking_phone.strip() if booking_phone else None,
-                        full_name=booking_full_name.strip() if booking_full_name else None,
-                        social_network=booking_platform,
-                        birth_date=booking_birth_date,
+                        phone=phone,
+                        full_name=full_name,
+                        social_network=platform,
+                        birth_date=birth_date,
                         conn=session,
                     )
 
-                # Запись в таблицу bookings (для дашборда)
                 if not was_booked:
                     session.add(
                         Booking(
@@ -125,31 +149,38 @@ async def booking_item_submit(
                         )
                     )
 
-                if booking_prepayment and booking_prepayment > 0 and booking_payment_type:
+                if booking_prepayment and booking_prepayment > 0 and payment_type:
                     session.add(
                         DailyPayment(
                             type="preorder",
-                            payment_type=booking_payment_type,
+                            payment_type=payment_type,
                             amount=booking_prepayment,
                         )
                     )
 
-                asyncio.create_task(
-                    send_booking_notification(
-                        bot=Bot(token=config.BOT_TOKEN),
-                        item_text=item.text,
-                        serial=item.serial or "",
-                        price=booking_price,
-                        bonus=booking_bonus,
-                        prepayment=booking_prepayment,
-                        platform=booking_platform,
-                        full_name=booking_full_name,
-                        phone=booking_phone,
-                        payment_type=booking_payment_type,
-                        birth_date=booking_birth_date,
-                        is_cancel=False,
-                    )
+                notif_payload = {
+                    "item_text": item.text,
+                    "serial": item.serial or "",
+                    "price": booking_price,
+                    "bonus": booking_bonus,
+                    "prepayment": booking_prepayment,
+                    "platform": platform,
+                    "full_name": full_name,
+                    "phone": phone,
+                    "payment_type": payment_type,
+                    "birth_date": birth_date,
+                    "comment": comment,
+                }
+
+        # После успешного коммита — уведомление
+        if notif_payload:
+            asyncio.create_task(
+                send_booking_notification(
+                    bot=Bot(token=config.BOT_TOKEN),
+                    is_cancel=False,
+                    **notif_payload,
                 )
+            )
 
         await AssortmentService.invalidate_cache()
         try:
