@@ -1,20 +1,52 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" x-data="{
+    sidebarOpen: false,
+    collapsed: localStorage.getItem('sidebarCollapsed') === 'true',
+    dark: localStorage.getItem('darkMode') === 'true',
+    compact: localStorage.getItem('compactTable') === 'true'
+}"
+:class="{ 'dark': dark }"
+x-init="$watch('dark', v => { localStorage.setItem('darkMode', v); document.documentElement.classList.toggle('dark', v) });
+         if (dark) document.documentElement.classList.add('dark')">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Admin Panel{% endblock %}</title>
+    <title>{% block title %}Admin Panel{% endblock %} · NextStore</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    boxShadow: {
+                        'soft': '0 2px 15px -3px rgba(0,0,0,0.07), 0 4px 6px -4px rgba(0,0,0,0.05)',
+                        'card': '0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.06)',
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js" defer></script>
 
     <style>
         [x-cloak] { display: none !important; }
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline-block; }
+        .htmx-request.htmx-indicator { display: inline-block; }
+        /* Compact table mode */
+        .compact-table td, .compact-table th { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+        .compact-table td { font-size: 0.875rem; }
     </style>
 
-    <!-- Надёжная инициализация Alpine Store -->
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.store('modal', {
@@ -23,75 +55,91 @@
             });
         });
     </script>
+    {% block extra_head %}{% endblock %}
 </head>
-<body class="bg-slate-50">
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
 
-    <div x-data="{ 
-        sidebarOpen: false, 
-        collapsed: localStorage.getItem('sidebarCollapsed') === 'true' 
-    }">
+    <div>
 
         <!-- Mobile Top Bar -->
-        <div class="lg:hidden bg-white border-b px-4 py-3 flex items-center justify-between sticky top-0 z-40">
+        <div class="lg:hidden bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
             <div class="flex items-center gap-x-3">
-                <button @click="sidebarOpen = true" class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl">
+                <button @click="sidebarOpen = true" class="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl">
                     <i class="fas fa-bars text-xl"></i>
                 </button>
-                <span class="font-semibold text-2xl tracking-tight">NextStore</span>
+                <span class="font-semibold text-xl tracking-tight">NextStore</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <button @click="dark = !dark" class="p-2.5 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <i class="fas" :class="dark ? 'fa-sun' : 'fa-moon'"></i>
+                </button>
             </div>
         </div>
 
         <div class="flex min-h-screen">
 
             <!-- Desktop Sidebar -->
-            <div class="hidden lg:flex flex-col bg-white border-r border-slate-200 h-screen sticky top-0"
-                 :class="collapsed ? 'w-20' : 'w-72'">
+            <div class="hidden lg:flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 h-screen sticky top-0 transition-all duration-200"
+                 :class="collapsed ? 'w-20' : 'w-64'">
 
-                <div class="flex items-center justify-between px-5 py-6 border-b">
+                <div class="flex items-center justify-between px-4 py-5 border-b border-slate-100 dark:border-slate-800">
                     <div class="flex items-center gap-x-3" :class="{ 'justify-center w-full': collapsed }">
-                        <div class="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center flex-shrink-0">
-                            <span class="text-white text-2xl font-bold">N</span>
+                        <div class="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
+                            <span class="text-white text-lg font-bold">N</span>
                         </div>
-                        <span x-show="!collapsed" class="font-semibold text-3xl tracking-tighter">NextStore</span>
+                        <span x-show="!collapsed" x-cloak class="font-semibold text-xl tracking-tight">NextStore</span>
                     </div>
 
-                    <button @click="collapsed = !collapsed; localStorage.setItem('sidebarCollapsed', collapsed)" 
-                            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl">
-                        <i class="fas" :class="collapsed ? 'fa-chevron-right' : 'fa-chevron-left'"></i>
+                    <button x-show="!collapsed" @click="collapsed = true; localStorage.setItem('sidebarCollapsed', true)"
+                            class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl">
+                        <i class="fas fa-chevron-left text-sm"></i>
+                    </button>
+                    <button x-show="collapsed" @click="collapsed = false; localStorage.setItem('sidebarCollapsed', false)"
+                            class="absolute left-full ml-2 top-6 p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm text-slate-400 hover:text-slate-600">
+                        <i class="fas fa-chevron-right text-sm"></i>
                     </button>
                 </div>
 
-                <nav class="flex-1 px-4 py-8 space-y-1.5 text-[15px]">
+                <nav class="flex-1 px-3 py-5 space-y-1 text-sm overflow-y-auto">
                     {% include 'partials/sidebar_nav.html' %}
                 </nav>
 
-                <div class="p-4 border-t">
-                    <a href="/admin/auth/logout" class="flex items-center gap-x-3.5 px-4 py-3 text-red-600 hover:bg-red-50 rounded-2xl">
-                        <i class="fas fa-sign-out-alt w-5 text-lg"></i>
-                        <span x-show="!collapsed" class="font-medium">Выйти</span>
+                <div class="p-3 border-t border-slate-100 dark:border-slate-800 space-y-1">
+                    <button @click="dark = !dark"
+                            class="w-full flex items-center gap-x-3 px-3 py-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+                        <i class="fas w-5 text-center" :class="dark ? 'fa-sun' : 'fa-moon'"></i>
+                        <span x-show="!collapsed" x-cloak class="font-medium" x-text="dark ? 'Светлая тема' : 'Тёмная тема'"></span>
+                    </button>
+                    <a href="/admin/auth/logout"
+                       class="flex items-center gap-x-3 px-3 py-2.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-colors">
+                        <i class="fas fa-sign-out-alt w-5 text-center"></i>
+                        <span x-show="!collapsed" x-cloak class="font-medium">Выйти</span>
                     </a>
                 </div>
             </div>
 
             <!-- Mobile Drawer -->
-            <div x-show="sidebarOpen" class="lg:hidden fixed inset-0 z-[999] bg-black/40" @click="sidebarOpen = false">
-                <div @click.stop class="w-80 bg-white h-full shadow-2xl"
-                     x-transition:enter="transition ease-out duration-300"
+            <div x-show="sidebarOpen" x-cloak class="lg:hidden fixed inset-0 z-[999] bg-black/50 backdrop-blur-sm" @click="sidebarOpen = false">
+                <div @click.stop class="w-72 bg-white dark:bg-slate-900 h-full shadow-2xl"
+                     x-transition:enter="transition ease-out duration-250"
                      x-transition:enter-start="-translate-x-full"
-                     x-transition:enter-end="translate-x-0">
+                     x-transition:enter-end="translate-x-0"
+                     x-transition:leave="transition ease-in duration-200"
+                     x-transition:leave-start="translate-x-0"
+                     x-transition:leave-end="-translate-x-full">
 
-                    <div class="flex items-center justify-between px-6 py-5 border-b">
+                    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
                         <div class="flex items-center gap-x-3">
-                            <div class="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center">
-                                <span class="text-white text-2xl font-bold">N</span>
+                            <div class="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center">
+                                <span class="text-white text-lg font-bold">N</span>
                             </div>
-                            <span class="font-semibold text-3xl tracking-tighter">NextStore</span>
+                            <span class="font-semibold text-xl tracking-tight">NextStore</span>
                         </div>
-                        <button @click="sidebarOpen = false" class="p-3 text-slate-400">
-                            <i class="fas fa-times text-2xl"></i>
+                        <button @click="sidebarOpen = false" class="p-2 text-slate-400 hover:text-slate-600">
+                            <i class="fas fa-times text-xl"></i>
                         </button>
                     </div>
-                    <nav class="p-4 space-y-1 text-[15px]">
+                    <nav class="p-3 space-y-1 text-sm">
                         {% include 'partials/sidebar_nav.html' %}
                     </nav>
                 </div>
@@ -99,37 +147,36 @@
 
             <!-- Main Content -->
             <div class="flex-1 min-w-0">
-                <div class="max-w-7xl mx-auto px-6 py-8">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
                     {% block content %}{% endblock %}
                 </div>
             </div>
         </div>
 
-        <!-- ==================== ГЛОБАЛЬНАЯ МОДАЛКА (улучшенная) ==================== -->
+        <!-- Global Modal -->
         <div
             x-show="$store.modal.show"
+            x-cloak
             @keydown.escape.window="$store.modal.show = false"
-            class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4"
-            style="display: none;"
+            class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 dark:bg-black/70 backdrop-blur-sm p-4"
         >
-            <div 
+            <div
                 @click.away="$store.modal.show = false"
-                class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden relative"
+                class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 dark:border-slate-700"
+                x-transition:enter="transition ease-out duration-200"
+                x-transition:enter-start="opacity-0 scale-95"
+                x-transition:enter-end="opacity-100 scale-100"
             >
-                <!-- Заголовок модалки -->
-                <div class="flex items-center justify-between px-6 py-4 border-b bg-slate-50">
-                    <h3 class="text-xl font-semibold text-slate-900" x-text="$store.modal.title"></h3>
-                    <button @click="$store.modal.show = false" class="text-slate-400 hover:text-slate-600 p-2">
-                        <i class="fas fa-times text-2xl"></i>
+                <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50">
+                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white" x-text="$store.modal.title"></h3>
+                    <button @click="$store.modal.show = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
+                        <i class="fas fa-times text-lg"></i>
                     </button>
                 </div>
-
-                <!-- Контент формы (загружается через HTMX) -->
-                <div id="htmxModalContent" class="p-6 max-h-[75vh] overflow-auto">
+                <div id="htmxModalContent" class="p-5 max-h-[75vh] overflow-auto">
                 </div>
             </div>
         </div>
-        <!-- ==================== КОНЕЦ МОДАЛКИ ==================== -->
 
     </div>
 
