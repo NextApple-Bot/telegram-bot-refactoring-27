@@ -29,22 +29,31 @@ async def send_booking_notification(
     comment: str | None = None,
     telegram_username: str | None = None,
 ):
-    """Уведомление о брони (максимально близко к формату v26)."""
+    """Уведомление о брони."""
     try:
         if is_cancel:
             text = f"❌ Отмена Брони:\n\n{item_text}"
         else:
             lines = ["БРОНЬ:", ""]
 
-            # Товар
-            if serial:
-                lines.append(f"{item_text} ({serial})")
+            # Товар (+ serial только если его ещё нет в тексте)
+            serial_clean = (serial or "").strip()
+            if serial_clean:
+                # Уже есть в скобках в названии?
+                already = (
+                    f"({serial_clean})" in item_text
+                    or f"[{serial_clean}]" in item_text
+                    or serial_clean in item_text.replace("-", "").replace(" ", "")
+                )
+                if already:
+                    lines.append(item_text)
+                else:
+                    lines.append(f"{item_text} ({serial_clean})")
             else:
                 lines.append(item_text)
-            lines.append("")
 
             # Стоимость
-            if price:
+            if price is not None and price > 0:
                 if bonus and bonus > 0:
                     lines.append(f"Стоимость – {format_number(price)} (Скидка бонусы {format_number(bonus)})")
                 else:
@@ -52,43 +61,47 @@ async def send_booking_notification(
                 lines.append("")
 
             # Предоплата
-            if prepayment and prepayment > 0:
+            prep = float(prepayment or 0)
+            if prep > 0:
                 pt_map = {
                     "cash": "Наличными",
                     "terminal": "Терминалом",
                     "qr": "QR-Кодом",
                     "transfer": "Переводом",
                 }
-                pt_name = pt_map.get(payment_type, payment_type or "")
-                prep_line = f"П/О – {format_number(prepayment)}"
+                pt_name = pt_map.get(payment_type or "", payment_type or "")
+                prep_line = f"П/О – {format_number(prep)}"
                 if pt_name:
                     prep_line += f" ({pt_name})"
                 lines.append(prep_line)
                 lines.append("")
 
-            # Остаток и Общая
-            if price and prepayment:
-                remaining = price - prepayment
-                if remaining > 0:
-                    lines.append(f"Остаток – {format_number(remaining)}.")
-                    lines.append("")
+            # Остаток — всегда, если есть цена
+            if price is not None and price > 0:
+                remaining = float(price) - prep
+                if remaining < 0:
+                    remaining = 0
+                lines.append(f"Остаток - {format_number(remaining)}")
+                lines.append("")
                 lines.append(f"Общая – {format_number(price)}.")
                 lines.append("")
 
-            # Клиент
+            # Клиент: ФИО → телефон → дата рождения
             if full_name:
                 lines.append(full_name)
-            if birth_date:
-                if not str(birth_date).endswith("г."):
-                    birth_date = f"{birth_date}г."
-                lines.append(birth_date)
             if phone:
                 lines.append(phone)
+            if birth_date:
+                bd = str(birth_date).strip()
+                if bd and not bd.endswith("г."):
+                    bd = f"{bd}г."
+                lines.append(bd)
 
             if telegram_username:
-                if not telegram_username.startswith("@"):
-                    telegram_username = f"@{telegram_username}"
-                lines.append(f"ТГ – {telegram_username}")
+                uname = telegram_username.strip()
+                if uname and not uname.startswith("@"):
+                    uname = f"@{uname}"
+                lines.append(f"ТГ – {uname}")
 
             if full_name or birth_date or phone or telegram_username:
                 lines.append("")
@@ -131,7 +144,7 @@ async def send_sale_notification(
     accessories_total: float = 0.0,
     final_amount: float | None = None,
 ):
-    """Уведомление о продаже (максимально близко к формату v26)."""
+    """Уведомление о продаже."""
     try:
         accessories = accessories or []
 
@@ -158,8 +171,17 @@ async def send_sale_notification(
             lines.append(f"Стоимость – {format_number(acc.get('price', 0))}")
             lines.append("")
 
-        if prepayment and prepayment > 0:
-            lines.append(f"П/О – {format_number(prepayment)}")
+        prep = float(prepayment or 0)
+        if prep > 0:
+            lines.append(f"П/О – {format_number(prep)}")
+            lines.append("")
+
+        # Остаток при продаже (если была предоплата)
+        if prep > 0 and price:
+            remaining = float(price) - prep
+            if remaining < 0:
+                remaining = 0
+            lines.append(f"Остаток - {format_number(remaining)}")
             lines.append("")
 
         if payment_type == "paid":
@@ -181,14 +203,16 @@ async def send_sale_notification(
             lines.append(f"Общая – {format_number(total)}.")
             lines.append("")
 
+        # Клиент: ФИО → телефон → дата
         if full_name:
             lines.append(full_name)
-        if birth_date:
-            if not str(birth_date).endswith("г."):
-                birth_date = f"{birth_date}г."
-            lines.append(birth_date)
         if phone:
             lines.append(phone)
+        if birth_date:
+            bd = str(birth_date).strip()
+            if bd and not bd.endswith("г."):
+                bd = f"{bd}г."
+            lines.append(bd)
         if full_name or birth_date or phone:
             lines.append("")
 
