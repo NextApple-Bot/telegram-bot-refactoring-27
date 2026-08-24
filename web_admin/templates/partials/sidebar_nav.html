@@ -1,43 +1,43 @@
 {% set current_path = request.url.path %}
 
-<a href="/admin/dashboard" 
-   class="flex items-center gap-x-3.5 px-4 py-3 rounded-2xl text-[15px] font-medium transition-all
-          {% if current_path.startswith('/admin/dashboard') %}bg-indigo-50 text-indigo-700{% else %}text-slate-600 hover:bg-slate-100 hover:text-slate-900{% endif %}">
-    <i class="fas fa-chart-line w-5 text-lg"></i>
-    <span class="nav-text" x-show="!collapsed">Дашборд</span>
+<a href="/admin/dashboard"
+   class="flex items-center gap-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+          {% if current_path.startswith('/admin/dashboard') %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+    <i class="fas fa-chart-line w-5 text-center text-base opacity-80"></i>
+    <span class="nav-text" x-show="!collapsed" x-cloak>Дашборд</span>
 </a>
 
-<a href="/admin/assortment" 
-   class="flex items-center gap-x-3.5 px-4 py-3 rounded-2xl text-[15px] font-medium transition-all
-          {% if current_path.startswith('/admin/assortment') %}bg-indigo-50 text-indigo-700{% else %}text-slate-600 hover:bg-slate-100 hover:text-slate-900{% endif %}">
-    <i class="fas fa-boxes w-5 text-lg"></i>
-    <span class="nav-text" x-show="!collapsed">Ассортимент</span>
+<a href="/admin/assortment"
+   class="flex items-center gap-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+          {% if current_path.startswith('/admin/assortment') %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+    <i class="fas fa-boxes w-5 text-center text-base opacity-80"></i>
+    <span class="nav-text" x-show="!collapsed" x-cloak>Ассортимент</span>
 </a>
 
-<a href="/admin/clients" 
-   class="flex items-center gap-x-3.5 px-4 py-3 rounded-2xl text-[15px] font-medium transition-all
-          {% if current_path.startswith('/admin/clients') %}bg-indigo-50 text-indigo-700{% else %}text-slate-600 hover:bg-slate-100 hover:text-slate-900{% endif %}">
-    <i class="fas fa-users w-5 text-lg"></i>
-    <span class="nav-text" x-show="!collapsed">Клиенты</span>
+<a href="/admin/clients"
+   class="flex items-center gap-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+          {% if current_path.startswith('/admin/clients') %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+    <i class="fas fa-users w-5 text-center text-base opacity-80"></i>
+    <span class="nav-text" x-show="!collapsed" x-cloak>Клиенты</span>
 </a>
 
-<a href="/admin/purchases" 
-   class="flex items-center gap-x-3.5 px-4 py-3 rounded-2xl text-[15px] font-medium transition-all
-          {% if current_path.startswith('/admin/purchases') %}bg-indigo-50 text-indigo-700{% else %}text-slate-600 hover:bg-slate-100 hover:text-slate-900{% endif %}">
-    <i class="fas fa-shopping-cart w-5 text-lg"></i>
-    <span class="nav-text" x-show="!collapsed">Покупки</span>
+<a href="/admin/purchases"
+   class="flex items-center gap-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+          {% if current_path.startswith('/admin/purchases') %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+    <i class="fas fa-shopping-cart w-5 text-center text-base opacity-80"></i>
+    <span class="nav-text" x-show="!collapsed" x-cloak>Покупки</span>
 </a>
 
-<a href="/admin/sold" 
-   class="flex items-center gap-x-3.5 px-4 py-3 rounded-2xl text-[15px] font-medium transition-all
-          {% if current_path.startswith('/admin/sold') %}bg-indigo-50 text-indigo-700{% else %}text-slate-600 hover:bg-slate-100 hover:text-slate-900{% endif %}">
-    <i class="fas fa-receipt w-5 text-lg"></i>
-    <span class="nav-text" x-show="!collapsed">Проданные товары</span>
+<a href="/admin/sold"
+   class="flex items-center gap-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+          {% if current_path.startswith('/admin/sold') %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+    <i class="fas fa-receipt w-5 text-center text-base opacity-80"></i>
+    <span class="nav-text" x-show="!collapsed" x-cloak>Проданные</span>
 </a>
 
-<a href="/admin/stats" 
-   class="flex items-center gap-x-3.5 px-4 py-3 rounded-2xl text-[15px] font-medium transition-all
-          {% if current_path.startswith('/admin/stats') %}bg-indigo-50 text-indigo-700{% else %}text-slate-600 hover:bg-slate-100 hover:text-slate-900{% endif %}">
-    <i class="fas fa-chart-bar w-5 text-lg"></i>
-    <span class="nav-text" x-show="!collapsed">Статистика</span>
+<a href="/admin/stats"
+   class="flex items-center gap-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+          {% if current_path.startswith('/admin/stats') %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+    <i class="fas fa-chart-bar w-5 text-center text-base opacity-80"></i>
+    <span class="nav-text" x-show="!collapsed" x-cloak>Статистика</span>
 </a>
