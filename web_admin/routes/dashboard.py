@@ -28,6 +28,22 @@ def calculate_change(current: int | float, previous: int | float) -> float | Non
     return round(((current - previous) / previous) * 100, 1)
 
 
+async def _count_sales(session, day):
+    """Продажи за день: max(таблица sales, платежи type=sale)."""
+    from_sales = (await session.execute(
+        select(func.count(Sale.id)).where(func.date(Sale.sold_at) == day)
+    )).scalar() or 0
+
+    from_payments = (await session.execute(
+        select(func.count(DailyPayment.id)).where(
+            func.date(DailyPayment.created_at) == day,
+            DailyPayment.type == "sale",
+        )
+    )).scalar() or 0
+
+    return max(from_sales, from_payments)
+
+
 @router.get("/")
 async def dashboard(request: Request, target_date: str | None = None):
     today = datetime.now().date() if not target_date else datetime.strptime(target_date, "%Y-%m-%d").date()
@@ -36,20 +52,10 @@ async def dashboard(request: Request, target_date: str | None = None):
 
     async_session = get_async_session_factory()
     async with async_session() as session:
-        # === Продажи: записи в sales ===
-        sales_today = (await session.execute(
-            select(func.count(Sale.id)).where(func.date(Sale.sold_at) == today)
-        )).scalar() or 0
+        sales_today = await _count_sales(session, today)
+        sales_yesterday = await _count_sales(session, yesterday)
+        sales_week_ago = await _count_sales(session, week_ago)
 
-        sales_yesterday = (await session.execute(
-            select(func.count(Sale.id)).where(func.date(Sale.sold_at) == yesterday)
-        )).scalar() or 0
-
-        sales_week_ago = (await session.execute(
-            select(func.count(Sale.id)).where(func.date(Sale.sold_at) == week_ago)
-        )).scalar() or 0
-
-        # === Выручка: все daily_payments за день ===
         revenue_today = (await session.execute(
             select(func.coalesce(func.sum(DailyPayment.amount), 0)).where(
                 func.date(DailyPayment.created_at) == today)
@@ -70,7 +76,6 @@ async def dashboard(request: Request, target_date: str | None = None):
         revenue_change_yesterday = calculate_change(float(revenue_today), float(revenue_yesterday))
         revenue_change_week = calculate_change(float(revenue_today), float(revenue_week_ago))
 
-        # Платежи по типам
         payment_rows = (await session.execute(
             select(
                 func.coalesce(func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == "cash"), 0).label("cash"),
@@ -85,7 +90,6 @@ async def dashboard(request: Request, target_date: str | None = None):
         payments = {col: float(getattr(payment_rows, col, 0) or 0) for col in ["cash", "terminal", "qr", "transfer", "invoice", "installment"]}
         total_revenue = sum(payments.values())
 
-        # === Предзаказы: платежи type=preorder + таблица preorders ===
         preorders_from_payments = (await session.execute(
             select(func.count(DailyPayment.id)).where(
                 func.date(DailyPayment.created_at) == today,
@@ -99,34 +103,25 @@ async def dashboard(request: Request, target_date: str | None = None):
 
         preorders_count = max(preorders_from_payments, preorders_from_table)
 
-        # === Брони: таблица bookings + текущие is_booked как fallback ===
-        bookings_from_table = (await session.execute(
+        bookings_count = (await session.execute(
             select(func.count(Booking.id)).where(func.date(Booking.booked_at) == today)
         )).scalar() or 0
 
-        # Активные брони в ассортименте (на сейчас)
         active_bookings = (await session.execute(
             select(func.count(Item.id)).where(Item.is_booked.is_(True))
         )).scalar() or 0
 
-        bookings_count = bookings_from_table
-
-        # Графики
         chart_dates, chart_sales, chart_revenue = [], [], []
         for i in range(6, -1, -1):
             d = today - timedelta(days=i)
             chart_dates.append(d.strftime("%d.%m"))
-            sales_cnt = (await session.execute(
-                select(func.count(Sale.id)).where(func.date(Sale.sold_at) == d)
-            )).scalar() or 0
+            chart_sales.append(await _count_sales(session, d))
             rev = (await session.execute(
                 select(func.coalesce(func.sum(DailyPayment.amount), 0)).where(
                     func.date(DailyPayment.created_at) == d)
             )).scalar() or 0
-            chart_sales.append(sales_cnt)
             chart_revenue.append(float(rev))
 
-        # Продавцы
         sellers_rows = (await session.execute(
             select(Seller.id, Seller.name, SellerDay.id.isnot(None).label("present"))
             .outerjoin(SellerDay, (Seller.id == SellerDay.seller_id) & (SellerDay.date == today))
@@ -134,7 +129,6 @@ async def dashboard(request: Request, target_date: str | None = None):
         )).all()
         sellers = [{"id": r.id, "name": r.name, "present": bool(r.present)} for r in sellers_rows]
 
-        # Топ моделей — из deleted_items с reason sale + sales
         top_models = (await session.execute(
             select(Item.text, func.count(Sale.id).label("count"))
             .select_from(Sale)
@@ -222,13 +216,23 @@ async def update_stats(request: Request):
             for pt in ["cash", "terminal", "qr", "transfer", "invoice", "installment"]:
                 amount = float(data.get(pt, 0) or 0)
                 if amount > 0:
-                    session.add(DailyPayment(type="sale", payment_type=pt, amount=amount, created_at=datetime.combine(target_date, datetime.min.time())))
+                    session.add(DailyPayment(
+                        type="sale",
+                        payment_type=pt,
+                        amount=amount,
+                        created_at=datetime.combine(target_date, datetime.min.time()),
+                    ))
 
             for _ in range(int(data.get("sales_count", 0) or 0)):
-                session.add(Sale(sold_at=datetime.combine(target_date, datetime.min.time()), count=1))
+                session.add(Sale(
+                    sold_at=datetime.combine(target_date, datetime.min.time()),
+                    count=1,
+                ))
 
             for _ in range(int(data.get("preorders_count", 0) or 0)):
-                session.add(Preorder(created_at=datetime.combine(target_date, datetime.min.time())))
+                session.add(Preorder(
+                    created_at=datetime.combine(target_date, datetime.min.time()),
+                ))
 
             for _ in range(int(data.get("bookings_count", 0) or 0)):
                 session.add(Booking(
