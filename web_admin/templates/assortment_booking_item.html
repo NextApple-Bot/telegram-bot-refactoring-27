@@ -1,0 +1,123 @@
+<!-- Форма бронирования товара -->
+<form
+    hx-post="/admin/assortment/booking/{{ item.id }}"
+    hx-target="#htmxModalContent"
+    hx-swap="innerHTML"
+    hx-indicator="#booking-spinner"
+    class="space-y-5">
+
+    {% if error %}
+    <div class="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+        <strong>Ошибка:</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    <div class="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-4 py-3">
+        <p class="text-sm font-medium text-slate-900 dark:text-white">{{ item.text }}</p>
+        {% if item.serial %}
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Серийный номер: <code class="font-mono text-indigo-600 dark:text-indigo-400">{{ item.serial }}</code>
+        </p>
+        {% endif %}
+        {% if item.is_booked %}
+        <p class="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">Уже в брони — данные будут обновлены</p>
+        {% endif %}
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                Стоимость брони <span class="text-red-500">*</span>
+            </label>
+            <div class="relative">
+                <input type="number" step="0.01" name="booking_price" required
+                       value="{{ form_data.booking_price if form_data else (item.booking_price or '') }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Предоплата</label>
+            <div class="relative">
+                <input type="number" step="0.01" name="booking_prepayment"
+                       value="{{ form_data.booking_prepayment if form_data else (item.booking_prepayment or '') }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Способ оплаты предоплаты</label>
+            <select name="booking_payment_type"
+                    class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                <option value="">— Не указано —</option>
+                {% set pt = form_data.booking_payment_type if form_data else item.booking_payment_type %}
+                <option value="cash" {% if pt == 'cash' %}selected{% endif %}>💵 Наличными</option>
+                <option value="terminal" {% if pt == 'terminal' %}selected{% endif %}>💳 Терминал</option>
+                <option value="qr" {% if pt == 'qr' %}selected{% endif %}>📱 QR-код</option>
+                <option value="transfer" {% if pt == 'transfer' %}selected{% endif %}>↗️ Перевод</option>
+            </select>
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Площадка</label>
+            <input type="text" name="booking_platform" placeholder="Авито, Telegram..."
+                   value="{{ form_data.booking_platform if form_data else (item.booking_platform or '') }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none">
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">ФИО клиента</label>
+            <input type="text" name="booking_full_name"
+                   value="{{ form_data.booking_full_name if form_data else (item.booking_full_name or '') }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none">
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Телефон</label>
+            <input type="text" name="booking_phone" placeholder="+79991234567"
+                   value="{{ form_data.booking_phone if form_data else (item.booking_phone or '') }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none">
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Дата рождения</label>
+            <input type="text" name="booking_birth_date" placeholder="дд.мм.гггг"
+                   value="{{ form_data.booking_birth_date if form_data else (item.booking_birth_date or '') }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none">
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Бонус</label>
+            <div class="relative">
+                <input type="number" step="0.01" name="booking_bonus"
+                       value="{{ form_data.booking_bonus if form_data else (item.booking_bonus or '') }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Комментарий</label>
+        <textarea name="booking_comment" rows="2" placeholder="Комментарий к брони..."
+                  class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none resize-none">{{ form_data.booking_comment if form_data else (item.booking_comment or '') }}</textarea>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <button type="button"
+                @click="$store.modal.show = false"
+                class="px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+            Отмена
+        </button>
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-xl shadow-sm transition-colors">
+            <i class="fas fa-bookmark"></i>
+            Забронировать
+            <span id="booking-spinner" class="htmx-indicator">
+                <i class="fas fa-spinner fa-spin"></i>
+            </span>
+        </button>
+    </div>
+</form>
