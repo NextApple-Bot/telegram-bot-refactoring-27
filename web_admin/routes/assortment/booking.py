@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from bot import config
 from bot.db import get_async_session_factory
-from bot.models import DailyPayment, Item
+from bot.models import Booking, DailyPayment, Item
 from bot.repositories.client import ClientRepository
 from bot.services.assortment import AssortmentService
 from bot.services.cache import cache
@@ -54,6 +54,14 @@ async def booking_item_submit(
     """Сохранение брони из админки."""
     is_htmx = request.headers.get("hx-request") == "true"
 
+    # Нормализация даты рождения из <input type="date"> (YYYY-MM-DD) → ДД.ММ.ГГГГ
+    if booking_birth_date and "-" in booking_birth_date and len(booking_birth_date) == 10:
+        try:
+            y, m, d = booking_birth_date.split("-")
+            booking_birth_date = f"{d}.{m}.{y}"
+        except ValueError:
+            pass
+
     async_session = get_async_session_factory()
     try:
         async with async_session() as session:
@@ -70,7 +78,7 @@ async def booking_item_submit(
                         {
                             "request": request,
                             "item": item,
-                            "error": "Укажите стоимость брони больше 0",
+                            "error": "Укажите стоимость устройства больше 0",
                             "form_data": {
                                 "booking_price": booking_price,
                                 "booking_prepayment": booking_prepayment,
@@ -85,6 +93,8 @@ async def booking_item_submit(
                         },
                         status_code=400,
                     )
+
+                was_booked = bool(item.is_booked)
 
                 item.is_booked = True
                 item.booking_price = booking_price
@@ -104,6 +114,15 @@ async def booking_item_submit(
                         social_network=booking_platform,
                         birth_date=booking_birth_date,
                         conn=session,
+                    )
+
+                # Запись в таблицу bookings (для дашборда)
+                if not was_booked:
+                    session.add(
+                        Booking(
+                            item_id=item.id,
+                            total_amount=booking_price,
+                        )
                     )
 
                 if booking_prepayment and booking_prepayment > 0 and booking_payment_type:
