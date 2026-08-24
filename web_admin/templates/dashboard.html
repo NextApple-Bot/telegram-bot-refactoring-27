@@ -1,260 +1,225 @@
 {% extends "base.html" %}
 
 {% block title %}Дашборд{% endblock %}
-{% block page_title %}Дашборд за {{ target_date }}{% endblock %}
-
-{% block extra_head %}
-<style>
-    .kpi-card {
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        border: none;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    }
-    .kpi-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-    }
-    .kpi-value {
-        font-size: 2.1rem;
-        font-weight: 700;
-        line-height: 1.1;
-    }
-    .change-positive { color: #10b981; font-weight: 600; }
-    .change-negative { color: #ef4444; font-weight: 600; }
-    .change-neutral  { color: #64748b; }
-    .section-title {
-        font-size: 1rem;
-        font-weight: 600;
-        color: #334155;
-        margin-bottom: 1rem;
-    }
-</style>
-{% endblock %}
 
 {% block content %}
 
-<!-- Верхняя панель -->
-<div class="d-flex justify-content-between align-items-center mb-4">
+<!-- Header -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
     <div>
-        <h4 class="mb-1">Дашборд</h4>
-        <p class="text-muted mb-0">{{ target_date }}</p>
+        <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Дашборд</h1>
+        <p class="text-slate-500 dark:text-slate-400 mt-1">{{ target_date }}</p>
     </div>
-    <div>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editStatsModal">
-            ✏️ Редактировать статистику
-        </button>
-    </div>
+    <button
+        class="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl shadow-sm transition-colors"
+        data-modal="editStats"
+        onclick="document.getElementById('editStatsModal').classList.remove('hidden')">
+        <i class="fas fa-pen text-xs"></i>
+        Редактировать статистику
+    </button>
 </div>
 
-<!-- KPI Карточки -->
-<div class="row g-4 mb-4">
-    <!-- Продажи -->
-    <div class="col-md-6">
-        <div class="card kpi-card h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="text-muted small mb-1">ПРОДАЖИ СЕГОДНЯ</div>
-                        <div class="kpi-value">{{ sales_today }}</div>
-                    </div>
-                    <div class="text-end">
-                        {% if sales_change_yesterday is not none %}
-                            <div class="{{ 'change-positive' if sales_change_yesterday > 0 else 'change-negative' if sales_change_yesterday < 0 else 'change-neutral' }}">
-                                {% if sales_change_yesterday > 0 %}+{% endif %}{{ sales_change_yesterday }}% <span class="small">ко вчера</span>
-                            </div>
-                        {% endif %}
-                        {% if sales_change_week is not none %}
-                            <div class="{{ 'change-positive' if sales_change_week > 0 else 'change-negative' if sales_change_week < 0 else 'change-neutral' }} small">
-                                {% if sales_change_week > 0 %}+{% endif %}{{ sales_change_week }}% <span class="small">к неделе</span>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
+<!-- KPI Cards -->
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+    <!-- Sales -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card hover:shadow-soft transition-shadow">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Продажи сегодня</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ sales_today }}</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center">
+                <i class="fas fa-shopping-bag text-indigo-600 dark:text-indigo-400"></i>
+            </div>
+        </div>
+        {% if sales_change_yesterday is not none %}
+        <p class="mt-3 text-sm {% if sales_change_yesterday > 0 %}text-emerald-600{% elif sales_change_yesterday < 0 %}text-red-500{% else %}text-slate-400{% endif %}">
+            {% if sales_change_yesterday > 0 %}+{% endif %}{{ sales_change_yesterday }}% <span class="text-slate-400">ко вчера</span>
+        </p>
+        {% endif %}
+    </div>
+
+    <!-- Revenue -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card hover:shadow-soft transition-shadow">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Выручка сегодня</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ "{:,.0f}".format(revenue_today).replace(',', ' ') }} <span class="text-lg font-semibold text-slate-400">₽</span></p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center">
+                <i class="fas fa-ruble-sign text-emerald-600 dark:text-emerald-400"></i>
+            </div>
+        </div>
+        {% if revenue_change_yesterday is not none %}
+        <p class="mt-3 text-sm {% if revenue_change_yesterday > 0 %}text-emerald-600{% elif revenue_change_yesterday < 0 %}text-red-500{% else %}text-slate-400{% endif %}">
+            {% if revenue_change_yesterday > 0 %}+{% endif %}{{ revenue_change_yesterday }}% <span class="text-slate-400">ко вчера</span>
+        </p>
+        {% endif %}
+    </div>
+
+    <!-- Preorders / Bookings from stats if available -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card hover:shadow-soft transition-shadow">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Предзаказы</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ stats.preorders_count if stats else 0 }}</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center">
+                <i class="fas fa-clock text-amber-600 dark:text-amber-400"></i>
             </div>
         </div>
     </div>
 
-    <!-- Выручка -->
-    <div class="col-md-6">
-        <div class="card kpi-card h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="text-muted small mb-1">ВЫРУЧКА СЕГОДНЯ</div>
-                        <div class="kpi-value">{{ "{:,.0f}".format(revenue_today) }} <span class="fs-6">₽</span></div>
-                    </div>
-                    <div class="text-end">
-                        {% if revenue_change_yesterday is not none %}
-                            <div class="{{ 'change-positive' if revenue_change_yesterday > 0 else 'change-negative' if revenue_change_yesterday < 0 else 'change-neutral' }}">
-                                {% if revenue_change_yesterday > 0 %}+{% endif %}{{ revenue_change_yesterday }}% <span class="small">ко вчера</span>
-                            </div>
-                        {% endif %}
-                        {% if revenue_change_week is not none %}
-                            <div class="{{ 'change-positive' if revenue_change_week > 0 else 'change-negative' if revenue_change_week < 0 else 'change-neutral' }} small">
-                                {% if revenue_change_week > 0 %}+{% endif %}{{ revenue_change_week }}% <span class="small">к неделе</span>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card hover:shadow-soft transition-shadow">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Брони</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ stats.bookings_count if stats else 0 }}</p>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Финансы и Продавцы -->
-<div class="row g-4 mb-4">
-    <!-- Финансы -->
-    <div class="col-lg-7">
-        <div class="card h-100">
-            <div class="card-header">
-                <strong>Структура оплат за {{ target_date }}</strong>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    {% for key, label in [('cash','Наличные'), ('terminal','Терминал'), ('qr','QR-код'), 
-                                         ('transfer','Перевод'), ('invoice','По счёту'), ('installment','Рассрочка')] %}
-                    <div class="col-6 col-md-4 mb-3">
-                        <div class="d-flex justify-content-between">
-                            <span class="text-muted">{{ label }}</span>
-                            <strong>{{ "{:,.0f}".format(payments[key]) }} ₽</strong>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                <hr class="my-2">
-                <div class="d-flex justify-content-between align-items-center">
-                    <strong class="fs-5">Итого</strong>
-                    <strong class="fs-4 text-primary">{{ "{:,.0f}".format(total_revenue) }} ₽</strong>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Продавцы дня -->
-    <div class="col-lg-5">
-        <div class="card h-100">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <strong>Продавцы дня</strong>
-                <a href="/admin/sellers/manage" class="btn btn-sm btn-outline-primary">Управление</a>
-            </div>
-            <div class="card-body">
-                {% if sellers %}
-                    <div class="d-flex flex-wrap gap-2">
-                        {% for seller in sellers %}
-                            <button 
-                                class="btn btn-sm seller-btn {{ 'btn-success' if seller.present else 'btn-outline-secondary' }}"
-                                onclick="toggleSeller({{ seller.id }})"
-                                id="seller-btn-{{ seller.id }}">
-                                {{ seller.name }}
-                            </button>
-                        {% endfor %}
-                    </div>
-                {% else %}
-                    <div class="text-muted">Продавцы не добавлены</div>
-                {% endif %}
+            <div class="w-11 h-11 rounded-xl bg-violet-50 dark:bg-violet-950/50 flex items-center justify-center">
+                <i class="fas fa-bookmark text-violet-600 dark:text-violet-400"></i>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Графики -->
-<div class="row g-4 mb-4">
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header">
-                <strong>Динамика продаж (7 дней)</strong>
-            </div>
-            <div class="card-body">
-                <canvas id="salesChart" height="110"></canvas>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header">
-                <strong>Динамика выручки (7 дней)</strong>
-            </div>
-            <div class="card-body">
-                <canvas id="revenueChart" height="110"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Топ моделей -->
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Топ-5 моделей (7 дней)</strong>
-        <a href="/admin/sellers/stats" class="btn btn-sm btn-outline-secondary">Статистика продавцов →</a>
-    </div>
-    <div class="card-body">
-        {% if top_labels %}
-            <div class="row">
-                {% for i in range(top_labels|length) %}
-                <div class="col-md-4 mb-2">
-                    <div class="d-flex justify-content-between">
-                        <span>{{ top_labels[i] }}</span>
-                        <strong>{{ top_counts[i] }}</strong>
-                    </div>
+<!-- Payments + Sellers -->
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-8">
+    <!-- Payment structure -->
+    <div class="lg:col-span-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Структура оплат за {{ target_date }}</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {% set payment_meta = [
+                ('cash', 'Наличные', 'fa-money-bill-wave', 'emerald'),
+                ('terminal', 'Терминал', 'fa-credit-card', 'blue'),
+                ('qr', 'QR-код', 'fa-qrcode', 'violet'),
+                ('transfer', 'Перевод', 'fa-exchange-alt', 'sky'),
+                ('invoice', 'По счёту', 'fa-file-invoice', 'slate'),
+                ('installment', 'Рассрочка', 'fa-calendar-alt', 'amber')
+            ] %}
+            {% for key, label, icon, color in payment_meta %}
+            <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <div class="w-9 h-9 rounded-lg bg-{{ color }}-100 dark:bg-{{ color }}-950/40 flex items-center justify-center flex-shrink-0">
+                    <i class="fas {{ icon }} text-{{ color }}-600 dark:text-{{ color }}-400 text-sm"></i>
                 </div>
+                <div class="min-w-0">
+                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ label }}</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ "{:,.0f}".format(payments[key]).replace(',', ' ') }} ₽</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <span class="text-sm font-medium text-slate-500">Итого</span>
+            <span class="text-xl font-bold text-indigo-600 dark:text-indigo-400">{{ "{:,.0f}".format(total_revenue).replace(',', ' ') }} ₽</span>
+        </div>
+    </div>
+
+    <!-- Sellers -->
+    <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Продавцы дня</h2>
+            <a href="/admin/sellers/manage" class="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Управление</a>
+        </div>
+        {% if sellers %}
+            <div class="flex flex-wrap gap-2">
+                {% for seller in sellers %}
+                    <button
+                        type="button"
+                        onclick="toggleSeller({{ seller.id }})"
+                        id="seller-btn-{{ seller.id }}"
+                        class="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors
+                               {% if seller.present %}bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300
+                               {% else %}bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300{% endif %}">
+                        {{ seller.name }}
+                    </button>
                 {% endfor %}
             </div>
         {% else %}
-            <div class="text-muted">Нет данных за последние 7 дней</div>
+            <p class="text-sm text-slate-400">Продавцы не добавлены</p>
         {% endif %}
     </div>
 </div>
 
-<!-- Модальное окно редактирования статистики -->
-<div class="modal fade" id="editStatsModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Редактировать статистику за {{ target_date }}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+<!-- Charts -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Динамика продаж (7 дней)</h2>
+        <canvas id="salesChart" height="120"></canvas>
+    </div>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Динамика выручки (7 дней)</h2>
+        <canvas id="revenueChart" height="120"></canvas>
+    </div>
+</div>
+
+<!-- Top models -->
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Топ-5 моделей (7 дней)</h2>
+        <a href="/admin/sellers/stats" class="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Статистика продавцов →</a>
+    </div>
+    {% if top_labels %}
+        <div class="space-y-3">
+            {% for i in range(top_labels|length) %}
+            <div class="flex items-center gap-3">
+                <span class="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-semibold flex items-center justify-center text-slate-500">{{ i + 1 }}</span>
+                <span class="flex-1 text-sm text-slate-700 dark:text-slate-300 truncate">{{ top_labels[i] }}</span>
+                <span class="text-sm font-semibold text-slate-900 dark:text-white">{{ top_counts[i] }}</span>
             </div>
-            <div class="modal-body">
-                <form id="editStatsForm">
-                    <input type="hidden" name="target_date" value="{{ target_date_iso }}">
-                    
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h6 class="mb-3">Платежи</h6>
-                            {% for key, label in [('cash','Наличные'), ('terminal','Терминал'), ('qr','QR-код'),
-                                                 ('transfer','Перевод'), ('invoice','По счёту'), ('installment','Рассрочка')] %}
-                            <div class="mb-2">
-                                <label class="form-label small">{{ label }} (₽)</label>
-                                <input type="number" step="0.01" class="form-control form-control-sm" 
-                                       name="{{ key }}" value="{{ payments[key] }}">
-                            </div>
-                            {% endfor %}
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <h6 class="mb-3">Количество</h6>
-                            <div class="mb-2">
-                                <label class="form-label small">Продажи</label>
-                                <input type="number" class="form-control form-control-sm" 
-                                       name="sales_count" value="{{ stats.sales_count }}">
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label small">Предзаказы</label>
-                                <input type="number" class="form-control form-control-sm" 
-                                       name="preorders_count" value="{{ stats.preorders_count }}">
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label small">Брони</label>
-                                <input type="number" class="form-control form-control-sm" 
-                                       name="bookings_count" value="{{ stats.bookings_count }}">
-                            </div>
-                        </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-sm text-slate-400">Нет данных за последние 7 дней</p>
+    {% endif %}
+</div>
+
+<!-- Edit stats modal (simple Tailwind) -->
+<div id="editStatsModal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+            <h3 class="text-lg font-semibold">Редактировать статистику</h3>
+            <button type="button" onclick="document.getElementById('editStatsModal').classList.add('hidden')" class="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-5">
+            <form id="editStatsForm" class="space-y-4">
+                <input type="hidden" name="target_date" value="{{ target_date_iso }}">
+                <div class="grid grid-cols-2 gap-3">
+                    {% for key, label in [('cash','Наличные'), ('terminal','Терминал'), ('qr','QR-код'),
+                                         ('transfer','Перевод'), ('invoice','По счёту'), ('installment','Рассрочка')] %}
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">{{ label }} (₽)</label>
+                        <input type="number" step="0.01" name="{{ key }}" value="{{ payments[key] }}"
+                               class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                     </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                <button type="button" class="btn btn-primary" onclick="saveStats()">Сохранить</button>
-            </div>
+                    {% endfor %}
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">Продажи</label>
+                        <input type="number" name="sales_count" value="{{ stats.sales_count }}"
+                               class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">Предзаказы</label>
+                        <input type="number" name="preorders_count" value="{{ stats.preorders_count }}"
+                               class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">Брони</label>
+                        <input type="number" name="bookings_count" value="{{ stats.bookings_count }}"
+                               class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <button type="button" onclick="document.getElementById('editStatsModal').classList.add('hidden')"
+                    class="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl">Отмена</button>
+            <button type="button" onclick="saveStats()"
+                    class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl">Сохранить</button>
         </div>
     </div>
 </div>
@@ -264,61 +229,68 @@
 {% block extra_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// Графики (оставил без изменений, они уже хорошие)
-const salesCtx = document.getElementById('salesChart');
-new Chart(salesCtx, {
+const isDark = document.documentElement.classList.contains('dark');
+const gridColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(148,163,184,0.25)';
+const tickColor = isDark ? '#94a3b8' : '#64748b';
+
+const chartDefaults = {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+        x: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } } },
+        y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } }, beginAtZero: true }
+    }
+};
+
+new Chart(document.getElementById('salesChart'), {
     type: 'line',
     data: {
         labels: {{ chart_dates | tojson }},
         datasets: [{
-            label: 'Продажи',
             data: {{ chart_sales | tojson }},
-            borderColor: '#2563eb',
-            backgroundColor: 'rgba(37, 99, 235, 0.1)',
-            tension: 0.3,
-            fill: true
+            borderColor: '#6366f1',
+            backgroundColor: 'rgba(99, 102, 241, 0.12)',
+            tension: 0.35,
+            fill: true,
+            pointRadius: 3,
+            pointBackgroundColor: '#6366f1'
         }]
     },
-    options: { responsive: true, plugins: { legend: { display: false } } }
+    options: chartDefaults
 });
 
-const revenueCtx = document.getElementById('revenueChart');
-new Chart(revenueCtx, {
+new Chart(document.getElementById('revenueChart'), {
     type: 'line',
     data: {
         labels: {{ chart_dates | tojson }},
         datasets: [{
-            label: 'Выручка',
             data: {{ chart_revenue | tojson }},
             borderColor: '#10b981',
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            tension: 0.3,
-            fill: true
+            backgroundColor: 'rgba(16, 185, 129, 0.12)',
+            tension: 0.35,
+            fill: true,
+            pointRadius: 3,
+            pointBackgroundColor: '#10b981'
         }]
     },
-    options: { responsive: true, plugins: { legend: { display: false } } }
+    options: chartDefaults
 });
 
-// Toggle продавца
 async function toggleSeller(sellerId) {
     const btn = document.getElementById('seller-btn-' + sellerId);
     const targetDate = '{{ target_date_iso }}';
-
     try {
         const res = await fetch('/admin/dashboard/toggle_seller_day', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: `seller_id=${sellerId}&target_date=${targetDate}`
         });
-        
         const data = await res.json();
         if (data.success) {
             if (data.status === 'added') {
-                btn.classList.add('btn-success');
-                btn.classList.remove('btn-outline-secondary');
+                btn.className = 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300';
             } else {
-                btn.classList.remove('btn-success');
-                btn.classList.add('btn-outline-secondary');
+                btn.className = 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300';
             }
         }
     } catch (e) {
@@ -326,25 +298,19 @@ async function toggleSeller(sellerId) {
     }
 }
 
-// Сохранение статистики
 async function saveStats() {
     const form = document.getElementById('editStatsForm');
     const formData = new FormData(form);
     const data = Object.fromEntries(formData.entries());
-
     try {
         const res = await fetch('/admin/dashboard/update_stats', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
-        
         const result = await res.json();
-        if (result.success) {
-            location.reload();
-        } else {
-            alert('Ошибка: ' + (result.error || 'Неизвестная ошибка'));
-        }
+        if (result.success) location.reload();
+        else alert('Ошибка: ' + (result.error || 'Неизвестная ошибка'));
     } catch (e) {
         alert('Ошибка соединения');
     }
