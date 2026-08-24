@@ -1,93 +1,105 @@
-<!-- Форма продажи товара с обработкой ошибок -->
-<form 
+<!-- Форма продажи товара -->
+<form
     hx-post="/admin/assortment/sale/{{ item.id }}"
     hx-target="#htmxModalContent"
     hx-swap="outerHTML"
-    hx-indicator="#sale-spinner">
+    hx-indicator="#sale-spinner"
+    class="space-y-5">
 
-    <div class="modal-body">
+    {% if error %}
+    <div class="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+        <strong>Ошибка:</strong> {{ error }}
+    </div>
+    {% endif %}
 
-        <!-- Блок ошибок -->
-        {% if error %}
-            <div class="alert alert-danger mb-4">
-                <strong>Ошибка:</strong> {{ error }}
-            </div>
+    <!-- Product info -->
+    <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-4 py-3">
+        <p class="text-sm font-medium text-slate-900 dark:text-white">{{ item.text }}</p>
+        {% if item.serial %}
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Серийный номер: <code class="font-mono text-indigo-600 dark:text-indigo-400">{{ item.serial }}</code>
+        </p>
         {% endif %}
-
-        <!-- Информация о товаре -->
-        <div class="alert alert-light mb-4">
-            <strong>Товар:</strong> {{ item.text }}<br>
-            {% if item.serial %}
-                <strong>Серийный номер:</strong> <code>{{ item.serial }}</code>
-            {% endif %}
-        </div>
-
-        <!-- Основные поля продажи -->
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Цена продажи <span class="text-danger">*</span></label>
-                <input type="number" step="0.01" name="sale_price" class="form-control" 
-                       value="{{ form_data.sale_price if form_data else (item.booking_price or '') }}" required>
-            </div>
-
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Способ оплаты <span class="text-danger">*</span></label>
-                <select name="payment_type" class="form-select" required>
-                    <option value="">-- Выберите способ оплаты --</option>
-                    <option value="cash" {% if form_data and form_data.payment_type == 'cash' %}selected{% endif %}>Наличными</option>
-                    <option value="terminal" {% if form_data and form_data.payment_type == 'terminal' %}selected{% endif %}>Терминал</option>
-                    <option value="qr" {% if form_data and form_data.payment_type == 'qr' %}selected{% endif %}>QR-код</option>
-                    <option value="transfer" {% if form_data and form_data.payment_type == 'transfer' %}selected{% endif %}>Перевод</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Сумма оплаты</label>
-                <input type="number" step="0.01" name="paid_amount" class="form-control" 
-                       value="{{ form_data.paid_amount if form_data else (item.booking_price or '') }}">
-            </div>
-
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Сдача / Остаток</label>
-                <input type="number" step="0.01" name="change_amount" class="form-control" 
-                       value="{{ form_data.change_amount if form_data else 0 }}">
-            </div>
-        </div>
-
-        <hr>
-
-        <!-- Дополнительная информация -->
-        <h6 class="mb-3">Дополнительно</h6>
-
-        <div class="mb-3">
-            <label class="form-label">Комментарий к продаже</label>
-            <textarea name="sale_comment" class="form-control" rows="2" 
-                      placeholder="Дополнительная информация...">{{ form_data.sale_comment if form_data else '' }}</textarea>
-        </div>
-
-        <!-- Создать клиента -->
-        <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="create_client" id="create_client"
-                   {% if not form_data or form_data.create_client %}checked{% endif %}>
-            <label class="form-check-label" for="create_client">
-                Создать/обновить данные клиента
-            </label>
-        </div>
-
     </div>
 
-    <!-- Кнопки -->
-    <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-        
-        <button type="submit" class="btn btn-success d-flex align-items-center gap-2">
-            <span>Продать товар</span>
+    <!-- Main fields -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                Цена продажи <span class="text-red-500">*</span>
+            </label>
+            <div class="relative">
+                <input type="number" step="0.01" name="sale_price" required
+                       value="{{ form_data.sale_price if form_data else (item.booking_price or '') }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                Способ оплаты <span class="text-red-500">*</span>
+            </label>
+            <select name="payment_type" required
+                    class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                <option value="">— Выберите —</option>
+                <option value="cash" {% if form_data and form_data.payment_type == 'cash' %}selected{% endif %}>💵 Наличными</option>
+                <option value="terminal" {% if form_data and form_data.payment_type == 'terminal' %}selected{% endif %}>💳 Терминал</option>
+                <option value="qr" {% if form_data and form_data.payment_type == 'qr' %}selected{% endif %}>📱 QR-код</option>
+                <option value="transfer" {% if form_data and form_data.payment_type == 'transfer' %}selected{% endif %}>↗️ Перевод</option>
+                <option value="invoice" {% if form_data and form_data.payment_type == 'invoice' %}selected{% endif %}>📄 По счёту</option>
+                <option value="installment" {% if form_data and form_data.payment_type == 'installment' %}selected{% endif %}>📅 Рассрочка</option>
+            </select>
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Сумма оплаты</label>
+            <div class="relative">
+                <input type="number" step="0.01" name="paid_amount"
+                       value="{{ form_data.paid_amount if form_data else (item.booking_price or '') }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Сдача / Остаток</label>
+            <div class="relative">
+                <input type="number" step="0.01" name="change_amount"
+                       value="{{ form_data.change_amount if form_data else 0 }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Комментарий</label>
+        <textarea name="sale_comment" rows="2" placeholder="Дополнительная информация..."
+                  class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none">{{ form_data.sale_comment if form_data else '' }}</textarea>
+    </div>
+
+    <label class="flex items-center gap-3 cursor-pointer select-none">
+        <input type="checkbox" name="create_client" value="on"
+               class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+               {% if not form_data or form_data.create_client %}checked{% endif %}>
+        <span class="text-sm text-slate-700 dark:text-slate-300">Создать / обновить данные клиента</span>
+    </label>
+
+    <!-- Actions -->
+    <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <button type="button"
+                @click="$store.modal.show = false"
+                class="px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+            Отмена
+        </button>
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm transition-colors">
+            <i class="fas fa-check"></i>
+            Продать товар
             <span id="sale-spinner" class="htmx-indicator">
-                <span class="spinner-border spinner-border-sm" role="status"></span>
+                <i class="fas fa-spinner fa-spin"></i>
             </span>
         </button>
     </div>
-
 </form>
