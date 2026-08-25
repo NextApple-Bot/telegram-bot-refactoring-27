@@ -7,7 +7,6 @@ from typing import Any, Optional
 from aiogram import Bot
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
-from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from bot import config
@@ -143,13 +142,8 @@ async def sale_item_submit(
     if change_kind not in ("cash", "transfer"):
         change_kind = "cash" if change_val else None
 
+    # paid_amount с формы — подсказка; итоговый расчёт в _process_sale_logic
     payment_amount = float(paid_amount or 0)
-    if payment_amount <= 0 and pay_type != "paid":
-        prep = float(sale_prepayment or 0)
-        payment_amount = max(
-            float(sale_price) - prep - float(bonus or 0) - float(discount or 0),
-            0,
-        )
 
     form_data = {
         "sale_price": sale_price,
@@ -354,18 +348,25 @@ async def _process_sale_logic(
     sale_message_id: int,
     sale_comment: Optional[str] = None,
 ) -> dict[str, Any]:
-    processed_accessories = []
-    accessories_payments: dict[str, float] = {}
+    """
+    Расчёт оплат:
+      товары = цена устройства + сумма аксессуаров − скидка
+      UDS   = бонусы (если указаны)
+      основной способ (Наличными/…) = товары − UDS − П/О − оплаты аксессуаров другим способом
+      Общая = товары (= основной способ + UDS + П/О + прочие)
+    """
+    processed_accessories: list[dict[str, Any]] = []
     accessories_total = 0.0
+    # Аксессуары, оплаченные НЕ основным способом
+    other_payments: dict[str, float] = {}
+
+    main_pt = (sale_payment_type or "cash").strip()
 
     for acc in accessories:
         price = float(acc.get("price", 0) or 0)
         accessories_total += price
         display_text = (acc.get("name") or "").strip() or "Аксессуар"
-
-        pay_type = (acc.get("payment_type") or "cash").strip()
-        if pay_type and pay_type != "paid" and price > 0:
-            accessories_payments[pay_type] = accessories_payments.get(pay_type, 0) + price
+        pay_type = (acc.get("payment_type") or "cash").strip() or "cash"
 
         processed_accessories.append({
             "text": display_text,
@@ -373,18 +374,43 @@ async def _process_sale_logic(
             "payment_type": pay_type,
         })
 
-    final_amount = (
-        float(sale_price)
-        + accessories_total
-        - float(sale_bonus or 0)
-        - float(sale_discount or 0)
-    )
+        if price > 0 and pay_type not in ("paid", main_pt):
+            other_payments[pay_type] = other_payments.get(pay_type, 0.0) + price
 
-    all_payments: dict[str, float] = dict(accessories_payments)
-    if sale_payment_type != "paid" and sale_payment_amount > 0:
-        all_payments[sale_payment_type] = (
-            all_payments.get(sale_payment_type, 0) + sale_payment_amount
-        )
+    bonus_val = float(sale_bonus or 0)
+    discount_val = float(sale_discount or 0)
+    prep = float(sale_prepayment or 0)
+    other_sum = sum(other_payments.values())
+
+    # Полная стоимость товаров (то, что уходит в «Общая»)
+    goods_total = float(sale_price) + accessories_total - discount_val
+
+    # Сколько должно прийти основным способом оплаты
+    primary_needed = max(goods_total - bonus_val - prep - other_sum, 0.0)
+
+    # Если с формы пришла сумма — поправляем, когда забыли вычесть UDS
+    primary_amount = primary_needed
+    if sale_payment_amount and float(sale_payment_amount) > 0 and main_pt != "paid":
+        entered = float(sale_payment_amount)
+        # Ввели полную сумму товаров (или цену устройства + аксы) без вычета бонусов
+        if bonus_val > 0 and entered + prep + other_sum + 0.01 >= goods_total:
+            primary_amount = primary_needed
+        # Ввели только цену устройства, аксессуары того же способа — добираем
+        elif (
+            accessories_total > 0
+            and abs(entered - float(sale_price)) < 0.01
+            and other_sum == 0
+        ):
+            primary_amount = primary_needed
+        else:
+            primary_amount = entered
+
+    all_payments: dict[str, float] = dict(other_payments)
+    if main_pt != "paid" and primary_amount > 0:
+        all_payments[main_pt] = all_payments.get(main_pt, 0.0) + primary_amount
+
+    # Общая = стоимость товаров (Наличными + UDS + …)
+    final_amount = goods_total
 
     client_id = None
     if sale_phone or sale_full_name:
@@ -401,11 +427,15 @@ async def _process_sale_logic(
         for acc in processed_accessories:
             items_list.append({"item_text": acc["text"], "price": acc["price"]})
 
+        payment_details = {pt: amt for pt, amt in all_payments.items() if amt > 0}
+        if bonus_val > 0:
+            payment_details["uds"] = bonus_val
+
         await ClientRepository.add_purchase(
             client_id=client_id,
             items=items_list,
             total_amount=final_amount,
-            payment_details={pt: amt for pt, amt in all_payments.items() if amt > 0},
+            payment_details=payment_details,
             purchase_type="sale",
             conn=session,
         )
@@ -436,7 +466,7 @@ async def _process_sale_logic(
     ))
 
     for pay_type, amount in all_payments.items():
-        if amount > 0:
+        if amount > 0 and pay_type != "uds":
             session.add(DailyPayment(
                 type="sale",
                 payment_type=pay_type,
@@ -449,9 +479,9 @@ async def _process_sale_logic(
         bot=bot,
         item_text=text,
         price=sale_price,
-        payment_type=sale_payment_type,
-        prepayment=sale_prepayment if sale_prepayment > 0 else None,
-        payment_amount=sale_payment_amount if sale_payment_type != "paid" else None,
+        payment_type=main_pt,
+        prepayment=prep if prep > 0 else None,
+        payment_amount=primary_amount if main_pt != "paid" else None,
         payments=all_payments,
         platform=sale_platform,
         full_name=sale_full_name,
