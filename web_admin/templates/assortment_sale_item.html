@@ -19,7 +19,24 @@
             Серийный номер: <code class="font-mono text-indigo-600 dark:text-indigo-400">{{ item.serial }}</code>
         </p>
         {% endif %}
+        {% if item.is_booked %}
+        <p class="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">Товар в брони — данные подставлены из брони</p>
+        {% endif %}
     </div>
+
+    {% set fd = form_data or {} %}
+    {% set bd_raw = fd.get('sale_birth_date') if fd else (item.booking_birth_date or item.sale_birth_date or '') %}
+    {% set bd_iso = '' %}
+    {% if bd_raw %}
+        {% if '-' in bd_raw|string and bd_raw|string|length == 10 %}
+            {% set bd_iso = bd_raw %}
+        {% elif '.' in bd_raw|string %}
+            {% set parts = bd_raw|string|replace('г.', '')|trim|split('.') %}
+            {% if parts|length == 3 %}
+                {% set bd_iso = parts[2] ~ '-' ~ parts[1] ~ '-' ~ parts[0] %}
+            {% endif %}
+        {% endif %}
+    {% endif %}
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
@@ -28,8 +45,8 @@
             </label>
             <div class="relative">
                 <input type="number" step="0.01" name="sale_price" required
-                       value="{{ form_data.sale_price if form_data else (item.booking_price or '') }}"
-                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none">
+                       value="{{ fd.get('sale_price', item.booking_price or item.sale_price or '') }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                 <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
             </div>
         </div>
@@ -39,48 +56,99 @@
                 Способ оплаты <span class="text-red-500">*</span>
             </label>
             <select name="payment_type" required
-                    class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                {% set pt = fd.get('payment_type', item.booking_payment_type or item.sale_payment_type or '') %}
                 <option value="">— Выберите —</option>
-                <option value="cash" {% if form_data and form_data.payment_type == 'cash' %}selected{% endif %}>💵 Наличными</option>
-                <option value="terminal" {% if form_data and form_data.payment_type == 'terminal' %}selected{% endif %}>💳 Терминал</option>
-                <option value="qr" {% if form_data and form_data.payment_type == 'qr' %}selected{% endif %}>📱 QR-код</option>
-                <option value="transfer" {% if form_data and form_data.payment_type == 'transfer' %}selected{% endif %}>↗️ Перевод</option>
-                <option value="invoice" {% if form_data and form_data.payment_type == 'invoice' %}selected{% endif %}>📄 По счёту</option>
-                <option value="installment" {% if form_data and form_data.payment_type == 'installment' %}selected{% endif %}>📅 Рассрочка</option>
+                <option value="cash" {% if pt == 'cash' %}selected{% endif %}>💵 Наличными</option>
+                <option value="terminal" {% if pt == 'terminal' %}selected{% endif %}>💳 Терминал</option>
+                <option value="qr" {% if pt == 'qr' %}selected{% endif %}>📱 QR-код</option>
+                <option value="transfer" {% if pt == 'transfer' %}selected{% endif %}>↗️ Перевод</option>
+                <option value="invoice" {% if pt == 'invoice' %}selected{% endif %}>📄 По счёту</option>
+                <option value="installment" {% if pt == 'installment' %}selected{% endif %}>📅 Рассрочка</option>
+                <option value="paid" {% if pt == 'paid' %}selected{% endif %}>✅ Оплачен</option>
             </select>
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Предоплата</label>
+            <div class="relative">
+                <input type="number" step="0.01" name="sale_prepayment"
+                       value="{{ fd.get('sale_prepayment', item.booking_prepayment or item.sale_prepayment or '') }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+            </div>
         </div>
 
         <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Сумма оплаты</label>
             <div class="relative">
                 <input type="number" step="0.01" name="paid_amount"
-                       value="{{ form_data.paid_amount if form_data else (item.booking_price or '') }}"
-                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                       value="{{ fd.get('paid_amount', '') }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                 <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
             </div>
         </div>
 
         <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Сдача / Остаток</label>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Сдача</label>
             <div class="relative">
                 <input type="number" step="0.01" name="change_amount"
-                       value="{{ form_data.change_amount if form_data else 0 }}"
-                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                       value="{{ fd.get('change_amount', 0) }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                 <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
             </div>
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Бонус</label>
+            <div class="relative">
+                <input type="number" step="0.01" name="sale_bonus"
+                       value="{{ fd.get('sale_bonus', item.booking_bonus or item.sale_bonus or '') }}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">ФИО клиента</label>
+            <input type="text" name="sale_full_name" placeholder="Иванов Иван Иванович"
+                   value="{{ fd.get('sale_full_name', item.booking_full_name or item.sale_full_name or '') }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Телефон</label>
+            <input type="tel" name="sale_phone" placeholder="+79991234567"
+                   value="{{ fd.get('sale_phone', item.booking_phone or item.sale_phone or '') }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Дата рождения</label>
+            <input type="date" name="sale_birth_date"
+                   value="{{ bd_iso }}"
+                   max="2015-12-31"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Площадка</label>
+            <input type="text" name="sale_platform" placeholder="Авито, Telegram..."
+                   value="{{ fd.get('sale_platform', item.booking_platform or item.sale_platform or '') }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
         </div>
     </div>
 
     <div>
         <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Комментарий</label>
         <textarea name="sale_comment" rows="2" placeholder="Дополнительная информация..."
-                  class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none">{{ form_data.sale_comment if form_data else '' }}</textarea>
+                  class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-none">{{ fd.get('sale_comment', '') }}</textarea>
     </div>
 
     <label class="flex items-center gap-3 cursor-pointer select-none">
         <input type="checkbox" name="create_client" value="on"
-               class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-               {% if not form_data or form_data.create_client %}checked{% endif %}>
+               class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+               {% if not form_data or fd.get('create_client', true) %}checked{% endif %}>
         <span class="text-sm text-slate-700 dark:text-slate-300">Создать / обновить данные клиента</span>
     </label>
 
