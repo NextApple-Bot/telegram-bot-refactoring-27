@@ -29,7 +29,6 @@ async def send_booking_notification(
     comment: str | None = None,
     telegram_username: str | None = None,
 ):
-    """Уведомление о брони с точными отступами."""
     try:
         if is_cancel:
             text = f"❌ Отмена Брони:\n\n{item_text}"
@@ -37,15 +36,8 @@ async def send_booking_notification(
             lines: list[str] = ["БРОНЬ:", ""]
 
             serial_clean = (serial or "").strip()
-            if serial_clean:
-                already = (
-                    f"({serial_clean})" in item_text
-                    or f"[{serial_clean}]" in item_text
-                )
-                if already:
-                    lines.append(item_text)
-                else:
-                    lines.append(f"{item_text} ({serial_clean})")
+            if serial_clean and f"({serial_clean})" not in item_text:
+                lines.append(f"{item_text} ({serial_clean})")
             else:
                 lines.append(item_text)
 
@@ -76,9 +68,7 @@ async def send_booking_notification(
                 lines.append("")
 
             if price is not None and price > 0:
-                remaining = float(price) - prep
-                if remaining < 0:
-                    remaining = 0
+                remaining = max(float(price) - prep, 0)
                 lines.append(f"Остаток - {format_number(remaining)}")
                 lines.append("")
                 lines.append(f"Общая – {format_number(price)}.")
@@ -119,7 +109,6 @@ async def send_booking_notification(
             text=text,
             message_thread_id=config.THREAD_PREORDER,
         )
-
     except Exception as e:
         logger.error(f"Ошибка отправки уведомления о брони: {e}")
 
@@ -131,11 +120,13 @@ async def send_sale_notification(
     payment_type: str,
     prepayment: float | None = None,
     payment_amount: float | None = None,
+    payments: dict | None = None,
     platform: str | None = None,
     full_name: str | None = None,
     phone: str | None = None,
     birth_date: str | None = None,
     bonus: float | None = None,
+    discount: float | None = None,
     change: float | None = None,
     change_type: str | None = None,
     accessories: list[dict] | None = None,
@@ -143,9 +134,10 @@ async def send_sale_notification(
     final_amount: float | None = None,
     comment: str | None = None,
 ):
-    """Уведомление о продаже (формат как в топике продаж)."""
+    """Уведомление о продаже — формат топика продаж."""
     try:
         accessories = accessories or []
+        payments = payments or {}
 
         payment_names = {
             "cash": "Наличные",
@@ -162,15 +154,24 @@ async def send_sale_notification(
         # Товар
         lines.append(item_text if item_text.endswith(".") else f"{item_text}.")
 
-        # Стоимость основного товара
+        # Стоимость + скидка/бонусы
+        extras = []
+        if discount and discount > 0:
+            extras.append(f"Скидка {format_number(discount)}")
         if bonus and bonus > 0:
-            lines.append(
-                f"Стоимость - {format_number(price)} "
-                f"(Скидка бонусы {format_number(bonus)})."
-            )
+            extras.append(f"бонусы {format_number(bonus)}")
+        if extras:
+            # как в примере: (Скидка бонусы 3 000) или отдельно
+            if discount and bonus:
+                note = f"Скидка {format_number(discount)}, бонусы {format_number(bonus)}"
+            elif discount:
+                note = f"Скидка {format_number(discount)}"
+            else:
+                note = f"Скидка бонусы {format_number(bonus)}"
+            lines.append(f"Стоимость - {format_number(price)} ({note}).")
         else:
             lines.append(f"Стоимость - {format_number(price)}.")
-        lines.append("")
+        lines.append("")  # 1 пустая
 
         # Аксессуары
         for acc in accessories:
@@ -179,37 +180,42 @@ async def send_sale_notification(
                 name = f"{name}."
             lines.append(name)
             lines.append(f"Стоимость - {format_number(acc.get('price', 0))}.")
-            lines.append("")
+            lines.append("")  # 1 пустая после каждого аксессуара
 
-        # Предоплата
+        # ещё одна пустая перед П/О / оплатой (после последнего аксессуара уже есть одна)
+        if accessories:
+            lines.append("")  # итого 2 пустые перед платежами
+
+        # П/О
         prep = float(prepayment or 0)
         if prep > 0:
             lines.append(f"П/О - {format_number(prep)}.")
             lines.append("")
 
-        # Оплата
-        if payment_type == "paid":
+        # Оплаты по способам
+        if payments:
+            for pt, amt in payments.items():
+                if amt and float(amt) > 0 and pt != "paid":
+                    pt_name = payment_names.get(pt, pt)
+                    lines.append(f"{pt_name} - {format_number(amt)}.")
+                    lines.append("")
+        elif payment_type == "paid":
             lines.append("Оплачен.")
             lines.append("")
         elif payment_amount and payment_amount > 0:
             pt_name = payment_names.get(payment_type, payment_type)
-            pay_line = f"{pt_name} - {format_number(payment_amount)}."
-            if change and change > 0:
-                ch_label = "наличными" if (change_type or payment_type) == "cash" else "переводом"
-                pay_line = (
-                    f"{pt_name} - {format_number(payment_amount)} "
-                    f"(сдача {ch_label} {format_number(change)})."
-                )
-            lines.append(pay_line)
+            lines.append(f"{pt_name} - {format_number(payment_amount)}.")
             lines.append("")
 
         # Общая
         total = final_amount if final_amount is not None else (
-            float(price) + float(accessories_total or 0) - float(bonus or 0)
+            float(price) + float(accessories_total or 0)
+            - float(bonus or 0) - float(discount or 0)
         )
         if total > 0:
             lines.append(f"Общая - {format_number(total)}.")
             lines.append("")
+            lines.append("")  # 2 пустые перед клиентом
 
         # Клиент
         if full_name:
@@ -220,7 +226,7 @@ async def send_sale_notification(
             bd = str(birth_date).strip().replace("г.", "").strip()
             lines.append(bd)
         if full_name or phone or birth_date:
-            lines.append("")
+            lines.append("")  # 1 пустая перед площадкой
 
         if platform:
             lines.append(f"Площадка - {platform.strip()}")
@@ -236,6 +242,5 @@ async def send_sale_notification(
             text=text,
             message_thread_id=config.THREAD_SALES,
         )
-
     except Exception as e:
         logger.error(f"Ошибка отправки уведомления о продаже: {e}")
