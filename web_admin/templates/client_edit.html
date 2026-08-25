@@ -1,49 +1,56 @@
 {% extends "base.html" %}
+
 {% block title %}Редактировать клиента{% endblock %}
-{% block page_title %}Редактировать клиента #{{ client.id }}{% endblock %}
+
 {% block content %}
-<div class="card">
-    <div class="card-body">
-        <form method="post">
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <label class="form-label">ФИО</label>
-                    <input type="text" class="form-control" name="full_name" value="{{ client.full_name or '' }}">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Основной телефон</label>
-                    <input type="text" class="form-control" name="phone" value="{{ client.phone or '' }}">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Доп. телефоны (через запятую)</label>
-                    <input type="text" class="form-control" name="phones" value="{{ client.phones or '' }}">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Telegram</label>
-                    <input type="text" class="form-control" name="telegram_username" value="{{ client.telegram_username or '' }}">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Соцсети / площадка</label>
-                    <input type="text" class="form-control" name="social_network" value="{{ client.social_network or '' }}">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Источник</label>
-                    <input type="text" class="form-control" name="referral_source" value="{{ client.referral_source or '' }}">
-                </div>
-            </div>
-            <div class="mt-4">
-                <button type="submit" class="btn btn-primary">Сохранить</button>
-                <a href="/admin/clients/{{ client.id }}" class="btn btn-outline-secondary">Отмена</a>
-            </div>
-        </form>
-    </div>
+<div class="mb-6">
+    <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Редактировать клиента</h1>
+    <p class="text-slate-500 dark:text-slate-400 mt-1">#{{ client.id }}</p>
 </div>
-<style>
-    @media (max-width: 480px) {
-        .btn {
-            width: 100%;
-            margin-bottom: 0.5rem;
-        }
-    }
-</style>
+
+<form method="post" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card max-w-3xl space-y-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">ФИО</label>
+            <input type="text" name="full_name" value="{{ client.full_name or '' }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Основной телефон</label>
+            <input type="text" name="phone" value="{{ client.phone or '' }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Доп. телефоны</label>
+            <input type="text" name="phones" value="{{ client.phones or '' }}" placeholder="через запятую"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Telegram</label>
+            <input type="text" name="telegram_username" value="{{ client.telegram_username or '' }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Соцсети / площадка</label>
+            <input type="text" name="social_network" value="{{ client.social_network or '' }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Источник</label>
+            <input type="text" name="referral_source" value="{{ client.referral_source or '' }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+    </div>
+
+    <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col-reverse sm:flex-row justify-end gap-3">
+        <a href="/admin/clients/{{ client.id }}"
+           class="px-5 py-2.5 text-sm font-medium text-center rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
+            Отмена
+        </a>
+        <button type="submit"
+                class="px-6 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm">
+            Сохранить
+        </button>
+    </div>
+</form>
 {% endblock %}
