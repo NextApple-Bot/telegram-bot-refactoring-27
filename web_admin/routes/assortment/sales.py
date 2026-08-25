@@ -45,7 +45,6 @@ def _normalize_birth(value: str | None) -> str | None:
 
 
 def _to_iso_date(value: str | None) -> str:
-    """ДД.ММ.ГГГГ или YYYY-MM-DD → YYYY-MM-DD для input type=date."""
     value = _clean(value)
     if not value:
         return ""
@@ -58,6 +57,23 @@ def _to_iso_date(value: str | None) -> str:
             d, m, y = parts
             return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
     return ""
+
+
+def _parse_accessories(form) -> list[dict[str, Any]]:
+    """Собирает аксессуары из полей acc_name / acc_price (списки)."""
+    names = form.getlist("acc_name")
+    prices = form.getlist("acc_price")
+    result = []
+    for i, name in enumerate(names):
+        name = (name or "").strip()
+        try:
+            price = float(prices[i]) if i < len(prices) and prices[i] not in (None, "") else 0.0
+        except (ValueError, TypeError):
+            price = 0.0
+        if not name and price <= 0:
+            continue
+        result.append({"name": name or "Аксессуар", "price": price})
+    return result
 
 
 @router.get("/sale/{item_id}", response_class=HTMLResponse)
@@ -100,17 +116,23 @@ async def sale_item_submit(
 ):
     is_htmx = request.headers.get("hx-request") == "true"
 
+    form = await request.form()
+    accessories = _parse_accessories(form)
+
     full_name = _clean(sale_full_name)
     phone = _clean(sale_phone)
     birth_date = _normalize_birth(sale_birth_date)
     platform = _clean(sale_platform)
+    comment = _clean(sale_comment)
     pay_type = _clean(payment_type) or "cash"
+
+    accessories_total = sum(float(a.get("price") or 0) for a in accessories)
 
     payment_amount = float(paid_amount or 0)
     if payment_amount <= 0 and pay_type != "paid":
         prep = float(sale_prepayment or 0)
         bonus = float(sale_bonus or 0)
-        payment_amount = max(float(sale_price) - prep - bonus, 0)
+        payment_amount = max(float(sale_price) + accessories_total - prep - bonus, 0)
 
     form_data = {
         "sale_price": sale_price,
@@ -123,7 +145,7 @@ async def sale_item_submit(
         "sale_phone": phone,
         "sale_birth_date": birth_date,
         "sale_platform": platform,
-        "sale_comment": sale_comment,
+        "sale_comment": comment,
         "create_client": bool(create_client),
     }
 
@@ -166,6 +188,8 @@ async def sale_item_submit(
                 sale_bonus=float(sale_bonus) if sale_bonus else None,
                 sale_change=float(change_amount) if change_amount else None,
                 sale_change_type=pay_type if change_amount else None,
+                accessories=accessories,
+                sale_comment=comment,
             )
 
             if result.get("error"):
@@ -216,6 +240,7 @@ async def handle_sale_from_form(
     sale_change: Optional[float] = None,
     sale_change_type: Optional[str] = None,
     accessories: Optional[list[dict[str, Any]]] = None,
+    sale_comment: Optional[str] = None,
     conn=None,
 ) -> dict[str, Any]:
     accessories = accessories or []
@@ -248,57 +273,34 @@ async def handle_sale_from_form(
         manage_transaction = True
 
     try:
+        kwargs = dict(
+            session=session,
+            item_id=item_id,
+            text=text,
+            serial=serial,
+            category_id=category_id,
+            old_text=old_text,
+            old_serial=old_serial,
+            old_category_id=old_category_id,
+            sale_price=sale_price,
+            sale_prepayment=sale_prepayment,
+            sale_payment_amount=sale_payment_amount,
+            sale_payment_type=sale_payment_type,
+            sale_platform=sale_platform,
+            sale_full_name=sale_full_name,
+            sale_phone=sale_phone,
+            sale_birth_date=sale_birth_date,
+            sale_bonus=sale_bonus,
+            sale_change=sale_change,
+            sale_change_type=sale_change_type,
+            accessories=accessories,
+            sale_message_id=sale_message_id,
+            sale_comment=sale_comment,
+        )
         if manage_transaction:
             async with session.begin():
-                result = await _process_sale_logic(
-                    session=session,
-                    item_id=item_id,
-                    text=text,
-                    serial=serial,
-                    category_id=category_id,
-                    old_text=old_text,
-                    old_serial=old_serial,
-                    old_category_id=old_category_id,
-                    sale_price=sale_price,
-                    sale_prepayment=sale_prepayment,
-                    sale_payment_amount=sale_payment_amount,
-                    sale_payment_type=sale_payment_type,
-                    sale_platform=sale_platform,
-                    sale_full_name=sale_full_name,
-                    sale_phone=sale_phone,
-                    sale_birth_date=sale_birth_date,
-                    sale_bonus=sale_bonus,
-                    sale_change=sale_change,
-                    sale_change_type=sale_change_type,
-                    accessories=accessories,
-                    sale_message_id=sale_message_id,
-                )
-        else:
-            result = await _process_sale_logic(
-                session=session,
-                item_id=item_id,
-                text=text,
-                serial=serial,
-                category_id=category_id,
-                old_text=old_text,
-                old_serial=old_serial,
-                old_category_id=old_category_id,
-                sale_price=sale_price,
-                sale_prepayment=sale_prepayment,
-                sale_payment_amount=sale_payment_amount,
-                sale_payment_type=sale_payment_type,
-                sale_platform=sale_platform,
-                sale_full_name=sale_full_name,
-                sale_phone=sale_phone,
-                sale_birth_date=sale_birth_date,
-                sale_bonus=sale_bonus,
-                sale_change=sale_change,
-                sale_change_type=sale_change_type,
-                accessories=accessories,
-                sale_message_id=sale_message_id,
-            )
-
-        return result
+                return await _process_sale_logic(**kwargs)
+        return await _process_sale_logic(**kwargs)
 
     except Exception as e:
         logger.exception("Неожиданная ошибка в handle_sale_from_form")
@@ -327,6 +329,7 @@ async def _process_sale_logic(
     sale_change_type: Optional[str],
     accessories: list[dict[str, Any]],
     sale_message_id: int,
+    sale_comment: Optional[str] = None,
 ) -> dict[str, Any]:
     processed_accessories = []
     accessories_payments: dict[str, float] = {}
@@ -335,7 +338,7 @@ async def _process_sale_logic(
     for acc in accessories:
         price = float(acc.get("price", 0) or 0)
         accessories_total += price
-        display_text = acc.get("name", "").strip() or "Аксессуар"
+        display_text = (acc.get("name") or "").strip() or "Аксессуар"
 
         serial_acc = acc.get("serial")
         if serial_acc:
@@ -450,6 +453,7 @@ async def _process_sale_logic(
         accessories=processed_accessories,
         accessories_total=accessories_total,
         final_amount=final_amount,
+        comment=sale_comment,
     ))
 
     try:
