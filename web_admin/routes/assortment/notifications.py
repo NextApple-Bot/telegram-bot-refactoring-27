@@ -36,7 +36,6 @@ async def send_booking_notification(
         else:
             lines: list[str] = ["БРОНЬ:", ""]
 
-            # Товар (+ serial только если его ещё нет в тексте)
             serial_clean = (serial or "").strip()
             if serial_clean:
                 already = (
@@ -50,7 +49,6 @@ async def send_booking_notification(
             else:
                 lines.append(item_text)
 
-            # Стоимость
             if price is not None and price > 0:
                 if bonus and bonus > 0:
                     lines.append(
@@ -59,11 +57,9 @@ async def send_booking_notification(
                     )
                 else:
                     lines.append(f"Стоимость – {format_number(price)}")
-                # два пустых после стоимости
                 lines.append("")
                 lines.append("")
 
-            # Предоплата
             prep = float(prepayment or 0)
             if prep > 0:
                 pt_map = {
@@ -77,21 +73,18 @@ async def send_booking_notification(
                 if pt_name:
                     prep_line += f" ({pt_name})"
                 lines.append(prep_line)
-                lines.append("")  # один пустой
+                lines.append("")
 
-            # Остаток + Общая
             if price is not None and price > 0:
                 remaining = float(price) - prep
                 if remaining < 0:
                     remaining = 0
                 lines.append(f"Остаток - {format_number(remaining)}")
-                lines.append("")  # один пустой
+                lines.append("")
                 lines.append(f"Общая – {format_number(price)}.")
-                # два пустых перед клиентом
                 lines.append("")
                 lines.append("")
 
-            # Клиент: ФИО → телефон → дата рождения
             if full_name:
                 lines.append(full_name.strip())
             if phone:
@@ -109,7 +102,7 @@ async def send_booking_notification(
                 lines.append(f"ТГ – {uname}")
 
             if full_name or birth_date or phone or telegram_username:
-                lines.append("")  # один пустой перед площадкой
+                lines.append("")
 
             if platform:
                 lines.append(f"Площадка – {platform.strip()}.")
@@ -148,87 +141,93 @@ async def send_sale_notification(
     accessories: list[dict] | None = None,
     accessories_total: float = 0.0,
     final_amount: float | None = None,
+    comment: str | None = None,
 ):
-    """Уведомление о продаже."""
+    """Уведомление о продаже (формат как в топике продаж)."""
     try:
         accessories = accessories or []
 
         payment_names = {
-            "cash": "Наличными",
-            "terminal": "Терминалом",
-            "qr": "QR-Кодом",
-            "transfer": "Переводом",
+            "cash": "Наличные",
+            "terminal": "Терминал",
+            "qr": "QR-код",
+            "transfer": "Перевод",
             "invoice": "По счёту",
             "installment": "Рассрочка",
             "paid": "Оплачен",
         }
 
-        lines = [item_text, ""]
+        lines: list[str] = []
 
+        # Товар
+        lines.append(item_text if item_text.endswith(".") else f"{item_text}.")
+
+        # Стоимость основного товара
         if bonus and bonus > 0:
             lines.append(
-                f"Стоимость – {format_number(price)} "
-                f"(Скидка бонусы {format_number(bonus)})"
+                f"Стоимость - {format_number(price)} "
+                f"(Скидка бонусы {format_number(bonus)})."
             )
         else:
-            lines.append(f"Стоимость – {format_number(price)}")
+            lines.append(f"Стоимость - {format_number(price)}.")
         lines.append("")
 
+        # Аксессуары
         for acc in accessories:
-            lines.append(acc.get("text", "Аксессуар"))
-            lines.append(f"Стоимость – {format_number(acc.get('price', 0))}")
+            name = (acc.get("text") or acc.get("name") or "Аксессуар").strip()
+            if not name.endswith("."):
+                name = f"{name}."
+            lines.append(name)
+            lines.append(f"Стоимость - {format_number(acc.get('price', 0))}.")
             lines.append("")
 
+        # Предоплата
         prep = float(prepayment or 0)
         if prep > 0:
-            lines.append(f"П/О – {format_number(prep)}")
+            lines.append(f"П/О - {format_number(prep)}.")
             lines.append("")
 
-        if prep > 0 and price:
-            remaining = float(price) - prep
-            if remaining < 0:
-                remaining = 0
-            lines.append(f"Остаток - {format_number(remaining)}")
-            lines.append("")
-
+        # Оплата
         if payment_type == "paid":
-            lines.append("Оплачен")
+            lines.append("Оплачен.")
             lines.append("")
-        else:
-            if payment_amount and payment_amount > 0:
-                pt_name = payment_names.get(payment_type, payment_type)
-                pay_line = f"{pt_name} – {format_number(payment_amount)}"
+        elif payment_amount and payment_amount > 0:
+            pt_name = payment_names.get(payment_type, payment_type)
+            pay_line = f"{pt_name} - {format_number(payment_amount)}."
+            if change and change > 0:
+                ch_label = "наличными" if (change_type or payment_type) == "cash" else "переводом"
+                pay_line = (
+                    f"{pt_name} - {format_number(payment_amount)} "
+                    f"(сдача {ch_label} {format_number(change)})."
+                )
+            lines.append(pay_line)
+            lines.append("")
 
-                if change and change > 0 and change_type == payment_type:
-                    pay_line += (
-                        f" (сдача {'наличными' if change_type == 'cash' else 'переводом'} "
-                        f"{format_number(change)})"
-                    )
-
-                lines.append(pay_line)
-                lines.append("")
-
+        # Общая
         total = final_amount if final_amount is not None else (
-            price + accessories_total - (bonus or 0)
+            float(price) + float(accessories_total or 0) - float(bonus or 0)
         )
         if total > 0:
-            lines.append(f"Общая – {format_number(total)}.")
+            lines.append(f"Общая - {format_number(total)}.")
             lines.append("")
 
+        # Клиент
         if full_name:
-            lines.append(full_name)
+            lines.append(full_name.strip())
         if phone:
-            lines.append(phone)
+            lines.append(phone.strip())
         if birth_date:
-            bd = str(birth_date).strip()
-            if bd and not bd.endswith("г."):
-                bd = f"{bd}г."
+            bd = str(birth_date).strip().replace("г.", "").strip()
             lines.append(bd)
-        if full_name or birth_date or phone:
+        if full_name or phone or birth_date:
             lines.append("")
 
         if platform:
-            lines.append(f"Площадка – {platform}.")
+            lines.append(f"Площадка - {platform.strip()}")
+
+        if comment and comment.strip():
+            lines.append("")
+            lines.append(comment.strip())
 
         text = "\n".join(lines)
 
