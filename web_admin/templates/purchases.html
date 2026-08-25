@@ -1,99 +1,112 @@
 {% extends "base.html" %}
 
-{% block page_title %}Покупки{% endblock %}
+{% block title %}Покупки{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2>Покупки</h2>
-</div>
-
-<!-- Фильтры -->
-<div class="card mb-3">
-    <div class="card-body">
-        <form method="get" class="row g-3">
-            <div class="col-md-3">
-                <input type="text" name="client_search" class="form-control" placeholder="Поиск по клиенту" value="{{ client_search or '' }}">
-            </div>
-            <div class="col-md-2">
-                <input type="date" name="date_from" class="form-control" value="{{ date_from or '' }}">
-            </div>
-            <div class="col-md-2">
-                <input type="date" name="date_to" class="form-control" value="{{ date_to or '' }}">
-            </div>
-            <div class="col-md-2">
-                <select name="purchase_type" class="form-select">
-                    <option value="all">Все типы</option>
-                    {% for pt in purchase_types %}
-                        <option value="{{ pt }}" {% if purchase_type == pt %}selected{% endif %}>{{ pt|capitalize }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">Применить</button>
-            </div>
-        </form>
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+        <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Покупки</h1>
+        <p class="text-slate-500 dark:text-slate-400 mt-1">Всего записей: {{ total }}</p>
     </div>
 </div>
 
-<div class="mb-2">
-    <strong>Всего записей:</strong> {{ total }}
+<form method="get" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 mb-6 shadow-card">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Клиент</label>
+            <input type="text" name="client_search" value="{{ client_search or '' }}" placeholder="ФИО..."
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">С</label>
+            <input type="date" name="date_from" value="{{ date_from or '' }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">По</label>
+            <input type="date" name="date_to" value="{{ date_to or '' }}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Тип</label>
+            <select name="purchase_type"
+                    class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                <option value="all">Все типы</option>
+                {% for pt in purchase_types %}
+                <option value="{{ pt }}" {% if purchase_type == pt %}selected{% endif %}>{{ pt }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="flex items-end">
+            <button type="submit"
+                    class="w-full px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl">
+                Применить
+            </button>
+        </div>
+    </div>
+</form>
+
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-card overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-50 dark:bg-slate-800/50 text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                    <th class="px-5 py-3 font-medium">ID</th>
+                    <th class="px-5 py-3 font-medium">Клиент</th>
+                    <th class="px-5 py-3 font-medium">Дата</th>
+                    <th class="px-5 py-3 font-medium">Сумма</th>
+                    <th class="px-5 py-3 font-medium">Тип</th>
+                    <th class="px-5 py-3 font-medium">Оплата</th>
+                    <th class="px-5 py-3 font-medium text-right"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                {% for p in purchases %}
+                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                    <td class="px-5 py-3 text-slate-500">#{{ p.id }}</td>
+                    <td class="px-5 py-3 font-medium text-slate-900 dark:text-white">{{ p.client_name or '—' }}</td>
+                    <td class="px-5 py-3 text-slate-600 dark:text-slate-300">{{ p.created_at|format_date if p.created_at else '—' }}</td>
+                    <td class="px-5 py-3 font-semibold text-slate-900 dark:text-white">{{ "{:,.0f}".format(p.total_amount or 0).replace(',', ' ') }} ₽</td>
+                    <td class="px-5 py-3">
+                        <span class="px-2 py-0.5 rounded-md text-xs font-medium bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800">{{ p.purchase_type or '—' }}</span>
+                    </td>
+                    <td class="px-5 py-3 text-slate-600 dark:text-slate-400 text-xs max-w-xs truncate">
+                        {% if p.payment_details is mapping %}
+                            {% for k, v in p.payment_details.items() %}
+                                {{ k }}: {{ "{:,.0f}".format(v|float).replace(',', ' ') }}{% if not loop.last %}; {% endif %}
+                            {% endfor %}
+                        {% else %}
+                            {{ p.payment_details or '—' }}
+                        {% endif %}
+                    </td>
+                    <td class="px-5 py-3 text-right">
+                        <form action="/admin/purchases/delete/{{ p.id }}" method="post" class="inline"
+                              onsubmit="return confirm('Удалить покупку?')">
+                            <button type="submit" class="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg" title="Удалить">
+                                <i class="fas fa-trash-alt text-xs"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="px-5 py-12 text-center text-slate-400">Покупок не найдено</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
-<!-- Таблица -->
-<div class="table-responsive">
-    <table class="table table-hover align-middle">
-        <thead class="table-dark">
-            <tr>
-                <th>ID</th>
-                <th>Клиент</th>
-                <th>Дата</th>
-                <th>Сумма</th>
-                <th>Тип</th>
-                <th>Оплата</th>
-                <th style="width: 80px;"></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for p in purchases %}
-            <tr>
-                <td>#{{ p.id }}</td>
-                <td>{{ p.client_name or '—' }}</td>
-                <td>{{ p.created_at|format_date if p.created_at else '—' }}</td>
-                <td>{{ "{:,.0f}".format(p.total_amount or 0) }} ₽</td>
-                <td>
-                    <span class="badge bg-info">{{ p.purchase_type }}</span>
-                </td>
-                <td>{{ p.payment_details or '—' }}</td>
-                <td>
-                    <form action="/admin/purchases/delete/{{ p.id }}" method="post" class="d-inline">
-                        <button type="submit" class="btn btn-sm btn-outline-danger"
-                                onclick="return confirm('Удалить покупку?')">
-                            ×
-                        </button>
-                    </form>
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="7" class="text-center text-muted py-4">Покупок не найдено</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-
-<!-- Пагинация -->
 {% if total_pages > 1 %}
-<nav class="mt-3">
-    <ul class="pagination justify-content-center">
-        {% for p in range(1, total_pages + 1) %}
-            <li class="page-item {% if p == page %}active{% endif %}">
-                <a class="page-link" href="?page={{ p }}&client_search={{ client_search or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}&purchase_type={{ purchase_type }}">
-                    {{ p }}
-                </a>
-            </li>
-        {% endfor %}
-    </ul>
-</nav>
+<div class="mt-6 flex justify-center gap-1">
+    {% for p in range(1, total_pages + 1) %}
+    <a href="?page={{ p }}&client_search={{ client_search or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}&purchase_type={{ purchase_type or 'all' }}"
+       class="w-9 h-9 flex items-center justify-center rounded-lg text-sm font-medium
+              {% if p == page %}bg-indigo-600 text-white{% else %}bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800{% endif %}">
+        {{ p }}
+    </a>
+    {% endfor %}
+</div>
 {% endif %}
 {% endblock %}
