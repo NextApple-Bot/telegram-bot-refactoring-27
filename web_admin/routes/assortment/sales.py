@@ -20,7 +20,6 @@ from web_admin.routes.assortment.notifications import send_sale_notification
 from web_admin.templates import templates
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
 
@@ -60,9 +59,9 @@ def _to_iso_date(value: str | None) -> str:
 
 
 def _parse_accessories(form) -> list[dict[str, Any]]:
-    """Собирает аксессуары из полей acc_name / acc_price (списки)."""
     names = form.getlist("acc_name")
     prices = form.getlist("acc_price")
+    payments = form.getlist("acc_payment")
     result = []
     for i, name in enumerate(names):
         name = (name or "").strip()
@@ -70,9 +69,15 @@ def _parse_accessories(form) -> list[dict[str, Any]]:
             price = float(prices[i]) if i < len(prices) and prices[i] not in (None, "") else 0.0
         except (ValueError, TypeError):
             price = 0.0
+        pay = payments[i] if i < len(payments) else "cash"
+        pay = (pay or "cash").strip()
         if not name and price <= 0:
             continue
-        result.append({"name": name or "Аксессуар", "price": price})
+        result.append({
+            "name": name or "Аксессуар",
+            "price": price,
+            "payment_type": pay,
+        })
     return result
 
 
@@ -107,6 +112,9 @@ async def sale_item_submit(
     change_amount: float | None = Form(None),
     sale_prepayment: float | None = Form(None),
     sale_bonus: float | None = Form(None),
+    sale_discount: float | None = Form(None),
+    use_bonus: str | None = Form(None),
+    use_discount: str | None = Form(None),
     sale_full_name: str | None = Form(None),
     sale_phone: str | None = Form(None),
     sale_birth_date: str | None = Form(None),
@@ -126,13 +134,19 @@ async def sale_item_submit(
     comment = _clean(sale_comment)
     pay_type = _clean(payment_type) or "cash"
 
+    bonus = float(sale_bonus) if use_bonus and sale_bonus else None
+    discount = float(sale_discount) if use_discount and sale_discount else None
+
     accessories_total = sum(float(a.get("price") or 0) for a in accessories)
 
+    # Сумма оплаты товара (без аксессуаров — у них свой способ оплаты)
     payment_amount = float(paid_amount or 0)
     if payment_amount <= 0 and pay_type != "paid":
         prep = float(sale_prepayment or 0)
-        bonus = float(sale_bonus or 0)
-        payment_amount = max(float(sale_price) + accessories_total - prep - bonus, 0)
+        payment_amount = max(
+            float(sale_price) - prep - float(bonus or 0) - float(discount or 0),
+            0,
+        )
 
     form_data = {
         "sale_price": sale_price,
@@ -140,7 +154,8 @@ async def sale_item_submit(
         "paid_amount": paid_amount,
         "change_amount": change_amount,
         "sale_prepayment": sale_prepayment,
-        "sale_bonus": sale_bonus,
+        "sale_bonus": bonus,
+        "sale_discount": discount,
         "sale_full_name": full_name,
         "sale_phone": phone,
         "sale_birth_date": birth_date,
@@ -185,7 +200,8 @@ async def sale_item_submit(
                 sale_full_name=full_name,
                 sale_phone=phone,
                 sale_birth_date=birth_date,
-                sale_bonus=float(sale_bonus) if sale_bonus else None,
+                sale_bonus=bonus,
+                sale_discount=discount,
                 sale_change=float(change_amount) if change_amount else None,
                 sale_change_type=pay_type if change_amount else None,
                 accessories=accessories,
@@ -237,6 +253,7 @@ async def handle_sale_from_form(
     sale_phone: Optional[str] = None,
     sale_birth_date: Optional[str] = None,
     sale_bonus: Optional[float] = None,
+    sale_discount: Optional[float] = None,
     sale_change: Optional[float] = None,
     sale_change_type: Optional[str] = None,
     accessories: Optional[list[dict[str, Any]]] = None,
@@ -250,8 +267,8 @@ async def handle_sale_from_form(
         errors.append("Стоимость продажи должна быть больше 0")
     if sale_bonus is not None and sale_bonus < 0:
         errors.append("Бонус не может быть отрицательным")
-    if sale_bonus and sale_bonus > sale_price:
-        errors.append("Бонус не может быть больше стоимости товара")
+    if sale_discount is not None and sale_discount < 0:
+        errors.append("Скидка не может быть отрицательной")
     if sale_change is not None and sale_change < 0:
         errors.append("Сумма сдачи не может быть отрицательной")
 
@@ -262,7 +279,7 @@ async def handle_sale_from_form(
     if errors:
         return {"error": " | ".join(errors)}
 
-    sale_message_id: int = generate_sale_message_id()
+    sale_message_id = generate_sale_message_id()
     async_session = get_async_session_factory()
 
     if conn is not None:
@@ -291,6 +308,7 @@ async def handle_sale_from_form(
             sale_phone=sale_phone,
             sale_birth_date=sale_birth_date,
             sale_bonus=sale_bonus,
+            sale_discount=sale_discount,
             sale_change=sale_change,
             sale_change_type=sale_change_type,
             accessories=accessories,
@@ -325,6 +343,7 @@ async def _process_sale_logic(
     sale_phone: Optional[str],
     sale_birth_date: Optional[str],
     sale_bonus: Optional[float],
+    sale_discount: Optional[float],
     sale_change: Optional[float],
     sale_change_type: Optional[str],
     accessories: list[dict[str, Any]],
@@ -340,26 +359,7 @@ async def _process_sale_logic(
         accessories_total += price
         display_text = (acc.get("name") or "").strip() or "Аксессуар"
 
-        serial_acc = acc.get("serial")
-        if serial_acc:
-            normalized = serial_acc.strip().upper()
-            item_info = (await session.execute(
-                select(Item).where(func.upper(Item.serial) == normalized)
-            )).scalar_one_or_none()
-            if item_info:
-                display_text = item_info.text
-                deleted = DeletedItem(
-                    item_id=item_info.id,
-                    text=item_info.text,
-                    serial=item_info.serial,
-                    category_id=item_info.category_id,
-                    reason="sale_from_admin",
-                    sale_message_id=sale_message_id,
-                )
-                session.add(deleted)
-                await session.delete(item_info)
-
-        pay_type = acc.get("payment_type")
+        pay_type = (acc.get("payment_type") or "cash").strip()
         if pay_type and pay_type != "paid" and price > 0:
             accessories_payments[pay_type] = accessories_payments.get(pay_type, 0) + price
 
@@ -369,11 +369,19 @@ async def _process_sale_logic(
             "payment_type": pay_type,
         })
 
-    final_amount = sale_price + accessories_total - (sale_bonus or 0)
+    final_amount = (
+        float(sale_price)
+        + accessories_total
+        - float(sale_bonus or 0)
+        - float(sale_discount or 0)
+    )
 
+    # Платежи: товар + аксессуары по своим способам
     all_payments: dict[str, float] = dict(accessories_payments)
     if sale_payment_type != "paid" and sale_payment_amount > 0:
-        all_payments[sale_payment_type] = all_payments.get(sale_payment_type, 0) + sale_payment_amount
+        all_payments[sale_payment_type] = (
+            all_payments.get(sale_payment_type, 0) + sale_payment_amount
+        )
 
     client_id = None
     if sale_phone or sale_full_name:
@@ -401,18 +409,17 @@ async def _process_sale_logic(
 
     main_item = await session.get(Item, item_id)
     if main_item:
-        deleted = DeletedItem(
+        session.add(DeletedItem(
             item_id=main_item.id,
             text=old_text,
             serial=old_serial,
             category_id=old_category_id,
             reason="sale_from_admin",
             sale_message_id=sale_message_id,
-        )
-        session.add(deleted)
+        ))
         await session.delete(main_item)
 
-    sale = Sale(
+    session.add(Sale(
         item_id=item_id,
         count=1,
         cash=all_payments.get("cash", 0),
@@ -423,8 +430,7 @@ async def _process_sale_logic(
         installment=all_payments.get("installment", 0),
         is_accessory=False,
         message_id=sale_message_id,
-    )
-    session.add(sale)
+    ))
 
     for pay_type, amount in all_payments.items():
         if amount > 0:
@@ -443,11 +449,13 @@ async def _process_sale_logic(
         payment_type=sale_payment_type,
         prepayment=sale_prepayment if sale_prepayment > 0 else None,
         payment_amount=sale_payment_amount if sale_payment_type != "paid" else None,
+        payments=all_payments,
         platform=sale_platform,
         full_name=sale_full_name,
         phone=sale_phone,
         birth_date=sale_birth_date,
         bonus=sale_bonus,
+        discount=sale_discount,
         change=sale_change,
         change_type=sale_change_type,
         accessories=processed_accessories,
