@@ -42,9 +42,17 @@ x-init="$watch('dark', v => { localStorage.setItem('darkMode', v); document.docu
         .htmx-indicator { display: none; }
         .htmx-request .htmx-indicator { display: inline-block; }
         .htmx-request.htmx-indicator { display: inline-block; }
-        /* Compact table mode */
         .compact-table td, .compact-table th { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
         .compact-table td { font-size: 0.875rem; }
+        /* Явная зелёная кнопка продажи (на случай CDN) */
+        .btn-sale-submit {
+            background-color: #059669 !important;
+            color: #fff !important;
+            border: none;
+        }
+        .btn-sale-submit:hover {
+            background-color: #047857 !important;
+        }
     </style>
 
     <script>
@@ -61,7 +69,6 @@ x-init="$watch('dark', v => { localStorage.setItem('darkMode', v); document.docu
 
     <div>
 
-        <!-- Mobile Top Bar -->
         <div class="lg:hidden bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
             <div class="flex items-center gap-x-3">
                 <button @click="sidebarOpen = true" class="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl">
@@ -78,7 +85,6 @@ x-init="$watch('dark', v => { localStorage.setItem('darkMode', v); document.docu
 
         <div class="flex min-h-screen">
 
-            <!-- Desktop Sidebar -->
             <div class="hidden lg:flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 h-screen sticky top-0 transition-all duration-200"
                  :class="collapsed ? 'w-20' : 'w-64'">
 
@@ -118,7 +124,6 @@ x-init="$watch('dark', v => { localStorage.setItem('darkMode', v); document.docu
                 </div>
             </div>
 
-            <!-- Mobile Drawer -->
             <div x-show="sidebarOpen" x-cloak class="lg:hidden fixed inset-0 z-[999] bg-black/50 backdrop-blur-sm" @click="sidebarOpen = false">
                 <div @click.stop class="w-72 bg-white dark:bg-slate-900 h-full shadow-2xl"
                      x-transition:enter="transition ease-out duration-250"
@@ -145,7 +150,6 @@ x-init="$watch('dark', v => { localStorage.setItem('darkMode', v); document.docu
                 </div>
             </div>
 
-            <!-- Main Content -->
             <div class="flex-1 min-w-0">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
                     {% block content %}{% endblock %}
@@ -153,27 +157,27 @@ x-init="$watch('dark', v => { localStorage.setItem('darkMode', v); document.docu
             </div>
         </div>
 
-        <!-- Global Modal -->
+        <!-- Global Modal: scroll body, clear footer space -->
         <div
             x-show="$store.modal.show"
             x-cloak
             @keydown.escape.window="$store.modal.show = false"
-            class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 dark:bg-black/70 backdrop-blur-sm p-4"
+            class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 dark:bg-black/70 backdrop-blur-sm p-3 sm:p-4"
         >
             <div
                 @click.away="$store.modal.show = false"
-                class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 dark:border-slate-700"
+                class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]"
                 x-transition:enter="transition ease-out duration-200"
                 x-transition:enter-start="opacity-0 scale-95"
                 x-transition:enter-end="opacity-100 scale-100"
             >
-                <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50">
+                <div class="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 rounded-t-2xl">
                     <h3 class="text-lg font-semibold text-slate-900 dark:text-white" x-text="$store.modal.title"></h3>
                     <button @click="$store.modal.show = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
                         <i class="fas fa-times text-lg"></i>
                     </button>
                 </div>
-                <div id="htmxModalContent" class="p-5 max-h-[75vh] overflow-auto">
+                <div id="htmxModalContent" class="p-5 overflow-y-auto flex-1 min-h-0">
                 </div>
             </div>
         </div>
