@@ -1,64 +1,64 @@
 {% extends "base.html" %}
 
-{% block page_title %}Статистика{% endblock %}
+{% block title %}Статистика{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Статистика</h2>
+<div class="mb-6">
+    <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Статистика</h1>
+    <p class="text-slate-500 dark:text-slate-400 mt-1">Сводка по продажам, броням и оплатам</p>
 </div>
 
-<!-- Основные показатели -->
-<div class="row mb-4">
-    <div class="col-md-4">
-        <div class="card text-center shadow-sm">
-            <div class="card-body">
-                <h6 class="text-muted">Продажи</h6>
-                <h2 class="text-primary">{{ sales_count }}</h2>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Продажи</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ sales_count }}</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center">
+                <i class="fas fa-shopping-bag text-indigo-600 dark:text-indigo-400"></i>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card text-center shadow-sm">
-            <div class="card-body">
-                <h6 class="text-muted">Предзаказы</h6>
-                <h2 class="text-warning">{{ preorders_count }}</h2>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Предзаказы</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ preorders_count }}</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center">
+                <i class="fas fa-clock text-amber-600 dark:text-amber-400"></i>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card text-center shadow-sm">
-            <div class="card-body">
-                <h6 class="text-muted">Брони</h6>
-                <h2 class="text-info">{{ bookings_count }}</h2>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Брони</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ bookings_count }}</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-violet-50 dark:bg-violet-950/50 flex items-center justify-center">
+                <i class="fas fa-bookmark text-violet-600 dark:text-violet-400"></i>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Структура оплат -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header">
-        <strong>Структура оплат</strong>
-    </div>
-    <div class="card-body">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Структура оплат</h2>
         {% if payment_labels %}
-            <canvas id="paymentChart" height="100"></canvas>
+        <canvas id="paymentChart" height="160"></canvas>
         {% else %}
-            <p class="text-muted">Нет данных для отображения.</p>
+        <p class="text-sm text-slate-400 py-8 text-center">Нет данных для отображения</p>
         {% endif %}
     </div>
-</div>
-
-<!-- Выручка по дням -->
-<div class="card shadow-sm">
-    <div class="card-header">
-        <strong>Выручка по дням</strong>
-    </div>
-    <div class="card-body">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Выручка по дням</h2>
         {% if chart_dates %}
-            <canvas id="revenueChart" height="100"></canvas>
+        <canvas id="revenueChart" height="160"></canvas>
         {% else %}
-            <p class="text-muted">Нет данных для отображения.</p>
+        <p class="text-sm text-slate-400 py-8 text-center">Нет данных для отображения</p>
         {% endif %}
     </div>
 </div>
@@ -67,50 +67,58 @@
 {% block extra_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // График структуры оплат
-    {% if payment_labels %}
-    const paymentCtx = document.getElementById('paymentChart');
-    new Chart(paymentCtx, {
-        type: 'doughnut',
-        data: {
-            labels: {{ payment_labels | tojson }},
-            datasets: [{
-                data: {{ payment_values | tojson }},
-                backgroundColor: ['#0d6efd', '#198754', '#ffc107', '#dc3545', '#6f42c1', '#fd7e14']
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { position: 'bottom' }
-            }
-        }
-    });
-    {% endif %}
+const isDark = document.documentElement.classList.contains('dark');
+const tickColor = isDark ? '#94a3b8' : '#64748b';
+const gridColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(148,163,184,0.25)';
 
-    // График выручки по дням
-    {% if chart_dates %}
-    const revenueCtx = document.getElementById('revenueChart');
-    new Chart(revenueCtx, {
-        type: 'line',
-        data: {
-            labels: {{ chart_dates | tojson }},
-            datasets: [{
-                label: 'Выручка (₽)',
-                data: {{ chart_revenue | tojson }},
-                borderColor: '#0d6efd',
-                backgroundColor: 'rgba(13, 110, 253, 0.1)',
-                tension: 0.3,
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: { beginAtZero: true }
+{% if payment_labels %}
+new Chart(document.getElementById('paymentChart'), {
+    type: 'doughnut',
+    data: {
+        labels: {{ payment_labels | tojson }},
+        datasets: [{
+            data: {{ payment_values | tojson }},
+            backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#0ea5e9', '#64748b', '#f59e0b'],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: { color: tickColor, boxWidth: 12, padding: 16 }
             }
         }
-    });
-    {% endif %}
+    }
+});
+{% endif %}
+
+{% if chart_dates %}
+new Chart(document.getElementById('revenueChart'), {
+    type: 'line',
+    data: {
+        labels: {{ chart_dates | tojson }},
+        datasets: [{
+            label: 'Выручка ₽',
+            data: {{ chart_revenue | tojson }},
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16,185,129,0.12)',
+            tension: 0.35,
+            fill: true,
+            pointRadius: 3,
+            pointBackgroundColor: '#10b981'
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } } },
+            y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } }, beginAtZero: true }
+        }
+    }
+});
+{% endif %}
 </script>
 {% endblock %}
