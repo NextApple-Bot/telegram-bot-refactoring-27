@@ -44,18 +44,40 @@ def _normalize_birth(value: str | None) -> str | None:
     return value
 
 
+def _to_iso_date(value: str | None) -> str:
+    """ДД.ММ.ГГГГ или YYYY-MM-DD → YYYY-MM-DD для input type=date."""
+    value = _clean(value)
+    if not value:
+        return ""
+    if "-" in value and len(value) == 10:
+        return value
+    value = value.replace("г.", "").strip()
+    if "." in value:
+        parts = value.split(".")
+        if len(parts) == 3:
+            d, m, y = parts
+            return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+    return ""
+
+
 @router.get("/sale/{item_id}", response_class=HTMLResponse)
 async def sale_item_form(request: Request, item_id: int):
-    """Форма продажи товара."""
     async_session = get_async_session_factory()
     async with async_session() as session:
         item = await session.get(Item, item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Товар не найден")
 
+    birth_raw = item.booking_birth_date or item.sale_birth_date or ""
     return templates.TemplateResponse(
         "assortment_sale_item.html",
-        {"request": request, "item": item, "error": None, "form_data": None},
+        {
+            "request": request,
+            "item": item,
+            "error": None,
+            "form_data": None,
+            "birth_date_iso": _to_iso_date(birth_raw),
+        },
     )
 
 
@@ -76,7 +98,6 @@ async def sale_item_submit(
     sale_comment: str | None = Form(None),
     create_client: str | None = Form(None),
 ):
-    """Сохранение продажи из админки."""
     is_htmx = request.headers.get("hx-request") == "true"
 
     full_name = _clean(sale_full_name)
@@ -87,10 +108,24 @@ async def sale_item_submit(
 
     payment_amount = float(paid_amount or 0)
     if payment_amount <= 0 and pay_type != "paid":
-        # если сумму не указали — берём цену минус предоплата минус бонус
         prep = float(sale_prepayment or 0)
         bonus = float(sale_bonus or 0)
         payment_amount = max(float(sale_price) - prep - bonus, 0)
+
+    form_data = {
+        "sale_price": sale_price,
+        "payment_type": pay_type,
+        "paid_amount": paid_amount,
+        "change_amount": change_amount,
+        "sale_prepayment": sale_prepayment,
+        "sale_bonus": sale_bonus,
+        "sale_full_name": full_name,
+        "sale_phone": phone,
+        "sale_birth_date": birth_date,
+        "sale_platform": platform,
+        "sale_comment": sale_comment,
+        "create_client": bool(create_client),
+    }
 
     async_session = get_async_session_factory()
     try:
@@ -106,20 +141,8 @@ async def sale_item_submit(
                         "request": request,
                         "item": item,
                         "error": "Цена продажи должна быть больше 0",
-                        "form_data": {
-                            "sale_price": sale_price,
-                            "payment_type": pay_type,
-                            "paid_amount": paid_amount,
-                            "change_amount": change_amount,
-                            "sale_prepayment": sale_prepayment,
-                            "sale_bonus": sale_bonus,
-                            "sale_full_name": full_name,
-                            "sale_phone": phone,
-                            "sale_birth_date": birth_date,
-                            "sale_platform": platform,
-                            "sale_comment": sale_comment,
-                            "create_client": bool(create_client),
-                        },
+                        "form_data": form_data,
+                        "birth_date_iso": _to_iso_date(birth_date),
                     },
                     status_code=400,
                 )
@@ -137,8 +160,8 @@ async def sale_item_submit(
                 sale_payment_amount=payment_amount,
                 sale_payment_type=pay_type,
                 sale_platform=platform,
-                sale_full_name=full_name if create_client else full_name,
-                sale_phone=phone if create_client else phone,
+                sale_full_name=full_name,
+                sale_phone=phone,
                 sale_birth_date=birth_date,
                 sale_bonus=float(sale_bonus) if sale_bonus else None,
                 sale_change=float(change_amount) if change_amount else None,
@@ -152,20 +175,8 @@ async def sale_item_submit(
                         "request": request,
                         "item": item,
                         "error": result["error"],
-                        "form_data": {
-                            "sale_price": sale_price,
-                            "payment_type": pay_type,
-                            "paid_amount": paid_amount,
-                            "change_amount": change_amount,
-                            "sale_prepayment": sale_prepayment,
-                            "sale_bonus": sale_bonus,
-                            "sale_full_name": full_name,
-                            "sale_phone": phone,
-                            "sale_birth_date": birth_date,
-                            "sale_platform": platform,
-                            "sale_comment": sale_comment,
-                            "create_client": bool(create_client),
-                        },
+                        "form_data": form_data,
+                        "birth_date_iso": _to_iso_date(birth_date),
                     },
                     status_code=400,
                 )
