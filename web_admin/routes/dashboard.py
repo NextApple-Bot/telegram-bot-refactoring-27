@@ -21,6 +21,19 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+DEFAULT_SELLERS = ("Тимофей", "Максим")
+
+
+async def _ensure_default_sellers(session) -> None:
+    for name in DEFAULT_SELLERS:
+        exists = (
+            await session.execute(
+                select(Seller.id).where(func.lower(Seller.name) == func.lower(name))
+            )
+        ).scalar_one_or_none()
+        if not exists:
+            session.add(Seller(name=name))
+
 
 def calculate_change(current: int | float, previous: int | float) -> float | None:
     if previous == 0:
@@ -29,7 +42,6 @@ def calculate_change(current: int | float, previous: int | float) -> float | Non
 
 
 async def _count_sales(session, day):
-    """Продажи за день: max(таблица sales, платежи type=sale)."""
     from_sales = (await session.execute(
         select(func.count(Sale.id)).where(func.date(Sale.sold_at) == day)
     )).scalar() or 0
@@ -52,6 +64,9 @@ async def dashboard(request: Request, target_date: str | None = None):
 
     async_session = get_async_session_factory()
     async with async_session() as session:
+        async with session.begin():
+            await _ensure_default_sellers(session)
+
         sales_today = await _count_sales(session, today)
         sales_yesterday = await _count_sales(session, yesterday)
         sales_week_ago = await _count_sales(session, week_ago)
