@@ -110,11 +110,13 @@ async def sale_item_submit(
     payment_type: str = Form(...),
     paid_amount: float | None = Form(None),
     change_amount: float | None = Form(None),
+    change_type: str | None = Form(None),
     sale_prepayment: float | None = Form(None),
     sale_bonus: float | None = Form(None),
     sale_discount: float | None = Form(None),
     use_bonus: str | None = Form(None),
     use_discount: str | None = Form(None),
+    use_change: str | None = Form(None),
     sale_full_name: str | None = Form(None),
     sale_phone: str | None = Form(None),
     sale_birth_date: str | None = Form(None),
@@ -136,10 +138,11 @@ async def sale_item_submit(
 
     bonus = float(sale_bonus) if use_bonus and sale_bonus else None
     discount = float(sale_discount) if use_discount and sale_discount else None
+    change_val = float(change_amount) if use_change and change_amount else None
+    change_kind = _clean(change_type) if use_change and change_val else None
+    if change_kind not in ("cash", "transfer"):
+        change_kind = "cash" if change_val else None
 
-    accessories_total = sum(float(a.get("price") or 0) for a in accessories)
-
-    # Сумма оплаты товара (без аксессуаров — у них свой способ оплаты)
     payment_amount = float(paid_amount or 0)
     if payment_amount <= 0 and pay_type != "paid":
         prep = float(sale_prepayment or 0)
@@ -152,7 +155,8 @@ async def sale_item_submit(
         "sale_price": sale_price,
         "payment_type": pay_type,
         "paid_amount": paid_amount,
-        "change_amount": change_amount,
+        "change_amount": change_val,
+        "change_type": change_kind,
         "sale_prepayment": sale_prepayment,
         "sale_bonus": bonus,
         "sale_discount": discount,
@@ -202,8 +206,8 @@ async def sale_item_submit(
                 sale_birth_date=birth_date,
                 sale_bonus=bonus,
                 sale_discount=discount,
-                sale_change=float(change_amount) if change_amount else None,
-                sale_change_type=pay_type if change_amount else None,
+                sale_change=change_val,
+                sale_change_type=change_kind,
                 accessories=accessories,
                 sale_comment=comment,
             )
@@ -376,7 +380,6 @@ async def _process_sale_logic(
         - float(sale_discount or 0)
     )
 
-    # Платежи: товар + аксессуары по своим способам
     all_payments: dict[str, float] = dict(accessories_payments)
     if sale_payment_type != "paid" and sale_payment_amount > 0:
         all_payments[sale_payment_type] = (
