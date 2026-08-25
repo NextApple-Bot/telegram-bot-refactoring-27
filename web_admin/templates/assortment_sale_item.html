@@ -6,8 +6,10 @@
     hx-indicator="#sale-spinner"
     class="space-y-5"
     x-data="{
-        accessories: [{ name: '', price: '' }],
-        addAcc() { this.accessories.push({ name: '', price: '' }); },
+        accessories: [{ name: '', price: '', payment: 'cash' }],
+        useDiscount: false,
+        useBonus: false,
+        addAcc() { this.accessories.push({ name: '', price: '', payment: 'cash' }); },
         removeAcc(i) { if (this.accessories.length > 1) this.accessories.splice(i, 1); }
     }">
 
@@ -44,13 +46,13 @@
 
         <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
-                Способ оплаты <span class="text-red-500">*</span>
+                Способ оплаты (товар) <span class="text-red-500">*</span>
             </label>
             {% set pt = form_data.payment_type if form_data else (item.booking_payment_type or item.sale_payment_type or '') %}
             <select name="payment_type" required
                     class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                 <option value="">— Выберите —</option>
-                <option value="cash" {% if pt == 'cash' %}selected{% endif %}>💵 Наличными</option>
+                <option value="cash" {% if pt == 'cash' %}selected{% endif %}>💵 Наличные</option>
                 <option value="terminal" {% if pt == 'terminal' %}selected{% endif %}>💳 Терминал</option>
                 <option value="qr" {% if pt == 'qr' %}selected{% endif %}>📱 QR-код</option>
                 <option value="transfer" {% if pt == 'transfer' %}selected{% endif %}>↗️ Перевод</option>
@@ -71,7 +73,7 @@
         </div>
 
         <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Сумма оплаты</label>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Сумма оплаты (товар)</label>
             <div class="relative">
                 <input type="number" step="0.01" name="paid_amount"
                        value="{% if form_data %}{{ form_data.paid_amount or '' }}{% endif %}"
@@ -91,38 +93,6 @@
         </div>
 
         <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Бонус / скидка</label>
-            <div class="relative">
-                <input type="number" step="0.01" name="sale_bonus"
-                       value="{% if form_data %}{{ form_data.sale_bonus or '' }}{% else %}{{ item.booking_bonus or item.sale_bonus or '' }}{% endif %}"
-                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
-            </div>
-        </div>
-
-        <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">ФИО клиента</label>
-            <input type="text" name="sale_full_name" placeholder="Иванов Иван Иванович"
-                   value="{% if form_data %}{{ form_data.sale_full_name or '' }}{% else %}{{ item.booking_full_name or item.sale_full_name or '' }}{% endif %}"
-                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-        </div>
-
-        <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Телефон</label>
-            <input type="tel" name="sale_phone" placeholder="+79991234567"
-                   value="{% if form_data %}{{ form_data.sale_phone or '' }}{% else %}{{ item.booking_phone or item.sale_phone or '' }}{% endif %}"
-                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-        </div>
-
-        <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Дата рождения</label>
-            <input type="date" name="sale_birth_date"
-                   value="{{ birth_date_iso or '' }}"
-                   max="2015-12-31"
-                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-        </div>
-
-        <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Площадка</label>
             <input type="text" name="sale_platform" placeholder="Авито, Telegram..."
                    value="{% if form_data %}{{ form_data.sale_platform or '' }}{% else %}{{ item.booking_platform or item.sale_platform or '' }}{% endif %}"
@@ -130,55 +100,102 @@
         </div>
     </div>
 
-    <!-- Аксессуары -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" name="use_discount" value="on" x-model="useDiscount"
+                       class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                <span class="text-sm font-medium text-slate-700 dark:text-slate-200">Скидка</span>
+            </label>
+            <div x-show="useDiscount" x-cloak class="relative">
+                <input type="number" step="0.01" name="sale_discount"
+                       value="{% if form_data %}{{ form_data.sale_discount or '' }}{% endif %}"
+                       placeholder="Сумма скидки"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+            </div>
+        </div>
+        <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" name="use_bonus" value="on" x-model="useBonus"
+                       class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                <span class="text-sm font-medium text-slate-700 dark:text-slate-200">Бонусы</span>
+            </label>
+            <div x-show="useBonus" x-cloak class="relative">
+                <input type="number" step="0.01" name="sale_bonus"
+                       value="{% if form_data %}{{ form_data.sale_bonus or '' }}{% endif %}"
+                       placeholder="Сумма бонусов"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">ФИО клиента</label>
+            <input type="text" name="sale_full_name" placeholder="Иванов Иван Иванович"
+                   value="{% if form_data %}{{ form_data.sale_full_name or '' }}{% else %}{{ item.booking_full_name or item.sale_full_name or '' }}{% endif %}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Телефон</label>
+            <input type="tel" name="sale_phone" placeholder="+79991234567"
+                   value="{% if form_data %}{{ form_data.sale_phone or '' }}{% else %}{{ item.booking_phone or item.sale_phone or '' }}{% endif %}"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Дата рождения</label>
+            <input type="date" name="sale_birth_date" value="{{ birth_date_iso or '' }}" max="2015-12-31"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+    </div>
+
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
         <div class="flex items-center justify-between">
             <label class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                <i class="fas fa-puzzle-piece text-slate-400 mr-1"></i>
-                Аксессуары
+                <i class="fas fa-puzzle-piece text-slate-400 mr-1"></i> Аксессуары
             </label>
-            <button type="button"
-                    @click="addAcc()"
+            <button type="button" @click="addAcc()"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 rounded-lg transition-colors">
-                <i class="fas fa-plus text-[10px]"></i>
-                Добавить
+                <i class="fas fa-plus text-[10px]"></i> Добавить
             </button>
         </div>
-
         <template x-for="(acc, index) in accessories" :key="index">
             <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-                <div class="sm:col-span-7">
+                <div class="sm:col-span-5">
                     <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1" x-show="index === 0">Название</label>
-                    <input type="text"
-                           :name="'acc_name'"
-                           x-model="acc.name"
-                           placeholder="Чехол, плёнка..."
+                    <input type="text" name="acc_name" x-model="acc.name" placeholder="Чехол, плёнка..."
                            class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                 </div>
-                <div class="sm:col-span-4">
+                <div class="sm:col-span-3">
                     <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1" x-show="index === 0">Стоимость</label>
                     <div class="relative">
-                        <input type="number" step="0.01"
-                               :name="'acc_price'"
-                               x-model="acc.price"
-                               placeholder="0"
+                        <input type="number" step="0.01" name="acc_price" x-model="acc.price" placeholder="0"
                                class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-8 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-                        <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">₽</span>
+                        <span class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">₽</span>
                     </div>
                 </div>
+                <div class="sm:col-span-3">
+                    <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1" x-show="index === 0">Оплата</label>
+                    <select name="acc_payment" x-model="acc.payment"
+                            class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                        <option value="cash">Наличные</option>
+                        <option value="terminal">Терминал</option>
+                        <option value="qr">QR</option>
+                        <option value="transfer">Перевод</option>
+                        <option value="invoice">Счёт</option>
+                        <option value="paid">Оплачен</option>
+                    </select>
+                </div>
                 <div class="sm:col-span-1 flex justify-end pb-0.5">
-                    <button type="button"
-                            @click="removeAcc(index)"
-                            x-show="accessories.length > 1"
-                            class="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
-                            title="Удалить">
+                    <button type="button" @click="removeAcc(index)" x-show="accessories.length > 1"
+                            class="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors" title="Удалить">
                         <i class="fas fa-trash-alt text-xs"></i>
                     </button>
                 </div>
             </div>
         </template>
-
-        <p class="text-xs text-slate-400">Пустые строки игнорируются. В уведомлении: название + «Стоимость – …».</p>
     </div>
 
     <div>
@@ -194,19 +211,16 @@
         <span class="text-sm text-slate-700 dark:text-slate-300">Создать / обновить данные клиента</span>
     </label>
 
-    <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-        <button type="button"
-                @click="$store.modal.show = false"
+    <div class="sticky bottom-0 pt-3 pb-1 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3 z-10">
+        <button type="button" @click="$store.modal.show = false"
                 class="px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
             Отмена
         </button>
         <button type="submit"
-                class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm transition-colors">
+                class="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm transition-colors">
             <i class="fas fa-check"></i>
             Продать товар
-            <span id="sale-spinner" class="htmx-indicator">
-                <i class="fas fa-spinner fa-spin"></i>
-            </span>
+            <span id="sale-spinner" class="htmx-indicator"><i class="fas fa-spinner fa-spin"></i></span>
         </button>
     </div>
 </form>
