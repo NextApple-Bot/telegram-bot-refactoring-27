@@ -1,75 +1,85 @@
 {% extends "base.html" %}
 
-{% block title %}Управление продавцами{% endblock %}
-{% block page_title %}Управление продавцами{% endblock %}
+{% block title %}Продавцы{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="card-body">
-
-        {% if request.query_params.get('error') %}
-            <div class="alert alert-warning">
-                {% if request.query_params.get('error') == 'exists' %}
-                    Продавец с таким именем уже существует.
-                {% else %}
-                    {{ request.query_params.get('error') }}
-                {% endif %}
-            </div>
-        {% endif %}
-
-        <!-- Форма добавления -->
-        <form method="post" action="/admin/sellers/add" class="mb-4">
-            <div class="row g-2 align-items-end">
-                <div class="col-md-6">
-                    <label class="form-label">Имя продавца</label>
-                    <input type="text" name="name" class="form-control" placeholder="Например: Иван Петров" required>
-                </div>
-                <div class="col-md-2">
-                    <button type="submit" class="btn btn-primary w-100">Добавить</button>
-                </div>
-            </div>
-        </form>
-
-        <h5 class="mb-3">Список продавцов</h5>
-
-        {% if sellers %}
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th style="width: 80px;">ID</th>
-                        <th>Имя</th>
-                        <th class="text-end" style="width: 120px;">Действия</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for seller in sellers %}
-                    <tr>
-                        <td>{{ seller.id }}</td>
-                        <td><strong>{{ seller.name }}</strong></td>
-                        <td class="text-end">
-                            <form method="post" action="/admin/sellers/delete/{{ seller.id }}" 
-                                  style="display:inline;"
-                                  onsubmit="return confirm('Удалить продавца «{{ seller.name }}»?');">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">
-                                    Удалить
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div class="alert alert-info">Продавцы ещё не добавлены.</div>
-        {% endif %}
-
-        <div class="mt-4 d-flex gap-2">
-            <a href="/admin/sellers/stats" class="btn btn-outline-primary">📊 Статистика продавцов</a>
-            <a href="/admin/dashboard" class="btn btn-secondary">← Назад к дашборду</a>
-        </div>
-
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+        <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Продавцы</h1>
+        <p class="text-slate-500 dark:text-slate-400 mt-1">Кто может отмечаться на смене</p>
     </div>
+    <div class="flex gap-2">
+        <a href="/admin/sellers/stats"
+           class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
+            <i class="fas fa-chart-bar"></i> Статистика
+        </a>
+        <a href="/admin/dashboard"
+           class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700">
+            ← Дашборд
+        </a>
+    </div>
+</div>
+
+{% if request.query_params.get('error') %}
+<div class="mb-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+    {% if request.query_params.get('error') == 'exists' %}
+    Продавец с таким именем уже существует.
+    {% else %}
+    {{ request.query_params.get('error') }}
+    {% endif %}
+</div>
+{% endif %}
+
+<form method="post" action="/admin/sellers/add"
+      class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 mb-6 shadow-card">
+    <div class="flex flex-col sm:flex-row gap-3 items-end">
+        <div class="flex-1 w-full">
+            <label class="block text-xs font-medium text-slate-500 mb-1">Имя продавца</label>
+            <input type="text" name="name" required placeholder="Например: Иван Петров"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+        <button type="submit"
+                class="w-full sm:w-auto px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm">
+            <i class="fas fa-plus mr-1"></i> Добавить
+        </button>
+    </div>
+</form>
+
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-card overflow-hidden">
+    <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Список продавцов</h2>
+    </div>
+    {% if sellers %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-50 dark:bg-slate-800/50 text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                    <th class="px-5 py-3 font-medium">ID</th>
+                    <th class="px-5 py-3 font-medium">Имя</th>
+                    <th class="px-5 py-3 font-medium text-right">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                {% for seller in sellers %}
+                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                    <td class="px-5 py-3 text-slate-500">#{{ seller.id }}</td>
+                    <td class="px-5 py-3 font-medium text-slate-900 dark:text-white">{{ seller.name }}</td>
+                    <td class="px-5 py-3 text-right">
+                        <form method="post" action="/admin/sellers/delete/{{ seller.id }}" class="inline"
+                              onsubmit="return confirm('Удалить продавца «{{ seller.name }}»?');">
+                            <button type="submit"
+                                    class="px-3 py-1.5 text-xs font-medium rounded-lg text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800">
+                                Удалить
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="px-5 py-12 text-center text-slate-400">Продавцы ещё не добавлены</p>
+    {% endif %}
 </div>
 {% endblock %}
