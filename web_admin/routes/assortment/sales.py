@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 from aiogram import Bot
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -24,9 +24,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _clean(value: str | None) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s if s else None
+
+
+def _normalize_birth(value: str | None) -> str | None:
+    value = _clean(value)
+    if not value:
+        return None
+    if "-" in value and len(value) == 10:
+        try:
+            y, m, d = value.split("-")
+            return f"{d}.{m}.{y}"
+        except ValueError:
+            return value
+    return value
+
+
 @router.get("/sale/{item_id}", response_class=HTMLResponse)
 async def sale_item_form(request: Request, item_id: int):
-    """Форма продажи товара (для hx-get из таблицы ассортимента)"""
+    """Форма продажи товара."""
     async_session = get_async_session_factory()
     async with async_session() as session:
         item = await session.get(Item, item_id)
@@ -35,11 +55,130 @@ async def sale_item_form(request: Request, item_id: int):
 
     return templates.TemplateResponse(
         "assortment_sale_item.html",
-        {
-            "request": request,
-            "item": item,
-        },
+        {"request": request, "item": item, "error": None, "form_data": None},
     )
+
+
+@router.post("/sale/{item_id}", response_class=HTMLResponse)
+async def sale_item_submit(
+    request: Request,
+    item_id: int,
+    sale_price: float = Form(...),
+    payment_type: str = Form(...),
+    paid_amount: float | None = Form(None),
+    change_amount: float | None = Form(None),
+    sale_prepayment: float | None = Form(None),
+    sale_bonus: float | None = Form(None),
+    sale_full_name: str | None = Form(None),
+    sale_phone: str | None = Form(None),
+    sale_birth_date: str | None = Form(None),
+    sale_platform: str | None = Form(None),
+    sale_comment: str | None = Form(None),
+    create_client: str | None = Form(None),
+):
+    """Сохранение продажи из админки."""
+    is_htmx = request.headers.get("hx-request") == "true"
+
+    full_name = _clean(sale_full_name)
+    phone = _clean(sale_phone)
+    birth_date = _normalize_birth(sale_birth_date)
+    platform = _clean(sale_platform)
+    pay_type = _clean(payment_type) or "cash"
+
+    payment_amount = float(paid_amount or 0)
+    if payment_amount <= 0 and pay_type != "paid":
+        # если сумму не указали — берём цену минус предоплата минус бонус
+        prep = float(sale_prepayment or 0)
+        bonus = float(sale_bonus or 0)
+        payment_amount = max(float(sale_price) - prep - bonus, 0)
+
+    async_session = get_async_session_factory()
+    try:
+        async with async_session() as session:
+            item = await session.get(Item, item_id)
+            if not item:
+                raise HTTPException(status_code=404, detail="Товар не найден")
+
+            if not sale_price or sale_price <= 0:
+                return templates.TemplateResponse(
+                    "assortment_sale_item.html",
+                    {
+                        "request": request,
+                        "item": item,
+                        "error": "Цена продажи должна быть больше 0",
+                        "form_data": {
+                            "sale_price": sale_price,
+                            "payment_type": pay_type,
+                            "paid_amount": paid_amount,
+                            "change_amount": change_amount,
+                            "sale_prepayment": sale_prepayment,
+                            "sale_bonus": sale_bonus,
+                            "sale_full_name": full_name,
+                            "sale_phone": phone,
+                            "sale_birth_date": birth_date,
+                            "sale_platform": platform,
+                            "sale_comment": sale_comment,
+                            "create_client": bool(create_client),
+                        },
+                    },
+                    status_code=400,
+                )
+
+            result = await handle_sale_from_form(
+                item_id=item.id,
+                text=item.text,
+                serial=item.serial,
+                category_id=item.category_id or 0,
+                old_text=item.text,
+                old_serial=item.serial or "",
+                old_category_id=item.category_id or 0,
+                sale_price=float(sale_price),
+                sale_prepayment=float(sale_prepayment or 0),
+                sale_payment_amount=payment_amount,
+                sale_payment_type=pay_type,
+                sale_platform=platform,
+                sale_full_name=full_name if create_client else full_name,
+                sale_phone=phone if create_client else phone,
+                sale_birth_date=birth_date,
+                sale_bonus=float(sale_bonus) if sale_bonus else None,
+                sale_change=float(change_amount) if change_amount else None,
+                sale_change_type=pay_type if change_amount else None,
+            )
+
+            if result.get("error"):
+                return templates.TemplateResponse(
+                    "assortment_sale_item.html",
+                    {
+                        "request": request,
+                        "item": item,
+                        "error": result["error"],
+                        "form_data": {
+                            "sale_price": sale_price,
+                            "payment_type": pay_type,
+                            "paid_amount": paid_amount,
+                            "change_amount": change_amount,
+                            "sale_prepayment": sale_prepayment,
+                            "sale_bonus": sale_bonus,
+                            "sale_full_name": full_name,
+                            "sale_phone": phone,
+                            "sale_birth_date": birth_date,
+                            "sale_platform": platform,
+                            "sale_comment": sale_comment,
+                            "create_client": bool(create_client),
+                        },
+                    },
+                    status_code=400,
+                )
+
+        if is_htmx:
+            return Response(status_code=200, headers={"HX-Redirect": "/admin/assortment"})
+        return Response(status_code=303, headers={"Location": "/admin/assortment"})
+
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        logger.exception("Ошибка БД при продаже item_id=%s", item_id)
+        raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
 
 
 def generate_sale_message_id() -> int:
@@ -66,11 +205,10 @@ async def handle_sale_from_form(
     sale_change: Optional[float] = None,
     sale_change_type: Optional[str] = None,
     accessories: Optional[list[dict[str, Any]]] = None,
-    conn=None,  # Оставляем для обратной совместимости
+    conn=None,
 ) -> dict[str, Any]:
     accessories = accessories or []
 
-    # ====================== ВАЛИДАЦИЯ ======================
     errors = []
     if not sale_price or sale_price <= 0:
         errors.append("Стоимость продажи должна быть больше 0")
@@ -87,12 +225,10 @@ async def handle_sale_from_form(
 
     if errors:
         return {"error": " | ".join(errors)}
-    # =====================================================
 
     sale_message_id: int = generate_sale_message_id()
     async_session = get_async_session_factory()
 
-    # Если передали внешнее соединение — используем его (транзакцию управляет вызывающий код)
     if conn is not None:
         session = conn
         manage_transaction = False
@@ -127,7 +263,6 @@ async def handle_sale_from_form(
                     sale_message_id=sale_message_id,
                 )
         else:
-            # Используем уже открытую транзакцию
             result = await _process_sale_logic(
                 session=session,
                 item_id=item_id,
@@ -182,8 +317,6 @@ async def _process_sale_logic(
     accessories: list[dict[str, Any]],
     sale_message_id: int,
 ) -> dict[str, Any]:
-    """Внутренняя логика обработки продажи (без управления транзакцией)."""
-
     processed_accessories = []
     accessories_payments: dict[str, float] = {}
     accessories_total = 0.0
@@ -228,7 +361,6 @@ async def _process_sale_logic(
     if sale_payment_type != "paid" and sale_payment_amount > 0:
         all_payments[sale_payment_type] = all_payments.get(sale_payment_type, 0) + sale_payment_amount
 
-    # Создание клиента
     client_id = None
     if sale_phone or sale_full_name:
         client_id = await ClientRepository.get_or_create_client(
@@ -253,7 +385,6 @@ async def _process_sale_logic(
             conn=session,
         )
 
-    # Удаление основного товара
     main_item = await session.get(Item, item_id)
     if main_item:
         deleted = DeletedItem(
@@ -267,8 +398,8 @@ async def _process_sale_logic(
         session.add(deleted)
         await session.delete(main_item)
 
-    # Запись продажи
     sale = Sale(
+        item_id=item_id,
         count=1,
         cash=all_payments.get("cash", 0),
         terminal=all_payments.get("terminal", 0),
@@ -281,7 +412,6 @@ async def _process_sale_logic(
     )
     session.add(sale)
 
-    # Сохранение платежей
     for pay_type, amount in all_payments.items():
         if amount > 0:
             session.add(DailyPayment(
@@ -291,7 +421,6 @@ async def _process_sale_logic(
                 sale_message_id=sale_message_id,
             ))
 
-    # Уведомление
     bot = Bot(token=config.BOT_TOKEN)
     asyncio.create_task(send_sale_notification(
         bot=bot,
@@ -312,7 +441,10 @@ async def _process_sale_logic(
         final_amount=final_amount,
     ))
 
-    await cache.delete(f"dashboard:summary:{date.today().isoformat()}")
+    try:
+        await cache.delete(f"dashboard:summary:{date.today().isoformat()}")
+    except Exception:
+        pass
     await AssortmentService.invalidate_cache()
 
     return {"success": True}
