@@ -1,5 +1,8 @@
 import logging
 import os
+import re
+import tempfile
+import uuid
 
 import aiofiles
 from aiogram import F, Router
@@ -19,159 +22,239 @@ router = Router()
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 МБ
 
 
+def _read_text_bytes(raw: bytes) -> str:
+    """Читает текст с перебором кодировок."""
+    for enc in ("utf-8-sig", "utf-8", "cp1251", "latin-1"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def _is_txt_document(document) -> bool:
+    if not document:
+        return False
+    name = (document.file_name or "").lower()
+    mime = (document.mime_type or "").lower()
+    if name.endswith(".txt"):
+        return True
+    if mime in ("text/plain", "application/octet-stream", "text/txt"):
+        return True
+    return False
+
+
 @router.message(
     F.message_thread_id == config.THREAD_ASSORTMENT,
-    (F.text | F.caption | F.document)
+    F.chat.id == config.MAIN_GROUP_ID,
 )
 async def handle_assortment_upload(message: Message, state: FSMContext) -> None:
     """
-    Обработчик загрузки нового ассортимента (полная замена).
-    Поддерживает текст и .txt файлы.
+    Загрузка ассортимента в топик (текст или .txt).
+    Всегда отвечает пользователю — даже при ошибке.
     """
-    logger.info(
-        f"📥 Загрузка ассортимента от пользователя {getattr(message.from_user, 'id', 'unknown')}"
-    )
-
-    # Защита от повторной загрузки до подтверждения предыдущей
-    current_state = await state.get_state()
-    if current_state == AssortmentConfirmState.waiting_for_confirm.state:
-        await send_and_clean(
-            bot=message.bot,
-            chat_id=message.chat.id,
-            text="⚠️ Сначала подтвердите или отмените предыдущую загрузку ассортимента.",
-            reply_to_message_id=message.message_id,
-            message_thread_id=config.THREAD_ASSORTMENT,
-            delete_after=60
-        )
+    # Игнорируем служебные сообщения бота
+    if message.from_user and message.from_user.is_bot:
         return
 
-    content: str | None = None
+    # Нужен текст, подпись или документ
+    if not (message.text or message.caption or message.document):
+        return
 
-    # === Обработка файла ===
-    if message.document:
-        document = message.document
+    user_id = getattr(message.from_user, "id", "unknown")
+    logger.info("📥 Загрузка ассортимента от user_id=%s msg_id=%s", user_id, message.message_id)
 
-        if document.file_size and document.file_size > MAX_FILE_SIZE:
-            await send_and_clean(
-                bot=message.bot,
-                chat_id=message.chat.id,
-                text="❌ Файл слишком большой (максимум 10 МБ).",
-                reply_to_message_id=message.message_id,
+    try:
+        # Сброс зависшего состояния: новая загрузка всегда принимается
+        current_state = await state.get_state()
+        if current_state == AssortmentConfirmState.waiting_for_confirm.state:
+            logger.info("Сбрасываем предыдущее неподтверждённое состояние ассортимента")
+            await state.clear()
+
+        content: str | None = None
+
+        # === Файл ===
+        if message.document:
+            document = message.document
+
+            if document.file_size and document.file_size > MAX_FILE_SIZE:
+                await message.reply(
+                    "❌ Файл слишком большой (максимум 10 МБ).",
+                    message_thread_id=config.THREAD_ASSORTMENT,
+                )
+                return
+
+            if not _is_txt_document(document):
+                await message.reply(
+                    "⚠️ Нужен текстовый файл (.txt).\n"
+                    f"Сейчас: {document.file_name or 'без имени'} ({document.mime_type or 'unknown'}).",
+                    message_thread_id=config.THREAD_ASSORTMENT,
+                )
+                return
+
+            safe_name = re.sub(r"[^\w.\-]+", "_", document.file_name or "assortment.txt")[:80]
+            file_path = os.path.join(tempfile.gettempdir(), f"assort_{uuid.uuid4().hex}_{safe_name}")
+
+            try:
+                await message.bot.download(document, destination=file_path)
+                async with aiofiles.open(file_path, "rb") as f:
+                    raw = await f.read()
+                content = _read_text_bytes(raw)
+            except Exception as e:
+                logger.exception("Ошибка скачивания/чтения файла ассортимента")
+                await message.reply(
+                    f"❌ Не удалось прочитать файл: {e}",
+                    message_thread_id=config.THREAD_ASSORTMENT,
+                )
+                return
+            finally:
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except OSError:
+                        pass
+
+        # === Текст / caption ===
+        else:
+            content = (message.text or message.caption or "").strip()
+
+        if not content or not content.strip():
+            await message.reply(
+                "⚠️ Пустой файл/сообщение. Отправьте текст или .txt с ассортиментом.",
                 message_thread_id=config.THREAD_ASSORTMENT,
-                delete_after=60
             )
             return
 
-        if not (document.mime_type == "text/plain" or document.file_name.endswith(".txt")):
-            await send_and_clean(
-                bot=message.bot,
-                chat_id=message.chat.id,
-                text="⚠️ Отправьте текстовый файл (.txt).",
-                reply_to_message_id=message.message_id,
-                message_thread_id=config.THREAD_ASSORTMENT,
-                delete_after=60
-            )
-            return
-
-        # Скачиваем файл
-        file_path = f"/tmp/{document.file_name}"
-        await message.bot.download(document, destination=file_path)
-
+        # === Парсинг ===
         try:
-            async with aiofiles.open(file_path, encoding="utf-8") as f:
-                content = await f.read()
-        finally:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            categories = sort_assortment_to_categories(content)
+        except Exception as e:
+            logger.exception("Ошибка парсинга ассортимента")
+            await message.reply(
+                f"❌ Ошибка разбора файла: {e}",
+                message_thread_id=config.THREAD_ASSORTMENT,
+            )
+            return
 
-    # === Обработка текста ===
-    else:
-        content = message.text or message.caption
-        if content:
-            content = content.strip()
-
-    if not content:
-        await send_and_clean(
-            bot=message.bot,
-            chat_id=message.chat.id,
-            text="⚠️ Отправьте текст или .txt файл с ассортиментом.",
-            reply_to_message_id=message.message_id,
-            message_thread_id=config.THREAD_ASSORTMENT,
-            delete_after=60
-        )
-        return
-
-    # === Парсинг ассортимента ===
-    categories = sort_assortment_to_categories(content)
-
-    if not categories:
-        await send_and_clean(
-            bot=message.bot,
-            chat_id=message.chat.id,
-            text=(
+        if not categories:
+            preview = "\n".join(content.splitlines()[:8])[:500]
+            await message.reply(
                 "❌ Не удалось распознать категории.\n\n"
-                "Пример правильного формата:\n"
-                "---\n"
+                "Нужен формат:\n"
+                "<code>------------\n"
                 "iPhone:\n"
-                "---\n"
-                "iPhone 16 (SN123456)"
-            ),
-            reply_to_message_id=message.message_id,
-            message_thread_id=config.THREAD_ASSORTMENT,
-            delete_after=90
+                "------------\n"
+                "iPhone 16 (SN123)</code>\n\n"
+                f"Начало файла:\n<code>{preview}</code>",
+                parse_mode="HTML",
+                message_thread_id=config.THREAD_ASSORTMENT,
+            )
+            return
+
+        total_items = sum(len(cat.get("items", []) or []) for cat in categories)
+        empty_cats = sum(1 for cat in categories if not (cat.get("items") or []))
+        logger.info(
+            "📦 Распознано categories=%s items=%s empty=%s",
+            len(categories),
+            total_items,
+            empty_cats,
         )
-        return
 
-    total_items = sum(len(cat.get("items", [])) for cat in categories)
-    logger.info(f"📦 Распознано {len(categories)} категорий и {total_items} товаров")
+        await state.update_data(temp_categories=categories)
+        await state.set_state(AssortmentConfirmState.waiting_for_confirm)
 
-    # Сохраняем данные во временное состояние FSM
-    await state.update_data(temp_categories=categories)
-    await state.set_state(AssortmentConfirmState.waiting_for_confirm)
-
-    # Клавиатура подтверждения
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ Подтвердить замену", callback_data="assort_confirm:yes"),
-                InlineKeyboardButton(text="❌ Отмена", callback_data="assort_confirm:no"),
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="✅ Подтвердить замену",
+                        callback_data="assort_confirm:yes",
+                    ),
+                    InlineKeyboardButton(
+                        text="❌ Отмена",
+                        callback_data="assort_confirm:no",
+                    ),
+                ]
             ]
-        ]
-    )
+        )
 
-    await message.reply(
-        f"📦 **Ассортимент готов к замене**\n\n"
-        f"Категорий: **{len(categories)}**\n"
-        f"Товаров: **{total_items}**\n\n"
-        f"⚠️ Это действие **полностью заменит** текущий ассортимент в базе.\n"
-        f"Подтверждаете?",
-        reply_markup=keyboard
-    )
+        await message.reply(
+            f"📦 <b>Ассортимент получен</b>\n\n"
+            f"Категорий: <b>{len(categories)}</b>"
+            f" (пустых: {empty_cats})\n"
+            f"Товаров: <b>{total_items}</b>\n\n"
+            f"⚠️ Это <b>полностью заменит</b> текущий ассортимент в базе.\n"
+            f"Подтверждаете?",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+            message_thread_id=config.THREAD_ASSORTMENT,
+        )
 
-
-@router.callback_query(AssortmentConfirmState.waiting_for_confirm, F.data.startswith("assort_confirm:"))
-async def process_assortment_confirm(callback: CallbackQuery, state: FSMContext) -> None:
-    """Обработка подтверждения замены ассортимента."""
-    await callback.answer()
-
-    data = await state.get_data()
-    categories = data.get("temp_categories", [])
-    action = callback.data.split(":")[1]
-
-    if action == "yes" and categories:
+    except Exception as e:
+        logger.exception("Критическая ошибка в handle_assortment_upload")
         try:
-            logger.info(f"🔄 Начинается полная замена ассортимента ({len(categories)} категорий)")
+            await message.reply(
+                f"❌ Ошибка обработки ассортимента: {e}",
+                message_thread_id=config.THREAD_ASSORTMENT,
+            )
+        except Exception:
+            pass
+
+
+@router.callback_query(F.data.startswith("assort_confirm:"))
+async def process_assortment_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    """
+    Подтверждение замены ассортимента.
+    Работает даже если FSM-состояние потерялось (данные из state, иначе — отказ).
+    """
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
+    action = (callback.data or "").split(":")[-1]
+    data = await state.get_data()
+    categories = data.get("temp_categories") or []
+
+    if action == "yes":
+        if not categories:
+            try:
+                await callback.message.edit_text(
+                    "❌ Нет данных для замены (сессия устарела).\n"
+                    "Отправьте файл ассортимента ещё раз."
+                )
+            except Exception:
+                await callback.message.answer(
+                    "❌ Нет данных для замены. Отправьте файл ещё раз."
+                )
+            await state.clear()
+            return
+
+        try:
+            logger.info("🔄 Замена ассортимента: %s категорий", len(categories))
             await ItemRepository.bulk_replace_assortment(categories)
             await AssortmentService.invalidate_cache()
-
-            logger.info("✅ Ассортимент успешно заменён")
-            await callback.message.edit_text("✅ Ассортимент успешно заменён.")
-
+            total = sum(len(c.get("items", []) or []) for c in categories)
+            text = (
+                f"✅ Ассортимент успешно заменён.\n"
+                f"Категорий: {len(categories)}, товаров: {total}."
+            )
+            try:
+                await callback.message.edit_text(text)
+            except Exception:
+                await callback.message.answer(text)
+            logger.info("✅ Ассортимент заменён")
         except Exception as e:
-            logger.exception("❌ Ошибка при замене ассортимента")
-            await callback.message.edit_text(f"❌ Ошибка при сохранении: {e}")
-
+            logger.exception("Ошибка при сохранении ассортимента")
+            err = f"❌ Ошибка при сохранении: {e}"
+            try:
+                await callback.message.edit_text(err)
+            except Exception:
+                await callback.message.answer(err)
     else:
-        await callback.message.edit_text("❌ Замена ассортимента отменена.")
+        try:
+            await callback.message.edit_text("❌ Замена ассортимента отменена.")
+        except Exception:
+            await callback.message.answer("❌ Замена ассортимента отменена.")
 
     await state.clear()
