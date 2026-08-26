@@ -67,21 +67,23 @@ def _is_txt_document(document) -> bool:
 
 
 async def _reply(message: Message, text: str, **kwargs) -> None:
-    """Ответ в тот же топик (answer надёжнее reply для forum)."""
+    """
+    Ответ в тот же forum-топик.
+    Используем bot.send_message — у message.answer() в aiogram
+    message_thread_id уже подставляется из сообщения, из-за чего
+    явная передача даёт TypeError: multiple values for message_thread_id.
+    """
     thread = message.message_thread_id or _thread_id()
+    kwargs.pop("message_thread_id", None)
     try:
-        await message.answer(text, message_thread_id=thread, **kwargs)
+        await message.bot.send_message(
+            chat_id=message.chat.id,
+            text=text,
+            message_thread_id=thread,
+            **kwargs,
+        )
     except Exception:
         logger.exception("Не удалось отправить ответ в топик ассортимента")
-        try:
-            await message.bot.send_message(
-                chat_id=message.chat.id,
-                text=text,
-                message_thread_id=thread,
-                **kwargs,
-            )
-        except Exception:
-            logger.exception("Повторная отправка тоже не удалась")
 
 
 @router.message(F.document)
@@ -92,7 +94,6 @@ async def handle_assortment_upload(message: Message, state: FSMContext) -> None:
     Любой текст/файл в топике «Ассортимент» основной группы.
     Пересланные файлы тоже обрабатываются.
     """
-    # Только нужный чат (дубль фильтра родителя — на всякий случай)
     try:
         if int(message.chat.id) != int(config.MAIN_GROUP_ID):
             return
@@ -102,14 +103,12 @@ async def handle_assortment_upload(message: Message, state: FSMContext) -> None:
     if not _in_assortment_topic(message):
         return
 
-    # Свои сообщения бота не трогаем
     if message.from_user and message.from_user.is_bot:
         return
 
     if not (message.document or message.text or message.caption):
         return
 
-    # Команды вроде /cancel — не ассортимент (их обработает commands)
     text_head = (message.text or "").strip()
     if text_head.startswith("/") and not message.document:
         return
@@ -125,7 +124,6 @@ async def handle_assortment_upload(message: Message, state: FSMContext) -> None:
     )
 
     try:
-        # Сброс зависшего FSM
         try:
             if await state.get_state() == AssortmentConfirmState.waiting_for_confirm.state:
                 await state.clear()
@@ -265,7 +263,11 @@ async def process_assortment_confirm(callback: CallbackQuery, state: FSMContext)
         except Exception:
             try:
                 thread = callback.message.message_thread_id or _thread_id()
-                await callback.message.answer(text, message_thread_id=thread)
+                await callback.bot.send_message(
+                    chat_id=callback.message.chat.id,
+                    text=text,
+                    message_thread_id=thread,
+                )
             except Exception:
                 logger.exception("Не удалось ответить на confirm")
 
