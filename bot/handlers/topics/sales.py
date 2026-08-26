@@ -33,59 +33,69 @@ def remove_trade_in_lines(text: str) -> str:
     return "\n".join(filtered)
 
 
-def _in_sales_topic(message: Message) -> bool:
-    try:
-        got = message.message_thread_id
-        expected = int(config.THREAD_SALES)
-        if got is None:
-            return False
-        return int(got) == expected
-    except (TypeError, ValueError):
+def _is_forwarded(message: Message) -> bool:
+    return bool(
+        getattr(message, "forward_date", None)
+        or getattr(message, "forward_origin", None)
+        or getattr(message, "forward_from", None)
+        or getattr(message, "forward_from_chat", None)
+        or getattr(message, "forward_sender_name", None)
+    )
+
+
+def _should_skip_bot_message(message: Message) -> bool:
+    """
+    Пропускаем только «свои» уведомления бота (отправлены ботом, не пересланы).
+    Пересланные людьми сообщения обрабатываем всегда.
+    """
+    if not message.from_user:
         return False
+    if not message.from_user.is_bot:
+        return False
+    if _is_forwarded(message):
+        return False
+    return True
 
 
-@router.message(F.text)
-@router.message(F.caption)
+@router.message(
+    F.chat.id == config.MAIN_GROUP_ID,
+    F.message_thread_id == config.THREAD_SALES,
+    (F.text | F.caption),
+)
 async def handle_sales_message(message: Message) -> None:
     """
     Обработчик продаж в топике THREAD_SALES.
     Пересланные сообщения тоже обрабатываются.
     """
-    try:
-        if int(message.chat.id) != int(config.MAIN_GROUP_ID):
-            return
-    except (TypeError, ValueError):
-        return
-
-    if not _in_sales_topic(message):
-        return
-
-    if message.from_user and message.from_user.is_bot:
-        return
-
     content = message.text or message.caption
     if not content or not content.strip():
         return
 
-    # Команды не трогаем
     if content.strip().startswith("/"):
         return
 
+    if _should_skip_bot_message(message):
+        logger.info(
+            "⏭ sales: пропуск собственного сообщения бота msg=%s (не переслано)",
+            message.message_id,
+        )
+        return
+
+    serials_preview = extract_serials(content)[:8]
     logger.info(
-        "🛒 sales handler: msg=%s user=%s forward=%s serials_preview=%s",
+        "🛒 sales handler: msg=%s user=%s bot=%s forward=%s thread=%s serials=%s",
         message.message_id,
         getattr(message.from_user, "id", None),
-        bool(
-            getattr(message, "forward_date", None)
-            or getattr(message, "forward_origin", None)
-        ),
-        extract_serials(content)[:5],
+        getattr(message.from_user, "is_bot", None),
+        _is_forwarded(message),
+        message.message_thread_id,
+        serials_preview,
     )
 
     try:
         is_first_time = await mark_message_processed(message.chat.id, message.message_id)
         if not is_first_time:
-            logger.debug("Сообщение %s уже обработано", message.message_id)
+            logger.info("Сообщение %s уже обработано — пропуск", message.message_id)
             return
 
         content = remove_trade_in_lines(content)
@@ -102,7 +112,6 @@ async def handle_sales_message(message: Message) -> None:
             logger.info("Продажа пропущена msg=%s", message.message_id)
             return
 
-        # Клиент
         try:
             data = parse_client_data(content)
             if data.get("phones") or data.get("full_name"):
@@ -118,24 +127,24 @@ async def handle_sales_message(message: Message) -> None:
         except Exception as e:
             logger.exception("Ошибка сохранения клиента: %s", e)
 
-        # Платежи
         if not result.get("skip_payments", False):
             try:
-                await PaymentService.add_payments_batch(payments, source_type="sale")
-                logger.info("💰 Платежи: %s", payments)
+                if any(float(v or 0) > 0 for v in (payments or {}).values()):
+                    await PaymentService.add_payments_batch(payments, source_type="sale")
+                    logger.info("💰 Платежи: %s", payments)
             except Exception as e:
                 logger.exception("Ошибка сохранения платежей: %s", e)
 
-        # Реакции
         if result.get("is_accessory"):
             await safe_react(message, "⚡️")
             logger.info("Аксессуар msg=%s", message.message_id)
         elif result.get("sold_items"):
             await safe_react(message, "🔥")
             logger.info(
-                "✅ Продажа: %s товаров msg=%s",
+                "✅ Продажа: %s товаров msg=%s → %s",
                 len(result["sold_items"]),
                 message.message_id,
+                result["sold_items"],
             )
         elif result.get("not_found"):
             await safe_react(message, "‼️")
@@ -151,10 +160,17 @@ async def handle_sales_message(message: Message) -> None:
                 message_thread_id=config.THREAD_SALES,
                 delete_after=60,
             )
-            logger.warning("SN не найдены msg=%s: %s", message.message_id, result["not_found"])
+            logger.warning(
+                "SN не найдены msg=%s: %s", message.message_id, result["not_found"]
+            )
         else:
             await safe_react(message, "👀")
-            logger.info("Обработано без действий msg=%s", message.message_id)
+            logger.info(
+                "Обработано без действий msg=%s serials=%s payments=%s",
+                message.message_id,
+                serials_preview,
+                payments,
+            )
 
     except Exception as e:
         logger.exception("Критическая ошибка sales handler: %s", e)
