@@ -10,16 +10,37 @@ def normalize_model(name):
     return re.sub(r"S\s+(\d+)", r"S\1", name, flags=re.IGNORECASE)
 
 
+def is_marker_line(text: str) -> bool:
+    """
+    Служебные строки-разделители, не товары:
+      -, ----, -256GB-, -eSIM-, -44mm-,
+      eSIM -, SIM+eSIM -, eSIM, SIM+eSIM
+    """
+    s = (text or "").strip()
+    if not s or s == "-":
+        return True
+    if re.match(r"^-+$", s):
+        return True
+    # -256GB- / -1TB- / -44mm- / -eSIM- / -SIM+eSIM-
+    if re.match(
+        r"^-?\s*(\d+\s*(GB|TB|mm)|eSIM|SIM\+eSIM|SIM)\s*-?$",
+        s,
+        re.IGNORECASE,
+    ):
+        return True
+    # eSIM - / SIM+eSIM -
+    if re.match(r"^(eSIM|SIM\+eSIM|SIM)\s*-\s*$", s, re.IGNORECASE):
+        return True
+    return False
+
+
 def extract_memory(text):
     """
     Объём накопителя.
-    Поддерживает:
-      256GB, 1TB, 512 ГБ
-      12/256GB, 8/256GB, 12/1TB  (RAM/Storage — берём часть после /)
+    256GB, 1TB, 12/256GB, 8/1TB — берём часть после / если есть.
     """
-    if not text:
+    if not text or is_marker_line(text):
         return None
-    # Сначала формат RAM/Storage: 12/256GB, 8/1TB
     m = re.search(
         r"\d+\s*/\s*(\d+(?:[.,]\d+)?)\s*(gb|гб|tb|тб)\b",
         text,
@@ -39,7 +60,6 @@ def extract_memory(text):
         num = m.group(1).replace(",", ".")
         unit = m.group(2).lower()
 
-    # целое без .0
     try:
         f = float(num)
         num_fmt = str(int(f)) if f == int(f) else num
@@ -54,7 +74,6 @@ def extract_memory(text):
 
 
 def extract_memory_gb(text):
-    """Объём в GB (число) для сортировки."""
     label = extract_memory(text)
     if not label:
         return None
@@ -68,8 +87,7 @@ def extract_memory_gb(text):
 
 
 def extract_watch_size(text):
-    """Размер часов: 40mm … 49mm."""
-    if not text:
+    if not text or is_marker_line(text):
         return None
     match = re.search(r"(\d{2})\s*mm\b", text, re.IGNORECASE)
     if match:
@@ -79,6 +97,8 @@ def extract_watch_size(text):
 
 def detect_sim_type(text):
     lower = (text or "").lower()
+    if is_marker_line(text):
+        return "other"
     if re.search(r"\(sim\s*\+\s*esim\)|\bsim\s*\+\s*esim\b", lower):
         return "SIM+eSIM"
     if re.search(r"\(esim\)|\besim\b", lower):
@@ -110,6 +130,7 @@ def parse_categories(lines):
     """
     Парсит текст ассортимента.
     Пустые категории сохраняются. Порядок категорий = порядок в файле.
+    Маркеры (-eSIM-, -256GB-, -) в товары НЕ попадают.
     """
     categories = []
     current_header = None
@@ -172,18 +193,12 @@ def parse_categories(lines):
             i += 3
             continue
 
-        # маркеры-разделители -, ----, -256GB- и т.п. — не товары
-        if re.match(r"^\s*-+[\w+./]*-?\s*$", stripped) and not re.search(
-            r"[А-Яа-яA-Za-z]{4,}", stripped.replace("GB", "").replace("TB", "").replace("mm", "")
-        ):
+        # маркеры групп / разделители — не товары
+        if is_marker_line(stripped):
             i += 1
             continue
 
-        if re.match(r"^\s*-+\s*$", stripped):
-            i += 1
-            continue
-
-        # Header: без рамок (короткая строка)
+        # Header: без рамок
         if stripped.endswith(":") and len(stripped) < 80:
             if re.search(r"\([A-Z0-9]{6,}\)", stripped):
                 pass  # товар
@@ -198,7 +213,7 @@ def parse_categories(lines):
             current_header = "Общее"
 
         item_text = stripped.lstrip("- ").strip()
-        if item_text and item_text != "-":
+        if item_text and not is_marker_line(item_text):
             current_items.append(item_text)
         i += 1
 
@@ -210,10 +225,18 @@ def sort_assortment_to_categories(input_text):
     return parse_categories(input_text.splitlines())
 
 
+def _filter_real_items(item_strings):
+    return [s for s in item_strings if s and not is_marker_line(s)]
+
+
 def _sort_by_memory_and_sim(item_strings):
-    """Группировка: объём памяти → тип SIM. Порядок внутри группы — как был."""
+    """
+    Группировка: объём → SIM.
+    Между моделями НЕТ '-'.
+    Заголовок группы только если в ней есть реальные товары.
+    """
+    item_strings = _filter_real_items(item_strings)
     groups = {}
-    order_keys = []
     for item_str in item_strings:
         sim = detect_sim_type(item_str)
         vol_gb = extract_memory_gb(item_str)
@@ -221,7 +244,6 @@ def _sort_by_memory_and_sim(item_strings):
         key = (vol_gb, vol_str)
         if key not in groups:
             groups[key] = {"eSIM": [], "SIM+eSIM": [], "SIM": [], "other": []}
-            order_keys.append(key)
         groups[key][sim].append(item_str)
 
     sorted_keys = sorted(
@@ -231,24 +253,28 @@ def _sort_by_memory_and_sim(item_strings):
 
     output = []
     for vol_gb, vol_str in sorted_keys:
+        bucket = groups[(vol_gb, vol_str)]
+        total_in_vol = sum(len(bucket[s]) for s in bucket)
+        if total_in_vol == 0:
+            continue
+
         if vol_str is not None:
             output.append(f"-{vol_str}-")
-            output.append("-")
+
         for sim_type in ["eSIM", "SIM+eSIM", "SIM", "other"]:
-            items_list = groups[(vol_gb, vol_str)][sim_type]
+            items_list = bucket[sim_type]
             if not items_list:
                 continue
             if sim_type != "other":
                 output.append(f"-{sim_type}-")
-                output.append("-")
-            for it in items_list:  # порядок загрузки, без alphabet sort
+            for it in items_list:
                 output.append(it)
-                output.append("-")
     return output
 
 
 def _sort_by_watch_size(item_strings):
-    """Группировка часов по размеру (40/41/42/44/45/46/49 mm)."""
+    """Группировка часов по mm. Без '-' между моделями."""
+    item_strings = _filter_real_items(item_strings)
     size_groups = {}
     for item_str in item_strings:
         size = extract_watch_size(item_str)
@@ -260,22 +286,19 @@ def _sort_by_watch_size(item_strings):
     )
     output = []
     for size in sorted_sizes:
+        items_list = size_groups[size]
+        if not items_list:
+            continue
         if size is not None:
             output.append(f"-{size}mm-")
-            output.append("-")
-        for it in size_groups[size]:
+        for it in items_list:
             output.append(it)
-            output.append("-")
     return output
 
 
 def _sort_plain(item_strings):
-    """Без перестановки — только разделители '-' (категории/порядок неприкасаемы)."""
-    output = []
-    for it in item_strings:
-        output.append(it)
-        output.append("-")
-    return output
+    """Исходный порядок, без '-' между моделями."""
+    return _filter_real_items(item_strings)
 
 
 _PHONE_BRANDS = (
@@ -288,17 +311,12 @@ _PHONE_BRANDS = (
 
 
 def sort_items_in_category(items, header):
-    """
-    Сортировка ТОЛЬКО внутри категории (порядок категорий не меняется):
-    - часы (Watch в названии или mm у большинства) → по размеру
-    - память / телефоны / планшеты → по объёму и SIM
-    - остальное → исходный порядок + разделители
-    """
     if items and isinstance(items[0], dict):
         item_strings = [item.get("text", "") for item in items if item.get("text")]
     else:
         item_strings = [str(x) for x in items if str(x).strip()]
 
+    item_strings = _filter_real_items(item_strings)
     if not item_strings:
         return []
 
@@ -308,7 +326,6 @@ def sort_items_in_category(items, header):
     has_memory = any(extract_memory(s) is not None for s in item_strings)
     watch_count = sum(1 for s in item_strings if extract_watch_size(s) is not None)
 
-    # «Ultra» без Watch — это Samsung Ultra и т.п., НЕ часы
     is_watch = (
         "watch" in header_lower
         or (
@@ -334,18 +351,21 @@ def build_output_text(categories):
     ------------
     Category:
     ------------
-    -
-    item
-    -
+    -512GB-
+    -eSIM-
+    товар1
+    товар2
+    -SIM+eSIM-
+    товар3
 
-    Пустые категории выводятся. Порядок categories не меняется.
+    Между моделями НЕТ одиночного '-'.
+    Пустые категории сохраняются. Порядок категорий не меняется.
     """
     output_lines = []
     for cat in categories:
         header = cat.get("header") or cat.get("name")
         if not header:
             continue
-        # системную не печатаем
         if str(header).strip() == "__SYSTEM__":
             continue
 
@@ -361,11 +381,8 @@ def build_output_text(categories):
         items = cat.get("items", []) or []
         if items:
             sorted_output = sort_items_in_category(items, header)
-            if sorted_output and sorted_output[0] != "-":
-                output_lines.append("-")
             output_lines.extend(sorted_output)
         else:
-            # пустая категория — оставляем как есть
             output_lines.append("")
 
         output_lines.append("")
