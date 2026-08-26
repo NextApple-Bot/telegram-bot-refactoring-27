@@ -298,13 +298,26 @@ async function saveStats() {
     try {
         const res = await fetch('/admin/dashboard/update_stats', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            credentials: 'same-origin',
             body: JSON.stringify(data)
         });
-        const result = await res.json();
-        if (result.success) location.reload();
-        else alert('Ошибка: ' + (result.error || 'Неизвестная ошибка'));
-    } catch (e) { alert('Ошибка соединения'); }
+        let result = null;
+        const text = await res.text();
+        try { result = JSON.parse(text); } catch (_) {}
+        if (!res.ok) {
+            const msg = (result && result.error) ? result.error : ('HTTP ' + res.status + ': ' + text.slice(0, 200));
+            alert('Ошибка сохранения: ' + msg);
+            return;
+        }
+        if (result && result.success) {
+            location.reload();
+            return;
+        }
+        alert('Ошибка: ' + ((result && result.error) || text.slice(0, 200) || 'Неизвестная ошибка'));
+    } catch (e) {
+        alert('Ошибка соединения: ' + (e && e.message ? e.message : e));
+    }
 }
 </script>
 {% endblock %}
