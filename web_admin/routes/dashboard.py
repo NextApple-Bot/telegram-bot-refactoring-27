@@ -1,8 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select
 
 from bot.db import get_async_session_factory
 from bot.models import (
@@ -211,53 +211,124 @@ async def toggle_seller_day(seller_id: int = Form(...), target_date: str = Form(
 
 @router.post("/update_stats")
 async def update_stats(request: Request):
-    data = await request.json()
+    """
+    Ручное перезаписывание статистики за день.
+    Удаляет дневные записи и создаёт новые по введённым суммам/счётчикам.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(
+            {"success": False, "error": "Некорректный JSON"},
+            status_code=400,
+        )
+
     target_date_str = data.get("target_date")
-
     if not target_date_str:
-        return JSONResponse({"success": False, "error": "target_date is required"}, status_code=400)
+        return JSONResponse(
+            {"success": False, "error": "target_date is required"},
+            status_code=400,
+        )
 
-    target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+    try:
+        target_date = datetime.strptime(str(target_date_str)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return JSONResponse(
+            {"success": False, "error": f"Неверная дата: {target_date_str}"},
+            status_code=400,
+        )
 
-    async_session = get_async_session_factory()
+    day_start = datetime.combine(target_date, time.min)
+    day_end = datetime.combine(target_date, time.max)
 
-    async with async_session() as session:
-        async with session.begin():
-            await session.execute(text("DELETE FROM daily_payments WHERE DATE(created_at) = :d"), {"d": target_date})
-            await session.execute(text("DELETE FROM sales WHERE DATE(sold_at) = :d"), {"d": target_date})
-            await session.execute(text("DELETE FROM preorders WHERE DATE(created_at) = :d"), {"d": target_date})
-            await session.execute(text("DELETE FROM bookings WHERE DATE(booked_at) = :d"), {"d": target_date})
+    def _num(key: str) -> float:
+        try:
+            return float(data.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
 
-            for pt in ["cash", "terminal", "qr", "transfer", "invoice", "installment"]:
-                amount = float(data.get(pt, 0) or 0)
-                if amount > 0:
-                    session.add(DailyPayment(
-                        type="sale",
-                        payment_type=pt,
-                        amount=amount,
-                        created_at=datetime.combine(target_date, datetime.min.time()),
-                    ))
+    def _int(key: str) -> int:
+        try:
+            return max(0, int(float(data.get(key, 0) or 0)))
+        except (TypeError, ValueError):
+            return 0
 
-            for _ in range(int(data.get("sales_count", 0) or 0)):
-                session.add(Sale(
-                    sold_at=datetime.combine(target_date, datetime.min.time()),
-                    count=1,
-                ))
+    try:
+        async_session = get_async_session_factory()
+        async with async_session() as session:
+            async with session.begin():
+                # Удаляем статистику за день через SQLAlchemy (без сырого DATE(:d))
+                await session.execute(
+                    delete(DailyPayment).where(
+                        DailyPayment.created_at >= day_start,
+                        DailyPayment.created_at <= day_end,
+                    )
+                )
+                await session.execute(
+                    delete(Sale).where(
+                        Sale.sold_at >= day_start,
+                        Sale.sold_at <= day_end,
+                    )
+                )
+                await session.execute(
+                    delete(Preorder).where(
+                        Preorder.created_at >= day_start,
+                        Preorder.created_at <= day_end,
+                    )
+                )
+                await session.execute(
+                    delete(Booking).where(
+                        Booking.booked_at >= day_start,
+                        Booking.booked_at <= day_end,
+                    )
+                )
 
-            for _ in range(int(data.get("preorders_count", 0) or 0)):
-                session.add(Preorder(
-                    created_at=datetime.combine(target_date, datetime.min.time()),
-                ))
+                stamp = day_start
 
-            for _ in range(int(data.get("bookings_count", 0) or 0)):
-                session.add(Booking(
-                    item_id=0,
-                    total_amount=0,
-                    booked_at=datetime.combine(target_date, datetime.min.time()),
-                ))
+                for pt in ("cash", "terminal", "qr", "transfer", "invoice", "installment"):
+                    amount = _num(pt)
+                    if amount > 0:
+                        session.add(
+                            DailyPayment(
+                                type="sale",
+                                payment_type=pt,
+                                amount=amount,
+                                created_at=stamp,
+                            )
+                        )
 
-    logger.info(f"✅ Статистика за {target_date} успешно обновлена")
-    return JSONResponse({"success": True})
+                sales_count = _int("sales_count")
+                for i in range(sales_count):
+                    session.add(
+                        Sale(
+                            item_id=None,
+                            count=1,
+                            sold_at=stamp,
+                            # message_id оставляем NULL — unique допускает несколько NULL
+                        )
+                    )
+
+                for _ in range(_int("preorders_count")):
+                    session.add(Preorder(created_at=stamp))
+
+                for _ in range(_int("bookings_count")):
+                    session.add(
+                        Booking(
+                            item_id=None,
+                            total_amount=0,
+                            booked_at=stamp,
+                        )
+                    )
+
+        logger.info("✅ Статистика за %s успешно обновлена", target_date)
+        return JSONResponse({"success": True})
+
+    except Exception as e:
+        logger.exception("Ошибка update_stats за %s", target_date_str)
+        return JSONResponse(
+            {"success": False, "error": str(e)[:500]},
+            status_code=500,
+        )
 
 
 @router.get("/top_models_data")
