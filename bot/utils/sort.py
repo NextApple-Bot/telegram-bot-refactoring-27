@@ -12,33 +12,27 @@ def normalize_model(name):
 
 def is_marker_line(text: str) -> bool:
     """
-    Служебные строки-разделители, не товары:
+    Служебные строки, не товары:
       -, ----, -256GB-, -eSIM-, -44mm-,
-      eSIM -, SIM+eSIM -, eSIM, SIM+eSIM
+      eSIM -, SIM+eSIM -
     """
     s = (text or "").strip()
     if not s or s == "-":
         return True
     if re.match(r"^-+$", s):
         return True
-    # -256GB- / -1TB- / -44mm- / -eSIM- / -SIM+eSIM-
     if re.match(
         r"^-?\s*(\d+\s*(GB|TB|mm)|eSIM|SIM\+eSIM|SIM)\s*-?$",
         s,
         re.IGNORECASE,
     ):
         return True
-    # eSIM - / SIM+eSIM -
     if re.match(r"^(eSIM|SIM\+eSIM|SIM)\s*-\s*$", s, re.IGNORECASE):
         return True
     return False
 
 
 def extract_memory(text):
-    """
-    Объём накопителя.
-    256GB, 1TB, 12/256GB, 8/1TB — берём часть после / если есть.
-    """
     if not text or is_marker_line(text):
         return None
     m = re.search(
@@ -96,9 +90,9 @@ def extract_watch_size(text):
 
 
 def detect_sim_type(text):
-    lower = (text or "").lower()
     if is_marker_line(text):
         return "other"
+    lower = (text or "").lower()
     if re.search(r"\(sim\s*\+\s*esim\)|\bsim\s*\+\s*esim\b", lower):
         return "SIM+eSIM"
     if re.search(r"\(esim\)|\besim\b", lower):
@@ -127,11 +121,7 @@ def extract_base_name(item):
 
 
 def parse_categories(lines):
-    """
-    Парсит текст ассортимента.
-    Пустые категории сохраняются. Порядок категорий = порядок в файле.
-    Маркеры (-eSIM-, -256GB-, -) в товары НЕ попадают.
-    """
+    """Пустые категории сохраняются. Маркеры в товары не попадают."""
     categories = []
     current_header = None
     current_items = []
@@ -152,7 +142,6 @@ def parse_categories(lines):
             i += 1
             continue
 
-        # ------------\nHeader:\n------------
         if re.match(r"^-{3,}$", stripped):
             if i + 1 < n and ":" in lines[i + 1]:
                 flush()
@@ -166,7 +155,6 @@ def parse_categories(lines):
             i += 1
             continue
 
-        # -Header:-
         if stripped.startswith("-") and stripped.endswith("-") and ":" in stripped:
             flush()
             header_text = stripped.strip("- ").strip()
@@ -176,7 +164,6 @@ def parse_categories(lines):
             i += 1
             continue
 
-        # ---\nHeader:\n---
         if (
             re.match(r"^\s*-+\s*$", stripped)
             and i + 1 < n
@@ -193,15 +180,13 @@ def parse_categories(lines):
             i += 3
             continue
 
-        # маркеры групп / разделители — не товары
         if is_marker_line(stripped):
             i += 1
             continue
 
-        # Header: без рамок
         if stripped.endswith(":") and len(stripped) < 80:
             if re.search(r"\([A-Z0-9]{6,}\)", stripped):
-                pass  # товар
+                pass
             else:
                 flush()
                 header_text = stripped.rstrip(":").strip()
@@ -230,11 +215,7 @@ def _filter_real_items(item_strings):
 
 
 def _sort_by_memory_and_sim(item_strings):
-    """
-    Группировка: объём → SIM.
-    Между моделями НЕТ '-'.
-    Заголовок группы только если в ней есть реальные товары.
-    """
+    """Объём → SIM. Между моделями без '-'."""
     item_strings = _filter_real_items(item_strings)
     groups = {}
     for item_str in item_strings:
@@ -273,7 +254,6 @@ def _sort_by_memory_and_sim(item_strings):
 
 
 def _sort_by_watch_size(item_strings):
-    """Группировка часов по mm. Без '-' между моделями."""
     item_strings = _filter_real_items(item_strings)
     size_groups = {}
     for item_str in item_strings:
@@ -297,7 +277,6 @@ def _sort_by_watch_size(item_strings):
 
 
 def _sort_plain(item_strings):
-    """Исходный порядок, без '-' между моделями."""
     return _filter_real_items(item_strings)
 
 
@@ -346,20 +325,19 @@ def sort_items_in_category(items, header):
 
 def build_output_text(categories):
     """
-    Формат:
+    Формат как в примере:
 
     ------------
-    Category:
+    iPhone 14:
     ------------
-    -512GB-
-    -eSIM-
-    товар1
-    товар2
-    -SIM+eSIM-
-    товар3
+    -
+    -128GB-
+    iPhone 14, Starlight, 128GB (GMXGWW022Y)
+    -
 
-    Между моделями НЕТ одиночного '-'.
-    Пустые категории сохраняются. Порядок категорий не меняется.
+    • '-' сразу после рамки категории
+    • между моделями без '-'
+    • '-' в конце после всех устройств категории
     """
     output_lines = []
     for cat in categories:
@@ -378,12 +356,16 @@ def build_output_text(categories):
         output_lines.append(display_header)
         output_lines.append("-" * dash_len)
 
+        # прочерк сразу после наименования категории
+        output_lines.append("-")
+
         items = cat.get("items", []) or []
         if items:
             sorted_output = sort_items_in_category(items, header)
             output_lines.extend(sorted_output)
-        else:
-            output_lines.append("")
+            # прочерк в конце после всех устройств категории
+            if sorted_output:
+                output_lines.append("-")
 
         output_lines.append("")
 
