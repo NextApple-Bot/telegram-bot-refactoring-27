@@ -5,6 +5,7 @@ from aiogram import F, Router
 from aiogram.types import Message
 
 from bot import config
+from bot.handlers.topics.filters import in_main_group, in_sales
 from bot.repositories import ClientRepository
 from bot.services.message_service import mark_message_processed, safe_react
 from bot.services.payment import PaymentService
@@ -40,26 +41,6 @@ def _thread_sales() -> int:
         return 0
 
 
-def _in_sales_topic(message: Message) -> bool:
-    """Мягкая проверка топика (как в assortment) — int-сравнение."""
-    got = message.message_thread_id
-    expected = _thread_sales()
-    try:
-        ok = got is not None and int(got) == expected
-    except (TypeError, ValueError):
-        ok = False
-    if not ok:
-        # INFO один раз полезен для отладки THREAD_SALES на Amvera
-        logger.info(
-            "sales skip: thread got=%s expected=%s chat=%s msg=%s",
-            got,
-            expected,
-            getattr(message.chat, "id", None),
-            getattr(message, "message_id", None),
-        )
-    return ok
-
-
 def _is_forwarded(message: Message) -> bool:
     return bool(
         getattr(message, "forward_date", None)
@@ -71,10 +52,7 @@ def _is_forwarded(message: Message) -> bool:
 
 
 def _should_skip_bot_message(message: Message) -> bool:
-    """
-    Пропускаем только свои уведомления бота (не пересланные).
-    Ручные сообщения людей и пересылки — всегда обрабатываем.
-    """
+    """Свои уведомления бота (не пересланные) не обрабатываем повторно."""
     if not message.from_user:
         return False
     if not message.from_user.is_bot:
@@ -84,26 +62,10 @@ def _should_skip_bot_message(message: Message) -> bool:
     return True
 
 
-@router.message(F.text)
-@router.message(F.caption)
+@router.message(in_main_group, in_sales, F.text)
+@router.message(in_main_group, in_sales, F.caption)
 async def handle_sales_message(message: Message) -> None:
-    """
-    Обработчик продаж в топике THREAD_SALES.
-
-    Фильтр топика — внутри хендлера (как у ассортимента),
-    а не через MagicFilter: так надёжнее на forum-топиках.
-    """
-    # 1) Только основная группа
-    try:
-        if int(message.chat.id) != int(config.MAIN_GROUP_ID):
-            return
-    except (TypeError, ValueError):
-        return
-
-    # 2) Только топик «Продажи»
-    if not _in_sales_topic(message):
-        return
-
+    """Обработчик топика «Продажи». Фильтры на декораторе — событие не перехватывается ассортиментом."""
     content = message.text or message.caption
     if not content or not content.strip():
         return
@@ -111,20 +73,15 @@ async def handle_sales_message(message: Message) -> None:
     if content.strip().startswith("/"):
         return
 
-    # 3) Свои уведомления бота (из веб-админки) не дублируем
     if _should_skip_bot_message(message):
-        logger.info(
-            "⏭ sales: пропуск своего сообщения бота msg=%s",
-            message.message_id,
-        )
+        logger.info("⏭ sales: пропуск своего сообщения бота msg=%s", message.message_id)
         return
 
     serials_preview = extract_serials(content)[:8]
     logger.info(
-        "🛒 sales handler: msg=%s user=%s bot=%s forward=%s thread=%s serials=%s",
+        "🛒 sales handler: msg=%s user=%s forward=%s thread=%s serials=%s",
         message.message_id,
         getattr(message.from_user, "id", None),
-        getattr(message.from_user, "is_bot", None),
         _is_forwarded(message),
         message.message_thread_id,
         serials_preview,
@@ -198,9 +155,7 @@ async def handle_sales_message(message: Message) -> None:
                 message_thread_id=message.message_thread_id or _thread_sales(),
                 delete_after=60,
             )
-            logger.warning(
-                "SN не найдены msg=%s: %s", message.message_id, result["not_found"]
-            )
+            logger.warning("SN не найдены msg=%s: %s", message.message_id, result["not_found"])
         else:
             await safe_react(message, "👀")
             logger.info(
