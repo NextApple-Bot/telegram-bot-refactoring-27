@@ -10,6 +10,32 @@ def normalize_model(name):
     return re.sub(r"S\s+(\d+)", r"S\1", name, flags=re.IGNORECASE)
 
 
+def normalize_category_key(name: str) -> str:
+    """
+    Ключ для сопоставления категорий:
+    Apple Watch Series 11 ↔ Apple Watch S11
+    iPad (A16) ↔ iPad 11 / iPad A16
+    """
+    s = normalize_name(name or "").lower().rstrip(":").strip()
+    s = re.sub(r"[•·|/]+", " ", s)
+    s = re.sub(r"[()\[\]]", " ", s)
+    # Series 11 → s11, SE 3 → se 3
+    s = re.sub(r"\bseries\s*(\d+)\b", r"s\1", s)
+    s = re.sub(r"\bs\s+(\d+)\b", r"s\1", s)
+    s = re.sub(r"\bse\s*(\d+)\b", r"se\1", s)
+    # частые сокращения
+    s = s.replace("apple watch", "watch")
+    s = s.replace("samsung galaxy", "galaxy")
+    s = s.replace("macbook air", "macbookair")
+    s = s.replace("macbook pro", "macbookpro")
+    s = s.replace("macbook neo", "macbookneo")
+    s = s.replace("macbook 13 neo", "macbookneo")
+    s = s.replace("airpods pro", "airpodspro")
+    s = s.replace("airpods max", "airpodsmax")
+    s = re.sub(r"\s+", "", s)
+    return s
+
+
 def is_marker_line(text: str) -> bool:
     """Служебные строки, не товары."""
     s = (text or "").strip()
@@ -116,6 +142,75 @@ def extract_base_name(item):
     return base
 
 
+def match_existing_category(item_text: str, categories: list) -> str | None:
+    """
+    Подбирает ТОЛЬКО существующую категорию. Новые не создаёт.
+    Возвращает header категории как в БД или None.
+    """
+    if not categories:
+        return None
+
+    stripped = (item_text or "").strip()
+    low = stripped.lower()
+
+    # Явные спец-полки
+    if low.startswith("б/у -") or low.startswith("б/у "):
+        for cat in categories:
+            h = normalize_name(cat.get("header") or "").lower().rstrip(":")
+            if h in ("б/у", "bu"):
+                return cat.get("header") or cat.get("name")
+    if low.startswith("ns -") or low.startswith("ns "):
+        for cat in categories:
+            h = normalize_name(cat.get("header") or "").lower().rstrip(":")
+            if h == "ns":
+                return cat.get("header") or cat.get("name")
+
+    item_key = normalize_category_key(extract_base_name(stripped))
+    item_full_key = normalize_category_key(stripped)
+
+    best = None
+    best_score = 0
+
+    for cat in categories:
+        header = cat.get("header") or cat.get("name") or ""
+        if not header or str(header).strip() == "__SYSTEM__":
+            continue
+        cat_key = normalize_category_key(header)
+        if not cat_key:
+            continue
+
+        score = 0
+        if cat_key == item_key or cat_key == item_full_key:
+            score = 1000 + len(cat_key)
+        elif item_key.startswith(cat_key) or cat_key in item_key:
+            score = 500 + len(cat_key)
+        elif item_full_key.startswith(cat_key) or cat_key in item_full_key:
+            score = 400 + len(cat_key)
+        else:
+            # частичное пересечение токенов длины >= 3
+            # (уже без пробелов — сравниваем подстроки осмысленных кусков)
+            if len(cat_key) >= 4 and cat_key in item_full_key:
+                score = 200 + len(cat_key)
+            elif len(item_key) >= 4 and item_key in cat_key:
+                score = 150 + len(item_key)
+
+        if score > best_score:
+            best_score = score
+            best = header
+
+    # порог: иначе не матчим (не плодим категории)
+    if best_score >= 150:
+        return best
+
+    # fallback «Общее», если такая полка есть
+    for cat in categories:
+        h = normalize_name(cat.get("header") or "").lower().rstrip(":")
+        if h in ("общее", "общий", "other", "misc"):
+            return cat.get("header") or cat.get("name")
+
+    return None
+
+
 def parse_categories(lines):
     categories = []
     current_header = None
@@ -209,23 +304,63 @@ def _filter_real_items(item_strings):
     return [s for s in item_strings if s and not is_marker_line(s)]
 
 
-def _sort_by_memory_and_sim(item_strings):
+def _export_preserve_order_with_markers(item_strings, header):
     """
-    -
-    -256GB-
-    -eSIM-
-    -
-    товар
-    -
-    -SIM+eSIM-
-    -
-    товар
+    Сохраняет порядок товаров как в БД (загрузка + прибытие в конец),
+    вставляет маркеры -256GB- / -eSIM- / -42mm- при смене группы.
+    """
+    items = _filter_real_items(item_strings)
+    if not items:
+        return []
 
-    Или:
-    -128GB-
-    -
-    товар
-    """
+    header_lower = (header or "").lower()
+    has_watch = any(extract_watch_size(s) is not None for s in items)
+    has_memory = any(extract_memory(s) is not None for s in items)
+    is_watch = "watch" in header_lower or (
+        has_watch and not has_memory and sum(1 for s in items if extract_watch_size(s)) >= max(1, len(items) // 2)
+    )
+
+    output = []
+    prev_vol = object()
+    prev_sim = object()
+    prev_size = object()
+
+    for item in items:
+        if is_watch:
+            size = extract_watch_size(item)
+            if size != prev_size:
+                if output and output[-1].strip() != "-":
+                    output.append("-")
+                if size is not None:
+                    output.append(f"-{size}mm-")
+                output.append("-")
+                prev_size = size
+            output.append(item)
+        elif has_memory:
+            vol = extract_memory(item)
+            sim = detect_sim_type(item)
+            vol_changed = vol != prev_vol
+            sim_changed = sim != prev_sim
+            if vol_changed or (sim_changed and sim != "other"):
+                if output and output[-1].strip() != "-":
+                    output.append("-")
+                if vol_changed and vol is not None:
+                    output.append(f"-{vol}-")
+                    prev_sim = object()  # сброс SIM-маркера на новом объёме
+                    sim_changed = True
+                if sim_changed and sim != "other":
+                    output.append(f"-{sim}-")
+                output.append("-")
+                prev_vol = vol
+                prev_sim = sim
+            output.append(item)
+        else:
+            output.append(item)
+
+    return output
+
+
+def _sort_by_memory_and_sim(item_strings):
     item_strings = _filter_real_items(item_strings)
     groups = {}
     for item_str in item_strings:
@@ -243,13 +378,12 @@ def _sort_by_memory_and_sim(item_strings):
     )
 
     output = []
-    for vol_idx, (vol_gb, vol_str) in enumerate(sorted_keys):
+    for vol_gb, vol_str in sorted_keys:
         bucket = groups[(vol_gb, vol_str)]
         total_in_vol = sum(len(bucket[s]) for s in bucket)
         if total_in_vol == 0:
             continue
 
-        # разделитель перед следующим объёмом (после товаров предыдущего)
         if output:
             output.append("-")
 
@@ -263,13 +397,11 @@ def _sort_by_memory_and_sim(item_strings):
                 continue
 
             if not first_sim_in_vol:
-                # между SIM-группами одного объёма
                 output.append("-")
 
             if sim_type != "other":
                 output.append(f"-{sim_type}-")
 
-            # прочерк после блока заголовков — перед товарами
             output.append("-")
             output.extend(items_list)
             first_sim_in_vol = False
@@ -278,11 +410,6 @@ def _sort_by_memory_and_sim(item_strings):
 
 
 def _sort_by_watch_size(item_strings):
-    """
-    -42mm-
-    -
-    товар
-    """
     item_strings = _filter_real_items(item_strings)
     size_groups = {}
     for item_str in item_strings:
@@ -320,7 +447,11 @@ _PHONE_BRANDS = (
 )
 
 
-def sort_items_in_category(items, header):
+def sort_items_in_category(items, header, preserve_order: bool = True):
+    """
+    preserve_order=True (по умолчанию): порядок как в БД, маркеры при смене группы.
+    preserve_order=False: старая жёсткая пересортировка по GB/SIM.
+    """
     if items and isinstance(items[0], dict):
         item_strings = [item.get("text", "") for item in items if item.get("text")]
     else:
@@ -330,8 +461,10 @@ def sort_items_in_category(items, header):
     if not item_strings:
         return []
 
-    header_lower = (header or "").lower()
+    if preserve_order:
+        return _export_preserve_order_with_markers(item_strings, header)
 
+    header_lower = (header or "").lower()
     has_watch_size = any(extract_watch_size(s) is not None for s in item_strings)
     has_memory = any(extract_memory(s) is not None for s in item_strings)
     watch_count = sum(1 for s in item_strings if extract_watch_size(s) is not None)
@@ -354,40 +487,11 @@ def sort_items_in_category(items, header):
     return _sort_plain(item_strings)
 
 
-def build_output_text(categories):
+def build_output_text(categories, preserve_order: bool = True):
     """
-    ------------
-    iPhone 14:
-    ------------
-    -
-    -128GB-
-    -
-    товар
-    товар
-    -
-
-    ------------
-    iPhone 17 Pro:
-    ------------
-    -
-    -256GB-
-    -eSIM-
-    -
-    товар
-    -
-    -SIM+eSIM-
-    -
-    товар
-    -
-
-    ------------
-    Apple Watch:
-    ------------
-    -
-    -42mm-
-    -
-    товар
-    -
+    Сборка txt для выдачи ассортимента.
+    Порядок категорий — как в списке (sort_order из БД).
+    Порядок товаров — как в БД (preserve_order=True).
     """
     output_lines = []
     for cat in categories:
@@ -405,19 +509,18 @@ def build_output_text(categories):
         output_lines.append("-" * dash_len)
         output_lines.append(display_header)
         output_lines.append("-" * dash_len)
-
-        # один '-' после рамки категории
         output_lines.append("-")
 
         items = cat.get("items", []) or []
-        sorted_output = sort_items_in_category(items, header) if items else []
+        sorted_output = (
+            sort_items_in_category(items, header, preserve_order=preserve_order)
+            if items
+            else []
+        )
         output_lines.extend(sorted_output)
 
-        # один '-' в конце категории, если были товары
-        if sorted_output:
-            # не дублировать, если сортировка уже закончилась на '-'
-            if sorted_output[-1].strip() != "-":
-                output_lines.append("-")
+        if sorted_output and sorted_output[-1].strip() != "-":
+            output_lines.append("-")
 
         output_lines.append("")
 
@@ -427,39 +530,22 @@ def build_output_text(categories):
 
 
 def find_category_for_item(item, categories):
-    base = extract_base_name(item).lower()
+    matched = match_existing_category(item, categories)
+    if matched is None:
+        return None
     for idx, cat in enumerate(categories):
-        cat_name = normalize_name(cat["header"]).lower().rstrip(":").strip()
-        if cat_name == base:
-            return idx
-    for idx, cat in enumerate(categories):
-        cat_name = normalize_name(cat["header"]).lower().rstrip(":").strip()
-        if cat_name and (cat_name in base or base in cat_name):
+        if (cat.get("header") or cat.get("name")) == matched:
             return idx
     return None
 
 
 def add_item_to_categories(item, categories):
-    if item.strip().startswith("Б/У -") or item.strip().startswith("Б/У "):
-        for idx, cat in enumerate(categories):
-            cat_name = normalize_name(cat["header"]).lower()
-            if cat_name in ("б/у", "б/у:"):
-                categories[idx]["items"].append(item)
-                return categories, idx
-        categories.append({"header": "Б/У:", "items": [item]})
-        return categories, len(categories) - 1
-
-    idx = find_category_for_item(item, categories)
-    if idx is not None:
-        categories[idx]["items"].append(item)
-        return categories, idx
-
-    if "iphone" in item.lower():
-        new_header = f"{extract_base_name(item)}:"
-    elif "," in item:
-        new_header = item.split(",")[0].strip() + ":"
-    else:
-        new_header = " ".join(item.split()[:2]).strip() + ":"
-    new_header = normalize_name(new_header)
-    categories.append({"header": new_header, "items": [item]})
-    return categories, len(categories) - 1
+    """Добавляет товар только в существующую категорию. Без создания новых."""
+    matched = match_existing_category(item, categories)
+    if matched is None:
+        return categories, None
+    for idx, cat in enumerate(categories):
+        if (cat.get("header") or cat.get("name")) == matched:
+            categories[idx]["items"].append(item)
+            return categories, idx
+    return categories, None
