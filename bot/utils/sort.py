@@ -11,11 +11,7 @@ def normalize_model(name):
 
 
 def is_marker_line(text: str) -> bool:
-    """
-    Служебные строки, не товары:
-      -, ----, -256GB-, -eSIM-, -44mm-,
-      eSIM -, SIM+eSIM -
-    """
+    """Служебные строки, не товары."""
     s = (text or "").strip()
     if not s or s == "-":
         return True
@@ -121,7 +117,6 @@ def extract_base_name(item):
 
 
 def parse_categories(lines):
-    """Пустые категории сохраняются. Маркеры в товары не попадают."""
     categories = []
     current_header = None
     current_items = []
@@ -215,7 +210,18 @@ def _filter_real_items(item_strings):
 
 
 def _sort_by_memory_and_sim(item_strings):
-    """Объём → SIM. Между моделями без '-'."""
+    """
+    Формат групп:
+
+      -256GB-
+      -eSIM-
+      товар
+      товар
+      -SIM+eSIM-
+      товар
+
+    Без одиночных '-' между заголовками групп и между товарами.
+    """
     item_strings = _filter_real_items(item_strings)
     groups = {}
     for item_str in item_strings:
@@ -248,12 +254,16 @@ def _sort_by_memory_and_sim(item_strings):
                 continue
             if sim_type != "other":
                 output.append(f"-{sim_type}-")
-            for it in items_list:
-                output.append(it)
+            output.extend(items_list)
     return output
 
 
 def _sort_by_watch_size(item_strings):
+    """
+      -42mm-
+      товар
+      товар
+    """
     item_strings = _filter_real_items(item_strings)
     size_groups = {}
     for item_str in item_strings:
@@ -271,8 +281,7 @@ def _sort_by_watch_size(item_strings):
             continue
         if size is not None:
             output.append(f"-{size}mm-")
-        for it in items_list:
-            output.append(it)
+        output.extend(items_list)
     return output
 
 
@@ -325,8 +334,6 @@ def sort_items_in_category(items, header):
 
 def build_output_text(categories):
     """
-    Формат как в примере:
-
     ------------
     iPhone 14:
     ------------
@@ -335,9 +342,30 @@ def build_output_text(categories):
     iPhone 14, Starlight, 128GB (GMXGWW022Y)
     -
 
-    • '-' сразу после рамки категории
-    • между моделями без '-'
-    • '-' в конце после всех устройств категории
+    ------------
+    iPhone 17 Pro:
+    ------------
+    -
+    -256GB-
+    -eSIM-
+    товар
+    -SIM+eSIM-
+    товар
+    -
+
+    ------------
+    Apple Watch:
+    ------------
+    -
+    -42mm-
+    товар
+    -
+
+    Правила:
+    • ровно один '-' после рамки категории
+    • заголовки групп подряд без одиночных '-' между ними
+    • между товарами без '-'
+    • ровно один '-' в конце после всех устройств
     """
     output_lines = []
     for cat in categories:
@@ -356,16 +384,19 @@ def build_output_text(categories):
         output_lines.append(display_header)
         output_lines.append("-" * dash_len)
 
-        # прочерк сразу после наименования категории
+        # ровно один прочерк после названия категории
         output_lines.append("-")
 
         items = cat.get("items", []) or []
-        if items:
-            sorted_output = sort_items_in_category(items, header)
-            output_lines.extend(sorted_output)
-            # прочерк в конце после всех устройств категории
-            if sorted_output:
-                output_lines.append("-")
+        sorted_output = sort_items_in_category(items, header) if items else []
+
+        # убрать случайные одиночные '-' из сортировки
+        cleaned = [line for line in sorted_output if line.strip() != "-"]
+        output_lines.extend(cleaned)
+
+        # ровно один прочерк в конце, если были товары
+        if cleaned:
+            output_lines.append("-")
 
         output_lines.append("")
 
