@@ -1,6 +1,4 @@
-from aiogram import F, Router
-
-from bot import config
+from aiogram import Router
 
 from .arrival import router as arrival_router
 from .assortment import router as assortment_router
@@ -10,18 +8,16 @@ from .sales import router as sales_router
 # ============================================================
 # Родительский роутер для всех топиков группы
 # ============================================================
+# ВАЖНО: не ставим здесь широкий F.text без thread-фильтра.
+# Каждый дочерний роутер сам фильтрует MAIN_GROUP + свой THREAD_*
+# через bot.handlers.topics.filters (иначе один хендлер «съедает» событие).
 
 topics_router = Router()
 
-# Общий фильтр: все сообщения должны приходить из основной группы
-topics_router.message.filter(F.chat.id == config.MAIN_GROUP_ID)
-topics_router.callback_query.filter(F.message.chat.id == config.MAIN_GROUP_ID)
-
-# Подключаем роутеры отдельных топиков
+# Порядок не критичен при корректных фильтрах; sales/preorder раньше для ясности
+topics_router.include_router(sales_router)
+topics_router.include_router(preorder_router)
 topics_router.include_router(arrival_router)
 topics_router.include_router(assortment_router)
-topics_router.include_router(preorder_router)
-topics_router.include_router(sales_router)
-
 
 __all__ = ["topics_router"]
