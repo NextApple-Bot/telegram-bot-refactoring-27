@@ -11,6 +11,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from bot import config
 from bot.handlers.states import AssortmentConfirmState
+from bot.handlers.topics.filters import in_assortment, in_main_group
 from bot.repositories.item import ItemRepository
 from bot.services.assortment import AssortmentService
 from bot.utils.sort import sort_assortment_to_categories
@@ -26,21 +27,6 @@ def _thread_id() -> int:
         return int(config.THREAD_ASSORTMENT)
     except (TypeError, ValueError):
         return 0
-
-
-def _in_assortment_topic(message: Message) -> bool:
-    """Мягкая проверка топика (int-сравнение, логирование)."""
-    got = message.message_thread_id
-    expected = _thread_id()
-    ok = got is not None and int(got) == expected
-    if not ok:
-        logger.debug(
-            "assortment skip: thread got=%s expected=%s chat=%s",
-            got,
-            expected,
-            getattr(message.chat, "id", None),
-        )
-    return ok
 
 
 def _read_text_bytes(raw: bytes) -> str:
@@ -67,12 +53,7 @@ def _is_txt_document(document) -> bool:
 
 
 async def _reply(message: Message, text: str, **kwargs) -> None:
-    """
-    Ответ в тот же forum-топик.
-    Используем bot.send_message — у message.answer() в aiogram
-    message_thread_id уже подставляется из сообщения, из-за чего
-    явная передача даёт TypeError: multiple values for message_thread_id.
-    """
+    """Ответ в топик ассортимента через bot.send_message (без конфликта message_thread_id)."""
     thread = message.message_thread_id or _thread_id()
     kwargs.pop("message_thread_id", None)
     try:
@@ -86,23 +67,11 @@ async def _reply(message: Message, text: str, **kwargs) -> None:
         logger.exception("Не удалось отправить ответ в топик ассортимента")
 
 
-@router.message(F.document)
-@router.message(F.text)
-@router.message(F.caption)
+@router.message(in_main_group, in_assortment, F.document)
+@router.message(in_main_group, in_assortment, F.text)
+@router.message(in_main_group, in_assortment, F.caption)
 async def handle_assortment_upload(message: Message, state: FSMContext) -> None:
-    """
-    Любой текст/файл в топике «Ассортимент» основной группы.
-    Пересланные файлы тоже обрабатываются.
-    """
-    try:
-        if int(message.chat.id) != int(config.MAIN_GROUP_ID):
-            return
-    except (TypeError, ValueError):
-        return
-
-    if not _in_assortment_topic(message):
-        return
-
+    """Только топик «Ассортимент» — фильтры на декораторе, чтобы не перехватывать другие топики."""
     if message.from_user and message.from_user.is_bot:
         return
 
@@ -115,11 +84,10 @@ async def handle_assortment_upload(message: Message, state: FSMContext) -> None:
 
     user_id = getattr(message.from_user, "id", None)
     logger.info(
-        "📥 assortment handler: user=%s msg=%s doc=%s forward=%s thread=%s",
+        "📥 assortment handler: user=%s msg=%s doc=%s thread=%s",
         user_id,
         message.message_id,
         bool(message.document),
-        bool(getattr(message, "forward_date", None) or getattr(message, "forward_origin", None)),
         message.message_thread_id,
     )
 
@@ -210,7 +178,7 @@ async def handle_assortment_upload(message: Message, state: FSMContext) -> None:
             await state.update_data(temp_categories=categories)
             await state.set_state(AssortmentConfirmState.waiting_for_confirm)
         except Exception:
-            logger.exception("FSM save failed — продолжаем без state, confirm может не сработать")
+            logger.exception("FSM save failed — confirm может не сработать")
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
