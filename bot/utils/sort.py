@@ -12,18 +12,22 @@ def normalize_model(name):
 
 def normalize_category_key(name: str) -> str:
     """
-    Ключ для сопоставления категорий:
-    Apple Watch Series 11 ↔ Apple Watch S11
-    iPad (A16) ↔ iPad 11 / iPad A16
+    Ключ для сопоставления категорий.
+    Series всегда = S:
+      Apple Watch Series 11  ↔  Apple Watch S11
+      Series 10              ↔  S10
     """
     s = normalize_name(name or "").lower().rstrip(":").strip()
     s = re.sub(r"[•·|/]+", " ", s)
     s = re.sub(r"[()\[\]]", " ", s)
-    # Series 11 → s11, SE 3 → se 3
-    s = re.sub(r"\bseries\s*(\d+)\b", r"s\1", s)
-    s = re.sub(r"\bs\s+(\d+)\b", r"s\1", s)
+
+    # Series → S (главное правило)
+    s = re.sub(r"\bseries\b", "s", s, flags=re.IGNORECASE)
+    # S 11 / S11 / s 11 → s11
+    s = re.sub(r"\bs\s*(\d+)\b", r"s\1", s)
+    # SE 3 → se3
     s = re.sub(r"\bse\s*(\d+)\b", r"se\1", s)
-    # частые сокращения
+
     s = s.replace("apple watch", "watch")
     s = s.replace("samsung galaxy", "galaxy")
     s = s.replace("macbook air", "macbookair")
@@ -139,13 +143,16 @@ def extract_base_name(item):
     base = f"{model_part} {memory}" if memory else model_part
     base = normalize_name(base)
     base = normalize_model(base)
+    # Series → S и в базовом имени
+    base = re.sub(r"\bSeries\b", "S", base, flags=re.IGNORECASE)
+    base = re.sub(r"\bS\s+(\d+)\b", r"S\1", base, flags=re.IGNORECASE)
     return base
 
 
 def match_existing_category(item_text: str, categories: list) -> str | None:
     """
     Подбирает ТОЛЬКО существующую категорию. Новые не создаёт.
-    Возвращает header категории как в БД или None.
+    Series всегда приравнивается к S.
     """
     if not categories:
         return None
@@ -153,7 +160,6 @@ def match_existing_category(item_text: str, categories: list) -> str | None:
     stripped = (item_text or "").strip()
     low = stripped.lower()
 
-    # Явные спец-полки
     if low.startswith("б/у -") or low.startswith("б/у "):
         for cat in categories:
             h = normalize_name(cat.get("header") or "").lower().rstrip(":")
@@ -187,8 +193,6 @@ def match_existing_category(item_text: str, categories: list) -> str | None:
         elif item_full_key.startswith(cat_key) or cat_key in item_full_key:
             score = 400 + len(cat_key)
         else:
-            # частичное пересечение токенов длины >= 3
-            # (уже без пробелов — сравниваем подстроки осмысленных кусков)
             if len(cat_key) >= 4 and cat_key in item_full_key:
                 score = 200 + len(cat_key)
             elif len(item_key) >= 4 and item_key in cat_key:
@@ -198,11 +202,9 @@ def match_existing_category(item_text: str, categories: list) -> str | None:
             best_score = score
             best = header
 
-    # порог: иначе не матчим (не плодим категории)
     if best_score >= 150:
         return best
 
-    # fallback «Общее», если такая полка есть
     for cat in categories:
         h = normalize_name(cat.get("header") or "").lower().rstrip(":")
         if h in ("общее", "общий", "other", "misc"):
@@ -305,10 +307,6 @@ def _filter_real_items(item_strings):
 
 
 def _export_preserve_order_with_markers(item_strings, header):
-    """
-    Сохраняет порядок товаров как в БД (загрузка + прибытие в конец),
-    вставляет маркеры -256GB- / -eSIM- / -42mm- при смене группы.
-    """
     items = _filter_real_items(item_strings)
     if not items:
         return []
@@ -346,7 +344,7 @@ def _export_preserve_order_with_markers(item_strings, header):
                     output.append("-")
                 if vol_changed and vol is not None:
                     output.append(f"-{vol}-")
-                    prev_sim = object()  # сброс SIM-маркера на новом объёме
+                    prev_sim = object()
                     sim_changed = True
                 if sim_changed and sim != "other":
                     output.append(f"-{sim}-")
@@ -448,10 +446,6 @@ _PHONE_BRANDS = (
 
 
 def sort_items_in_category(items, header, preserve_order: bool = True):
-    """
-    preserve_order=True (по умолчанию): порядок как в БД, маркеры при смене группы.
-    preserve_order=False: старая жёсткая пересортировка по GB/SIM.
-    """
     if items and isinstance(items[0], dict):
         item_strings = [item.get("text", "") for item in items if item.get("text")]
     else:
@@ -488,11 +482,6 @@ def sort_items_in_category(items, header, preserve_order: bool = True):
 
 
 def build_output_text(categories, preserve_order: bool = True):
-    """
-    Сборка txt для выдачи ассортимента.
-    Порядок категорий — как в списке (sort_order из БД).
-    Порядок товаров — как в БД (preserve_order=True).
-    """
     output_lines = []
     for cat in categories:
         header = cat.get("header") or cat.get("name")
@@ -540,7 +529,6 @@ def find_category_for_item(item, categories):
 
 
 def add_item_to_categories(item, categories):
-    """Добавляет товар только в существующую категорию. Без создания новых."""
     matched = match_existing_category(item, categories)
     if matched is None:
         return categories, None
