@@ -41,6 +41,27 @@ def calculate_change(current: int | float, previous: int | float) -> float | Non
     return round(((current - previous) / previous) * 100, 1)
 
 
+def _parse_number(value) -> float:
+    """Числа с точки или запятой (76500,0 → 76500.0)."""
+    if value is None or value == "":
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip().replace(" ", "").replace("\u00a0", "")
+    if "," in s and "." in s:
+        # 1.234,56 или 1,234.56
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
 async def _count_sales(session, day):
     from_sales = (await session.execute(
         select(func.count(Sale.id)).where(func.date(Sale.sold_at) == day)
@@ -211,13 +232,15 @@ async def toggle_seller_day(seller_id: int = Form(...), target_date: str = Form(
 
 @router.post("/update_stats")
 async def update_stats(request: Request):
-    """
-    Ручное перезаписывание статистики за день.
-    Удаляет дневные записи и создаёт новые по введённым суммам/счётчикам.
-    """
+    """Ручное перезаписывание статистики за день."""
+    logger.info("📥 update_stats: method=%s path=%s auth=%s",
+                request.method, request.url.path,
+                bool(request.session.get("authenticated")))
+
     try:
         data = await request.json()
-    except Exception:
+    except Exception as e:
+        logger.warning("update_stats: bad JSON: %s", e)
         return JSONResponse(
             {"success": False, "error": "Некорректный JSON"},
             status_code=400,
@@ -242,22 +265,15 @@ async def update_stats(request: Request):
     day_end = datetime.combine(target_date, time.max)
 
     def _num(key: str) -> float:
-        try:
-            return float(data.get(key, 0) or 0)
-        except (TypeError, ValueError):
-            return 0.0
+        return _parse_number(data.get(key, 0))
 
     def _int(key: str) -> int:
-        try:
-            return max(0, int(float(data.get(key, 0) or 0)))
-        except (TypeError, ValueError):
-            return 0
+        return max(0, int(_parse_number(data.get(key, 0))))
 
     try:
         async_session = get_async_session_factory()
         async with async_session() as session:
             async with session.begin():
-                # Удаляем статистику за день через SQLAlchemy (без сырого DATE(:d))
                 await session.execute(
                     delete(DailyPayment).where(
                         DailyPayment.created_at >= day_start,
@@ -297,28 +313,14 @@ async def update_stats(request: Request):
                             )
                         )
 
-                sales_count = _int("sales_count")
-                for i in range(sales_count):
-                    session.add(
-                        Sale(
-                            item_id=None,
-                            count=1,
-                            sold_at=stamp,
-                            # message_id оставляем NULL — unique допускает несколько NULL
-                        )
-                    )
+                for _ in range(_int("sales_count")):
+                    session.add(Sale(item_id=None, count=1, sold_at=stamp))
 
                 for _ in range(_int("preorders_count")):
                     session.add(Preorder(created_at=stamp))
 
                 for _ in range(_int("bookings_count")):
-                    session.add(
-                        Booking(
-                            item_id=None,
-                            total_amount=0,
-                            booked_at=stamp,
-                        )
-                    )
+                    session.add(Booking(item_id=None, total_amount=0, booked_at=stamp))
 
         logger.info("✅ Статистика за %s успешно обновлена", target_date)
         return JSONResponse({"success": True})
