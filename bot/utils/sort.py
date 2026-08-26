@@ -211,16 +211,20 @@ def _filter_real_items(item_strings):
 
 def _sort_by_memory_and_sim(item_strings):
     """
-    Формат групп:
+    -
+    -256GB-
+    -eSIM-
+    -
+    товар
+    -
+    -SIM+eSIM-
+    -
+    товар
 
-      -256GB-
-      -eSIM-
-      товар
-      товар
-      -SIM+eSIM-
-      товар
-
-    Без одиночных '-' между заголовками групп и между товарами.
+    Или:
+    -128GB-
+    -
+    товар
     """
     item_strings = _filter_real_items(item_strings)
     groups = {}
@@ -239,30 +243,45 @@ def _sort_by_memory_and_sim(item_strings):
     )
 
     output = []
-    for vol_gb, vol_str in sorted_keys:
+    for vol_idx, (vol_gb, vol_str) in enumerate(sorted_keys):
         bucket = groups[(vol_gb, vol_str)]
         total_in_vol = sum(len(bucket[s]) for s in bucket)
         if total_in_vol == 0:
             continue
 
+        # разделитель перед следующим объёмом (после товаров предыдущего)
+        if output:
+            output.append("-")
+
         if vol_str is not None:
             output.append(f"-{vol_str}-")
 
+        first_sim_in_vol = True
         for sim_type in ["eSIM", "SIM+eSIM", "SIM", "other"]:
             items_list = bucket[sim_type]
             if not items_list:
                 continue
+
+            if not first_sim_in_vol:
+                # между SIM-группами одного объёма
+                output.append("-")
+
             if sim_type != "other":
                 output.append(f"-{sim_type}-")
+
+            # прочерк после блока заголовков — перед товарами
+            output.append("-")
             output.extend(items_list)
+            first_sim_in_vol = False
+
     return output
 
 
 def _sort_by_watch_size(item_strings):
     """
-      -42mm-
-      товар
-      товар
+    -42mm-
+    -
+    товар
     """
     item_strings = _filter_real_items(item_strings)
     size_groups = {}
@@ -279,8 +298,11 @@ def _sort_by_watch_size(item_strings):
         items_list = size_groups[size]
         if not items_list:
             continue
+        if output:
+            output.append("-")
         if size is not None:
             output.append(f"-{size}mm-")
+        output.append("-")
         output.extend(items_list)
     return output
 
@@ -339,7 +361,9 @@ def build_output_text(categories):
     ------------
     -
     -128GB-
-    iPhone 14, Starlight, 128GB (GMXGWW022Y)
+    -
+    товар
+    товар
     -
 
     ------------
@@ -348,8 +372,11 @@ def build_output_text(categories):
     -
     -256GB-
     -eSIM-
+    -
     товар
+    -
     -SIM+eSIM-
+    -
     товар
     -
 
@@ -358,14 +385,9 @@ def build_output_text(categories):
     ------------
     -
     -42mm-
+    -
     товар
     -
-
-    Правила:
-    • ровно один '-' после рамки категории
-    • заголовки групп подряд без одиночных '-' между ними
-    • между товарами без '-'
-    • ровно один '-' в конце после всех устройств
     """
     output_lines = []
     for cat in categories:
@@ -384,19 +406,18 @@ def build_output_text(categories):
         output_lines.append(display_header)
         output_lines.append("-" * dash_len)
 
-        # ровно один прочерк после названия категории
+        # один '-' после рамки категории
         output_lines.append("-")
 
         items = cat.get("items", []) or []
         sorted_output = sort_items_in_category(items, header) if items else []
+        output_lines.extend(sorted_output)
 
-        # убрать случайные одиночные '-' из сортировки
-        cleaned = [line for line in sorted_output if line.strip() != "-"]
-        output_lines.extend(cleaned)
-
-        # ровно один прочерк в конце, если были товары
-        if cleaned:
-            output_lines.append("-")
+        # один '-' в конце категории, если были товары
+        if sorted_output:
+            # не дублировать, если сортировка уже закончилась на '-'
+            if sorted_output[-1].strip() != "-":
+                output_lines.append("-")
 
         output_lines.append("")
 
