@@ -33,6 +33,33 @@ def remove_trade_in_lines(text: str) -> str:
     return "\n".join(filtered)
 
 
+def _thread_sales() -> int:
+    try:
+        return int(config.THREAD_SALES)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _in_sales_topic(message: Message) -> bool:
+    """Мягкая проверка топика (как в assortment) — int-сравнение."""
+    got = message.message_thread_id
+    expected = _thread_sales()
+    try:
+        ok = got is not None and int(got) == expected
+    except (TypeError, ValueError):
+        ok = False
+    if not ok:
+        # INFO один раз полезен для отладки THREAD_SALES на Amvera
+        logger.info(
+            "sales skip: thread got=%s expected=%s chat=%s msg=%s",
+            got,
+            expected,
+            getattr(message.chat, "id", None),
+            getattr(message, "message_id", None),
+        )
+    return ok
+
+
 def _is_forwarded(message: Message) -> bool:
     return bool(
         getattr(message, "forward_date", None)
@@ -45,8 +72,8 @@ def _is_forwarded(message: Message) -> bool:
 
 def _should_skip_bot_message(message: Message) -> bool:
     """
-    Пропускаем только «свои» уведомления бота (отправлены ботом, не пересланы).
-    Пересланные людьми сообщения обрабатываем всегда.
+    Пропускаем только свои уведомления бота (не пересланные).
+    Ручные сообщения людей и пересылки — всегда обрабатываем.
     """
     if not message.from_user:
         return False
@@ -57,16 +84,26 @@ def _should_skip_bot_message(message: Message) -> bool:
     return True
 
 
-@router.message(
-    F.chat.id == config.MAIN_GROUP_ID,
-    F.message_thread_id == config.THREAD_SALES,
-    (F.text | F.caption),
-)
+@router.message(F.text)
+@router.message(F.caption)
 async def handle_sales_message(message: Message) -> None:
     """
     Обработчик продаж в топике THREAD_SALES.
-    Пересланные сообщения тоже обрабатываются.
+
+    Фильтр топика — внутри хендлера (как у ассортимента),
+    а не через MagicFilter: так надёжнее на forum-топиках.
     """
+    # 1) Только основная группа
+    try:
+        if int(message.chat.id) != int(config.MAIN_GROUP_ID):
+            return
+    except (TypeError, ValueError):
+        return
+
+    # 2) Только топик «Продажи»
+    if not _in_sales_topic(message):
+        return
+
     content = message.text or message.caption
     if not content or not content.strip():
         return
@@ -74,9 +111,10 @@ async def handle_sales_message(message: Message) -> None:
     if content.strip().startswith("/"):
         return
 
+    # 3) Свои уведомления бота (из веб-админки) не дублируем
     if _should_skip_bot_message(message):
         logger.info(
-            "⏭ sales: пропуск собственного сообщения бота msg=%s (не переслано)",
+            "⏭ sales: пропуск своего сообщения бота msg=%s",
             message.message_id,
         )
         return
@@ -157,7 +195,7 @@ async def handle_sales_message(message: Message) -> None:
                 chat_id=message.chat.id,
                 text=text,
                 reply_to_message_id=message.message_id,
-                message_thread_id=config.THREAD_SALES,
+                message_thread_id=message.message_thread_id or _thread_sales(),
                 delete_after=60,
             )
             logger.warning(
@@ -181,7 +219,7 @@ async def handle_sales_message(message: Message) -> None:
                 chat_id=message.chat.id,
                 text=f"❌ Ошибка обработки продажи: {e}",
                 reply_to_message_id=message.message_id,
-                message_thread_id=config.THREAD_SALES,
+                message_thread_id=message.message_thread_id or _thread_sales(),
                 delete_after=90,
             )
         except Exception:
