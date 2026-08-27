@@ -88,17 +88,17 @@ async def sale_item_form(request: Request, item_id: int):
         if not item:
             raise HTTPException(status_code=404, detail="Товар не найден")
 
-    birth_raw = item.booking_birth_date or item.sale_birth_date or ""
-    return templates.TemplateResponse(
-        "assortment_sale_item.html",
-        {
-            "request": request,
-            "item": item,
-            "error": None,
-            "form_data": None,
-            "birth_date_iso": _to_iso_date(birth_raw),
-        },
-    )
+        birth = item.booking_birth_date or item.sale_birth_date
+        return templates.TemplateResponse(
+            "assortment_sale_item.html",
+            {
+                "request": request,
+                "item": item,
+                "form_data": None,
+                "birth_date_iso": _to_iso_date(birth),
+                "error": None,
+            },
+        )
 
 
 @router.post("/sale/{item_id}", response_class=HTMLResponse)
@@ -116,6 +116,9 @@ async def sale_item_submit(
     use_bonus: str | None = Form(None),
     use_discount: str | None = Form(None),
     use_change: str | None = Form(None),
+    use_trade_in: str | None = Form(None),
+    trade_in_name: str | None = Form(None),
+    trade_in_amount: float | None = Form(None),
     sale_full_name: str | None = Form(None),
     sale_phone: str | None = Form(None),
     sale_birth_date: str | None = Form(None),
@@ -142,7 +145,13 @@ async def sale_item_submit(
     if change_kind not in ("cash", "transfer"):
         change_kind = "cash" if change_val else None
 
-    # paid_amount с формы — подсказка; итоговый расчёт в _process_sale_logic
+    trade_name = _clean(trade_in_name) if use_trade_in else None
+    trade_amount = float(trade_in_amount) if use_trade_in and trade_in_amount else None
+    if trade_amount is not None and trade_amount < 0:
+        trade_amount = abs(trade_amount)
+    if use_trade_in and trade_amount and not trade_name:
+        trade_name = "Trade-in"
+
     payment_amount = float(paid_amount or 0)
 
     form_data = {
@@ -154,6 +163,8 @@ async def sale_item_submit(
         "sale_prepayment": sale_prepayment,
         "sale_bonus": bonus,
         "sale_discount": discount,
+        "trade_in_name": trade_name,
+        "trade_in_amount": trade_amount,
         "sale_full_name": full_name,
         "sale_phone": phone,
         "sale_birth_date": birth_date,
@@ -204,6 +215,8 @@ async def sale_item_submit(
                 sale_change_type=change_kind,
                 accessories=accessories,
                 sale_comment=comment,
+                trade_in_name=trade_name,
+                trade_in_amount=trade_amount,
             )
 
             if result.get("error"):
@@ -220,13 +233,21 @@ async def sale_item_submit(
                 )
 
         if is_htmx:
-            return Response(status_code=200, headers={"HX-Redirect": "/admin/assortment"})
-        return Response(status_code=303, headers={"Location": "/admin/assortment"})
+            return HTMLResponse(
+                '<div class="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">'
+                "✅ Продажа оформлена. Сообщение отправлено в топик."
+                "</div>"
+                "<script>setTimeout(() => { Alpine.store('modal').show = false; location.reload(); }, 1200);</script>"
+            )
+        return Response(status_code=204)
 
     except HTTPException:
         raise
-    except SQLAlchemyError:
-        logger.exception("Ошибка БД при продаже item_id=%s", item_id)
+    except SQLAlchemyError as e:
+        logger.exception("DB error sale")
+        raise HTTPException(status_code=500, detail=str(e)[:300])
+    except Exception as e:
+        logger.exception("sale_item_submit")
         raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
 
 
@@ -256,6 +277,8 @@ async def handle_sale_from_form(
     sale_change_type: Optional[str] = None,
     accessories: Optional[list[dict[str, Any]]] = None,
     sale_comment: Optional[str] = None,
+    trade_in_name: Optional[str] = None,
+    trade_in_amount: Optional[float] = None,
     conn=None,
 ) -> dict[str, Any]:
     accessories = accessories or []
@@ -269,6 +292,8 @@ async def handle_sale_from_form(
         errors.append("Скидка не может быть отрицательной")
     if sale_change is not None and sale_change < 0:
         errors.append("Сумма сдачи не может быть отрицательной")
+    if trade_in_amount is not None and trade_in_amount < 0:
+        errors.append("Сумма trade-in не может быть отрицательной")
 
     for i, acc in enumerate(accessories):
         if float(acc.get("price", 0) or 0) < 0:
@@ -312,12 +337,16 @@ async def handle_sale_from_form(
             accessories=accessories,
             sale_message_id=sale_message_id,
             sale_comment=sale_comment,
+            trade_in_name=trade_in_name,
+            trade_in_amount=trade_in_amount,
         )
         if manage_transaction:
-            async with session.begin():
-                return await _process_sale_logic(**kwargs)
-        return await _process_sale_logic(**kwargs)
-
+            async with session:
+                async with session.begin():
+                    result = await _process_sale_logic(**kwargs)
+        else:
+            result = await _process_sale_logic(**kwargs)
+        return result
     except Exception as e:
         logger.exception("Неожиданная ошибка в handle_sale_from_form")
         return {"error": str(e)}
@@ -347,17 +376,18 @@ async def _process_sale_logic(
     accessories: list[dict[str, Any]],
     sale_message_id: int,
     sale_comment: Optional[str] = None,
+    trade_in_name: Optional[str] = None,
+    trade_in_amount: Optional[float] = None,
 ) -> dict[str, Any]:
     """
     Расчёт оплат:
-      товары = цена устройства + сумма аксессуаров − скидка
+      товары = цена устройства + сумма аксессуаров − скидка − trade-in
       UDS   = бонусы (если указаны)
-      основной способ (Наличными/…) = товары − UDS − П/О − оплаты аксессуаров другим способом
-      Общая = товары (= основной способ + UDS + П/О + прочие)
+      основной способ = товары − UDS − П/О − оплаты аксессуаров другим способом
+      Общая = товары
     """
     processed_accessories: list[dict[str, Any]] = []
     accessories_total = 0.0
-    # Аксессуары, оплаченные НЕ основным способом
     other_payments: dict[str, float] = {}
 
     main_pt = (sale_payment_type or "cash").strip()
@@ -379,23 +409,23 @@ async def _process_sale_logic(
 
     bonus_val = float(sale_bonus or 0)
     discount_val = float(sale_discount or 0)
+    trade_val = float(trade_in_amount or 0)
+    if trade_val < 0:
+        trade_val = abs(trade_val)
     prep = float(sale_prepayment or 0)
     other_sum = sum(other_payments.values())
 
-    # Полная стоимость товаров (то, что уходит в «Общая»)
-    goods_total = float(sale_price) + accessories_total - discount_val
+    goods_total = float(sale_price) + accessories_total - discount_val - trade_val
+    if goods_total < 0:
+        goods_total = 0.0
 
-    # Сколько должно прийти основным способом оплаты
     primary_needed = max(goods_total - bonus_val - prep - other_sum, 0.0)
 
-    # Если с формы пришла сумма — поправляем, когда забыли вычесть UDS
     primary_amount = primary_needed
     if sale_payment_amount and float(sale_payment_amount) > 0 and main_pt != "paid":
         entered = float(sale_payment_amount)
-        # Ввели полную сумму товаров (или цену устройства + аксы) без вычета бонусов
         if bonus_val > 0 and entered + prep + other_sum + 0.01 >= goods_total:
             primary_amount = primary_needed
-        # Ввели только цену устройства, аксессуары того же способа — добираем
         elif (
             accessories_total > 0
             and abs(entered - float(sale_price)) < 0.01
@@ -409,7 +439,6 @@ async def _process_sale_logic(
     if main_pt != "paid" and primary_amount > 0:
         all_payments[main_pt] = all_payments.get(main_pt, 0.0) + primary_amount
 
-    # Общая = стоимость товаров (Наличными + UDS + …)
     final_amount = goods_total
 
     client_id = None
@@ -426,6 +455,11 @@ async def _process_sale_logic(
         items_list = [{"item_text": text, "price": sale_price, "serial": serial}]
         for acc in processed_accessories:
             items_list.append({"item_text": acc["text"], "price": acc["price"]})
+        if trade_val > 0:
+            items_list.append({
+                "item_text": f"Trade-in — {(trade_in_name or 'Trade-in').strip()}",
+                "price": -trade_val,
+            })
 
         payment_details = {pt: amt for pt, amt in all_payments.items() if amt > 0}
         if bonus_val > 0:
@@ -495,6 +529,8 @@ async def _process_sale_logic(
         accessories_total=accessories_total,
         final_amount=final_amount,
         comment=sale_comment,
+        trade_in_name=trade_in_name,
+        trade_in_amount=trade_val if trade_val > 0 else None,
     ))
 
     try:
