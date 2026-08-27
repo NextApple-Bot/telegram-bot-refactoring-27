@@ -233,21 +233,13 @@ async def sale_item_submit(
                 )
 
         if is_htmx:
-            return HTMLResponse(
-                '<div class="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">'
-                "✅ Продажа оформлена. Сообщение отправлено в топик."
-                "</div>"
-                "<script>setTimeout(() => { Alpine.store('modal').show = false; location.reload(); }, 1200);</script>"
-            )
-        return Response(status_code=204)
+            return Response(status_code=200, headers={"HX-Redirect": "/admin/assortment"})
+        return Response(status_code=303, headers={"Location": "/admin/assortment"})
 
     except HTTPException:
         raise
-    except SQLAlchemyError as e:
-        logger.exception("DB error sale")
-        raise HTTPException(status_code=500, detail=str(e)[:300])
-    except Exception as e:
-        logger.exception("sale_item_submit")
+    except SQLAlchemyError:
+        logger.exception("Ошибка БД при продаже item_id=%s", item_id)
         raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
 
 
@@ -341,12 +333,10 @@ async def handle_sale_from_form(
             trade_in_amount=trade_in_amount,
         )
         if manage_transaction:
-            async with session:
-                async with session.begin():
-                    result = await _process_sale_logic(**kwargs)
-        else:
-            result = await _process_sale_logic(**kwargs)
-        return result
+            async with session.begin():
+                return await _process_sale_logic(**kwargs)
+        return await _process_sale_logic(**kwargs)
+
     except Exception as e:
         logger.exception("Неожиданная ошибка в handle_sale_from_form")
         return {"error": str(e)}
