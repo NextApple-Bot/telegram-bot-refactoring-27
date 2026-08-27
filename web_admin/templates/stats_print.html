@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Отчёт {{ period_label }}</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; color: #0f172a; margin: 24px; font-size: 13px; }
+        h1 { font-size: 20px; margin: 0 0 4px; }
+        h2 { font-size: 14px; margin: 24px 0 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+        .muted { color: #64748b; margin-bottom: 16px; }
+        .kpi { display: flex; gap: 16px; margin: 16px 0; }
+        .kpi div { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; min-width: 120px; }
+        .kpi strong { display: block; font-size: 22px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; }
+        th { background: #f8fafc; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+        td.num, th.num { text-align: right; }
+        .actions { margin-bottom: 20px; }
+        .actions button {
+            background: #4f46e5; color: #fff; border: 0; padding: 8px 14px; border-radius: 8px;
+            cursor: pointer; font-size: 13px;
+        }
+        @media print {
+            .actions { display: none; }
+            body { margin: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="actions">
+        <button onclick="window.print()">Печать / Сохранить как PDF</button>
+        <a href="/admin/stats?mode=range&date_from={{ date_from }}&date_to={{ date_to }}" style="margin-left:12px;color:#4f46e5;">← Назад к статистике</a>
+    </div>
+
+    <h1>Отчёт NextStore</h1>
+    <p class="muted">Период: {{ period_label }}</p>
+
+    <div class="kpi">
+        <div><span class="muted">Продажи</span><strong>{{ sales_count }}</strong></div>
+        <div><span class="muted">Предзаказы</span><strong>{{ preorders_count }}</strong></div>
+        <div><span class="muted">Брони</span><strong>{{ bookings_count }}</strong></div>
+    </div>
+
+    <h2>Структура оплат (продажи)</h2>
+    <table>
+        <thead><tr><th>Способ</th><th class="num">Сумма ₽</th></tr></thead>
+        <tbody>
+            {% for i in range(payment_labels|length) %}
+            <tr>
+                <td>{{ payment_labels[i] }}</td>
+                <td class="num">{{ "{:,.0f}".format(payment_values[i]).replace(',', ' ') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <h2>Источники продаж</h2>
+    {% if sources_table %}
+    <table>
+        <thead><tr><th>Источник</th><th class="num">Покупок</th><th class="num">Сумма ₽</th></tr></thead>
+        <tbody>
+            {% for row in sources_table %}
+            <tr>
+                <td>{{ row.name }}</td>
+                <td class="num">{{ row.count }}</td>
+                <td class="num">{{ "{:,.0f}".format(row.amount).replace(',', ' ') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Нет данных</p>
+    {% endif %}
+
+    <h2>Топ моделей</h2>
+    {% if models_table %}
+    <table>
+        <thead><tr><th>#</th><th>Модель</th><th class="num">Шт</th><th class="num">Сумма ₽</th></tr></thead>
+        <tbody>
+            {% for row in models_table %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ row.name }}</td>
+                <td class="num">{{ row.count }}</td>
+                <td class="num">{% if row.amount %}{{ "{:,.0f}".format(row.amount).replace(',', ' ') }}{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Нет данных</p>
+    {% endif %}
+
+    <h2>Выручка по дням</h2>
+    <table>
+        <thead><tr><th>Дата</th><th class="num">Продажи</th><th class="num">Выручка ₽</th></tr></thead>
+        <tbody>
+            {% for i in range(chart_dates|length) %}
+            <tr>
+                <td>{{ chart_dates[i] }}</td>
+                <td class="num">{{ chart_sales[i] }}</td>
+                <td class="num">{{ "{:,.0f}".format(chart_revenue[i]).replace(',', ' ') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <script>
+        // Автоматически открыть диалог печати при желании:
+        // window.onload = () => setTimeout(() => window.print(), 400);
+    </script>
+</body>
+</html>
