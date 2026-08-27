@@ -17,6 +17,45 @@
     </button>
 </div>
 
+{% if low_stock %}
+<div class="mb-8 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/80 dark:bg-amber-950/30 p-5 shadow-card">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                <i class="fas fa-exclamation-triangle text-amber-600 dark:text-amber-400"></i>
+            </div>
+            <div>
+                <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200">Мало на складе</h2>
+                <p class="text-xs text-amber-700/80 dark:text-amber-400/80">
+                    Свободно ≤ {{ low_stock_threshold }} шт. (без учёта брони) · {{ low_stock|length }} категор.
+                </p>
+            </div>
+        </div>
+        <a href="/admin/assortment"
+           class="text-xs font-medium text-amber-800 dark:text-amber-300 hover:underline">Ассортимент →</a>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {% for cat in low_stock %}
+        <div class="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5
+                    {% if cat.level == 'critical' %}bg-rose-100/80 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800
+                    {% else %}bg-white/70 dark:bg-slate-900/40 border border-amber-200/80 dark:border-amber-800/50{% endif %}">
+            <div class="min-w-0">
+                <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ cat.name }}</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                    {% if cat.booked %}бронь: {{ cat.booked }} · {% endif %}всего: {{ cat.total }}
+                </p>
+            </div>
+            <span class="shrink-0 inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 rounded-lg text-sm font-bold
+                         {% if cat.level == 'critical' %}bg-rose-600 text-white
+                         {% else %}bg-amber-500 text-white{% endif %}">
+                {{ cat.free }}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card hover:shadow-soft transition-shadow">
         <div class="flex items-start justify-between">
