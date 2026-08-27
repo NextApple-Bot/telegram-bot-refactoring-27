@@ -10,6 +10,7 @@
         useDiscount: false,
         useBonus: false,
         useChange: false,
+        useTradeIn: false,
         addAcc() { this.accessories.push({ name: '', price: '', payment: 'cash' }); },
         removeAcc(i) { if (this.accessories.length > 1) this.accessories.splice(i, 1); }
     }">
@@ -91,7 +92,6 @@
         </div>
     </div>
 
-    <!-- Скидка / Бонусы / Сдача -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
             <label class="flex items-center gap-2 cursor-pointer select-none">
@@ -144,6 +144,38 @@
                     <option value="transfer" {% if ct == 'transfer' %}selected{% endif %}>↗️ Переводом</option>
                 </select>
             </div>
+        </div>
+    </div>
+
+    <!-- Trade-in -->
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" name="use_trade_in" value="on" x-model="useTradeIn"
+                   class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                <i class="fas fa-exchange-alt text-slate-400 mr-1"></i> Trade-in
+            </span>
+        </label>
+        <div x-show="useTradeIn" x-cloak class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">Устройство (сдача)</label>
+                <input type="text" name="trade_in_name" placeholder="iPhone 13 128GB"
+                       value="{% if form_data %}{{ form_data.trade_in_name or '' }}{% endif %}"
+                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">Сумма trade-in</label>
+                <div class="relative">
+                    <input type="number" step="0.01" name="trade_in_amount"
+                           value="{% if form_data %}{{ form_data.trade_in_amount or '' }}{% endif %}"
+                           placeholder="0"
+                           class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+                </div>
+            </div>
+            <p class="sm:col-span-2 text-xs text-slate-500 dark:text-slate-400">
+                Сумма вычитается из «Общая» и из оплаты. В топике: <code>Trade-in — устройство, − сумма.</code>
+            </p>
         </div>
     </div>
 
@@ -227,7 +259,6 @@
         <span class="text-sm text-slate-700 dark:text-slate-300">Создать / обновить данные клиента</span>
     </label>
 
-    <!-- Кнопки: явный зелёный цвет через btn-sale-submit -->
     <div class="pt-4 mt-2 border-t border-slate-200 dark:border-slate-700 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
         <button type="button" @click="$store.modal.show = false"
                 class="px-5 py-3 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors">
