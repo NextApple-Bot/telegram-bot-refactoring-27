@@ -3,9 +3,36 @@
 {% block title %}Статистика{% endblock %}
 
 {% block content %}
-<div class="mb-6">
-    <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Статистика</h1>
-    <p class="text-slate-500 dark:text-slate-400 mt-1">Сводка по продажам, броням и оплатам</p>
+<div class="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+    <div>
+        <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Статистика</h1>
+        <p class="text-slate-500 dark:text-slate-400 mt-1">{{ period_label }}</p>
+    </div>
+    <form method="get" class="flex flex-wrap items-end gap-2">
+        <div>
+            <label class="block text-[10px] uppercase tracking-wide text-slate-400 mb-1">С</label>
+            <input type="date" name="date_from" value="{{ date_from }}"
+                   class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm">
+        </div>
+        <div>
+            <label class="block text-[10px] uppercase tracking-wide text-slate-400 mb-1">По</label>
+            <input type="date" name="date_to" value="{{ date_to }}"
+                   class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm">
+        </div>
+        <input type="hidden" name="mode" value="range">
+        <button type="submit"
+                class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium">
+            Показать
+        </button>
+        <a href="?mode=preset&days=7"
+           class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+            7 дней
+        </a>
+        <a href="?mode=preset&days=30"
+           class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+            30 дней
+        </a>
+    </form>
 </div>
 
 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
@@ -34,7 +61,7 @@
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
         <div class="flex items-start justify-between">
             <div>
-                <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Брони</p>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Брони (за период)</p>
                 <p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ bookings_count }}</p>
             </div>
             <div class="w-11 h-11 rounded-xl bg-violet-50 dark:bg-violet-950/50 flex items-center justify-center">
@@ -44,13 +71,13 @@
     </div>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
         <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Структура оплат</h2>
         {% if payment_labels %}
         <canvas id="paymentChart" height="160"></canvas>
         {% else %}
-        <p class="text-sm text-slate-400 py-8 text-center">Нет данных для отображения</p>
+        <p class="text-sm text-slate-400 py-8 text-center">Нет данных</p>
         {% endif %}
     </div>
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
@@ -58,9 +85,83 @@
         {% if chart_dates %}
         <canvas id="revenueChart" height="160"></canvas>
         {% else %}
-        <p class="text-sm text-slate-400 py-8 text-center">Нет данных для отображения</p>
+        <p class="text-sm text-slate-400 py-8 text-center">Нет данных</p>
         {% endif %}
     </div>
+</div>
+
+<!-- Источники / площадки -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-1">Источники продаж</h2>
+        <p class="text-xs text-slate-500 mb-4">По полю «Площадка» / источнику клиента за период</p>
+        {% if source_labels %}
+        <canvas id="sourceChart" height="180"></canvas>
+        {% else %}
+        <p class="text-sm text-slate-400 py-8 text-center">Нет данных по источникам за период</p>
+        {% endif %}
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-card overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+            <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Таблица источников</h2>
+        </div>
+        {% if sources_table %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 dark:bg-slate-800/50 text-left text-xs uppercase tracking-wider text-slate-500">
+                    <tr>
+                        <th class="px-5 py-2.5 font-medium">Источник</th>
+                        <th class="px-5 py-2.5 font-medium text-right">Покупок</th>
+                        <th class="px-5 py-2.5 font-medium text-right">Сумма</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                    {% for row in sources_table %}
+                    <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                        <td class="px-5 py-2.5 font-medium text-slate-900 dark:text-white">{{ row.name }}</td>
+                        <td class="px-5 py-2.5 text-right text-slate-600 dark:text-slate-300">{{ row.count }}</td>
+                        <td class="px-5 py-2.5 text-right font-medium text-slate-900 dark:text-white">
+                            {{ "{:,.0f}".format(row.amount).replace(',', ' ') }} ₽
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="px-5 py-10 text-center text-slate-400 text-sm">Нет данных</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-card overflow-hidden">
+    <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Активные брони по площадкам</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Сейчас на складе (не за период)</p>
+    </div>
+    {% if booking_sources_table %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-50 dark:bg-slate-800/50 text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                    <th class="px-5 py-2.5 font-medium">Площадка</th>
+                    <th class="px-5 py-2.5 font-medium text-right">Броней</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                {% for row in booking_sources_table %}
+                <tr>
+                    <td class="px-5 py-2.5 font-medium text-slate-900 dark:text-white">{{ row.name }}</td>
+                    <td class="px-5 py-2.5 text-right text-slate-600 dark:text-slate-300">{{ row.count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="px-5 py-10 text-center text-slate-400 text-sm">Нет активных броней</p>
+    {% endif %}
 </div>
 {% endblock %}
 
@@ -70,6 +171,7 @@
 const isDark = document.documentElement.classList.contains('dark');
 const tickColor = isDark ? '#94a3b8' : '#64748b';
 const gridColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(148,163,184,0.25)';
+const palette = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#0ea5e9','#64748b','#ec4899','#14b8a6','#a3e635'];
 
 {% if payment_labels %}
 new Chart(document.getElementById('paymentChart'), {
@@ -115,6 +217,32 @@ new Chart(document.getElementById('revenueChart'), {
         plugins: { legend: { display: false } },
         scales: {
             x: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } } },
+            y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } }, beginAtZero: true }
+        }
+    }
+});
+{% endif %}
+
+{% if source_labels %}
+new Chart(document.getElementById('sourceChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ source_labels | tojson }},
+        datasets: [{
+            label: 'Сумма ₽',
+            data: {{ source_amounts | tojson }},
+            backgroundColor: {{ source_labels | length }} <= palette.length
+                ? palette.slice(0, {{ source_labels | length }})
+                : Array({{ source_labels | length }}).fill(0).map((_, i) => palette[i % palette.length]),
+            borderRadius: 8,
+            maxBarThickness: 48
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { grid: { display: false }, ticks: { color: tickColor, font: { size: 11 } } },
             y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } }, beginAtZero: true }
         }
     }
