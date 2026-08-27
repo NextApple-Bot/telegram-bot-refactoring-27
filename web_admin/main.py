@@ -13,6 +13,7 @@ from web_admin.routes import (
     dashboard,
     debug,
     purchases,
+    search,
     sellers,
     sold,
     stats,
@@ -39,6 +40,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+app.include_router(search.router, prefix="/search", tags=["search"])
 app.include_router(clients.router, prefix="/clients", tags=["clients"])
 app.include_router(purchases.router, prefix="/purchases", tags=["purchases"])
 
@@ -80,8 +82,9 @@ async def auth_middleware(request: Request, call_next):
             request.method in ("POST", "PUT", "PATCH", "DELETE")
             or "application/json" in accept
             or path.rstrip("/").endswith(
-                ("/update_stats", "/toggle_seller_day", "/top_models_data")
+                ("/update_stats", "/toggle_seller_day", "/top_models_data", "/search/api")
             )
+            or "/search/api" in path
         )
         if is_api:
             return JSONResponse(
