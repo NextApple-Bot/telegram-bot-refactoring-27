@@ -69,13 +69,32 @@ class Application:
         self.bot = Bot(token=bot_config.BOT_TOKEN)
         logger.info("✅ Экземпляр Bot создан")
 
+        # FSM: Redis переживает рестарт; при ошибке — MemoryStorage
+        storage = MemoryStorage()
         if bot_config.REDIS_URL:
-            self._redis_client = redis.from_url(bot_config.REDIS_URL, decode_responses=True)
-            storage = RedisStorage(redis=self._redis_client)
-            logger.info("✅ RedisStorage для FSM")
+            try:
+                storage = RedisStorage.from_url(bot_config.REDIS_URL)
+                self._redis_client = redis.from_url(
+                    bot_config.REDIS_URL,
+                    decode_responses=True,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
+                )
+                await self._redis_client.ping()
+                logger.info("✅ RedisStorage для FSM + Redis ping OK")
+            except Exception as e:
+                logger.error(
+                    "❌ Redis недоступен (%s). FSM на MemoryStorage. Проверьте REDIS_URL на Amvera.",
+                    e,
+                )
+                storage = MemoryStorage()
+                self._redis_client = None
         else:
-            storage = MemoryStorage()
-            logger.warning("⚠️ MemoryStorage (без Redis)")
+            logger.warning(
+                "⚠️ REDIS_URL не задан — MemoryStorage. "
+                "Состояния FSM сбрасываются при рестарте. "
+                "Добавьте Redis в Amvera и переменную REDIS_URL."
+            )
 
         self.dp = Dispatcher(storage=storage)
         self.dp.update.middleware(ErrorHandlerMiddleware())
@@ -148,19 +167,14 @@ class Application:
             from aiogram.types import Update
             update_data = await request.json()
             update = Update(**update_data)
-            await self.dp.feed_update(self.bot, update)
+            await self.dp.feed_update(bot=self.bot, update=update)
             return Response(status_code=200)
-        except Exception:
-            logger.exception("❌ Ошибка обработки вебхука")
+        except Exception as e:
+            logger.exception(f"Ошибка обработки webhook: {e}")
             return Response(status_code=500)
 
     async def health(self, _: Request) -> Response:
-        from bot.db import check_db_health, check_redis_health
-        db_ok = await check_db_health()
-        redis_ok = await check_redis_health()
-        if db_ok and redis_ok:
-            return PlainTextResponse("OK")
-        return JSONResponse({"status": "unhealthy"}, status_code=503)
+        return PlainTextResponse("ok")
 
     async def health_detailed(self, _: Request) -> Response:
         from bot.db import check_db_health, check_redis_health
@@ -170,7 +184,7 @@ class Application:
         start = time.monotonic()
         redis_ok = await check_redis_health()
         redis_time = time.monotonic() - start
-        overall = db_ok and redis_ok
+        overall = db_ok  # redis optional for health
         return JSONResponse({
             "status": "healthy" if overall else "unhealthy",
             "database": {"status": "up" if db_ok else "down", "response_time_ms": round(db_time * 1000, 2) if db_ok else None},
