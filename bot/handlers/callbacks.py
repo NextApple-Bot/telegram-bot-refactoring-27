@@ -19,6 +19,7 @@ from bot.utils.sort import detect_sim_type, get_full_model_name
 
 from .base import get_main_menu_keyboard, show_help, show_inventory
 from .service_commands import delete_category_by_id, merge_categories_action, reset_assortment_action
+from .templates_cmd import templates_keyboard
 from .topics.common import export_assortment_to_topic
 
 router = Router()
@@ -49,7 +50,6 @@ async def process_inventory(callback: CallbackQuery):
     await callback.answer("⏳ Загружаю ассортимент...")
     chat_id = callback.message.chat.id
 
-    # Удаляем старое сообщение инвентаря
     if chat_id in last_inventory_message:
         try:
             await callback.bot.delete_message(chat_id, last_inventory_message[chat_id])
@@ -69,6 +69,15 @@ async def process_inventory(callback: CallbackQuery):
         reply_markup=keyboard,
         message_thread_id=callback.message.message_thread_id,
         delete_after=60,
+    )
+
+
+@router.callback_query(F.data == "menu:templates")
+async def process_templates_menu(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "Выберите шаблон для копирования или отправки в топик:",
+        reply_markup=templates_keyboard(),
     )
 
 
@@ -150,7 +159,6 @@ async def process_clients(callback: CallbackQuery):
     await callback.answer()
     chat_id = callback.message.chat.id
 
-    # Простая меню выбора месяца / подсказка
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📁 Экспорт клиентов (CSV)", callback_data="menu:export_clients_hint")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:cancel")],
@@ -253,7 +261,6 @@ async def process_remains(callback: CallbackQuery):
         )
         return
 
-    # Группировка
     groups = {}
     for row in rows:
         text = row[0]
