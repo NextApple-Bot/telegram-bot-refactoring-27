@@ -1,10 +1,14 @@
+import json
 import logging
+import re
+from typing import Any
+
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, or_, select, text
 
 from bot.db import get_async_session_factory
-from bot.models import Client, Purchase
+from bot.models import Client, Item, Purchase
 from web_admin.templates import templates
 
 logger = logging.getLogger(__name__)
@@ -14,8 +18,75 @@ router = APIRouter()
 def _validate_phone(phone: str | None) -> bool:
     if not phone:
         return True
-    import re
-    return bool(re.match(r'^\+7\d{10}$', phone))
+    return bool(re.match(r"^\+7\d{10}$", phone))
+
+
+def _phone_variants(phone: str | None) -> list[str]:
+    """Нормализованные варианты номера для поиска броней."""
+    if not phone:
+        return []
+    digits = re.sub(r"\D", "", phone)
+    variants = {phone.strip()}
+    if digits:
+        variants.add(digits)
+        if digits.startswith("8") and len(digits) == 11:
+            variants.add("+7" + digits[1:])
+            variants.add("7" + digits[1:])
+        if digits.startswith("7") and len(digits) == 11:
+            variants.add("+" + digits)
+            variants.add("8" + digits[1:])
+        if len(digits) == 10:
+            variants.add("+7" + digits)
+            variants.add("8" + digits)
+            variants.add("7" + digits)
+    return [v for v in variants if v]
+
+
+def _parse_purchase_items(items_json: str | None) -> list[dict[str, Any]]:
+    if not items_json:
+        return []
+    try:
+        data = json.loads(items_json)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return [data]
+    except Exception:
+        pass
+    return []
+
+
+def _format_payments(details: Any) -> str:
+    if not details:
+        return "—"
+    if isinstance(details, str):
+        try:
+            details = json.loads(details)
+        except Exception:
+            return details
+    if not isinstance(details, dict):
+        return str(details)
+    names = {
+        "cash": "Наличные",
+        "terminal": "Терминал",
+        "qr": "QR",
+        "transfer": "Перевод",
+        "invoice": "Счёт",
+        "installment": "Рассрочка",
+        "uds": "UDS",
+        "paid": "Оплачен",
+    }
+    parts = []
+    for k, v in details.items():
+        try:
+            amount = float(v or 0)
+        except (TypeError, ValueError):
+            continue
+        if amount <= 0:
+            continue
+        label = names.get(k, k)
+        parts.append(f"{label}: {int(amount):,}".replace(",", " ") + " ₽")
+    return "; ".join(parts) if parts else "—"
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -81,7 +152,7 @@ async def client_detail(request: Request, client_id: int):
         if not client:
             raise HTTPException(status_code=404, detail="Клиент не найден")
 
-        purchases = (
+        purchases_raw = (
             await session.execute(
                 select(Purchase)
                 .where(Purchase.client_id == client_id)
@@ -89,9 +160,80 @@ async def client_detail(request: Request, client_id: int):
             )
         ).scalars().all()
 
+        purchases = []
+        total_spent = 0.0
+        for p in purchases_raw:
+            amount = float(p.total_amount or 0)
+            total_spent += amount
+            purchases.append(
+                {
+                    "id": p.id,
+                    "created_at": p.created_at,
+                    "total_amount": amount,
+                    "purchase_type": p.purchase_type or "sale",
+                    "items": _parse_purchase_items(p.items_json),
+                    "payments": _format_payments(p.payment_details),
+                    "payment_details": p.payment_details,
+                }
+            )
+
+        # Телефоны
+        phones_list: list[str] = []
+        if client.phone:
+            phones_list.append(client.phone.strip())
+        if client.phones:
+            for part in re.split(r"[,;\n]+", client.phones):
+                part = part.strip()
+                if part and part not in phones_list:
+                    phones_list.append(part)
+
+        # Активные брони: по телефону или ФИО
+        booking_filters = [Item.is_booked.is_(True)]
+        phone_ors = []
+        for ph in phones_list:
+            for v in _phone_variants(ph):
+                phone_ors.append(Item.booking_phone.ilike(f"%{v}%"))
+        name_ors = []
+        if client.full_name and len(client.full_name.strip()) >= 3:
+            name_ors.append(Item.booking_full_name.ilike(f"%{client.full_name.strip()}%"))
+
+        bookings = []
+        if phone_ors or name_ors:
+            match = or_(*(phone_ors + name_ors))
+            booking_q = (
+                select(Item)
+                .where(Item.is_booked.is_(True), match)
+                .order_by(Item.id.desc())
+                .limit(50)
+            )
+            booking_rows = (await session.execute(booking_q)).scalars().all()
+            for it in booking_rows:
+                bookings.append(
+                    {
+                        "id": it.id,
+                        "text": it.text,
+                        "serial": it.serial,
+                        "price": float(it.booking_price or 0) or None,
+                        "prepayment": float(it.booking_prepayment or 0) or None,
+                        "platform": it.booking_platform,
+                        "full_name": it.booking_full_name,
+                        "phone": it.booking_phone,
+                        "payment_type": it.booking_payment_type,
+                    }
+                )
+
     return templates.TemplateResponse(
         "client_detail.html",
-        {"request": request, "client": client, "purchases": purchases},
+        {
+            "request": request,
+            "client": client,
+            "purchases": purchases,
+            "bookings": bookings,
+            "phones_list": phones_list,
+            "total_spent": total_spent,
+            "purchases_count": len(purchases),
+            "bookings_count": len(bookings),
+        },
     )
 
 
@@ -151,12 +293,10 @@ async def client_delete(request: Request, client_id: int):
         if not client:
             raise HTTPException(status_code=404, detail="Клиент не найден")
 
-        # Удаляем связанные покупки
         await session.execute(
             text("DELETE FROM purchases WHERE client_id = :client_id"),
-            {"client_id": client_id}
+            {"client_id": client_id},
         )
-
         await session.delete(client)
 
     return RedirectResponse(url="/admin/clients", status_code=303)
