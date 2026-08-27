@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
+import os
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
@@ -7,6 +8,7 @@ from sqlalchemy import delete, func, select
 from bot.db import get_async_session_factory
 from bot.models import (
     Booking,
+    Category,
     DailyPayment,
     Item,
     Preorder,
@@ -18,6 +20,7 @@ from bot.models import (
 from web_admin.templates import templates
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -27,6 +30,10 @@ DEFAULT_SELLERS = ("Тимофей", "Максим")
 PAYMENT_METRICS = ("cash", "terminal", "qr", "transfer", "invoice", "installment")
 COUNT_METRICS = ("sales_count", "preorders_count", "bookings_count")
 ALL_METRICS = COUNT_METRICS + PAYMENT_METRICS
+
+# Порог «мало на складе» (свободные, не в брони). Env: LOW_STOCK_THRESHOLD
+LOW_STOCK_THRESHOLD = max(0, int(os.getenv("LOW_STOCK_THRESHOLD", "3")))
+SKIP_CATEGORY_NAMES = {"б/у", "б/у:", "ns", "ns:", "общее", "общее:"}
 
 
 async def _ensure_default_sellers(session) -> None:
@@ -47,7 +54,6 @@ def calculate_change(current: int | float, previous: int | float) -> float | Non
 
 
 def _parse_number(value) -> float:
-    """Числа с точки или запятой (76500,0 → 76500.0)."""
     if value is None or value == "":
         return 0.0
     if isinstance(value, (int, float)):
@@ -173,7 +179,6 @@ async def _raw_payments(session, day) -> dict[str, float]:
 
 
 async def _day_snapshot(session, day) -> dict:
-    """Факт + корректировки за день."""
     adj = await _load_adjustments(session, day)
 
     raw_sales = await _raw_sales_count(session, day)
@@ -203,6 +208,60 @@ async def _day_snapshot(session, day) -> dict:
         },
         "adjustments": adj,
     }
+
+
+async def _low_stock_alerts(session, threshold: int) -> list[dict]:
+    """
+    Категории, где свободно (не в брони) товаров <= threshold.
+    Считаем и booked отдельно для подсказки.
+    """
+    free_q = (
+        select(
+            Category.id,
+            Category.name,
+            func.count(Item.id).label("free_count"),
+        )
+        .select_from(Category)
+        .outerjoin(
+            Item,
+            (Item.category_id == Category.id) & (Item.is_booked.is_(False)),
+        )
+        .group_by(Category.id, Category.name)
+        .order_by(func.count(Item.id).asc(), Category.name)
+    )
+    rows = (await session.execute(free_q)).all()
+
+    booked_q = (
+        select(Category.id, func.count(Item.id))
+        .select_from(Category)
+        .join(Item, (Item.category_id == Category.id) & (Item.is_booked.is_(True)))
+        .group_by(Category.id)
+    )
+    booked_map = {cid: int(c) for cid, c in (await session.execute(booked_q)).all()}
+
+    alerts = []
+    for cat_id, name, free_count in rows:
+        name_clean = (name or "").strip()
+        if name_clean.lower().rstrip(":") in SKIP_CATEGORY_NAMES:
+            continue
+        free = int(free_count or 0)
+        # только категории, где хоть что-то было / есть смысл
+        booked = booked_map.get(cat_id, 0)
+        if free == 0 and booked == 0:
+            continue  # пустая категория без товаров
+        if free <= threshold:
+            level = "critical" if free == 0 else "warning"
+            alerts.append(
+                {
+                    "id": cat_id,
+                    "name": name_clean,
+                    "free": free,
+                    "booked": booked,
+                    "total": free + booked,
+                    "level": level,
+                }
+            )
+    return alerts
 
 
 @router.get("/")
@@ -284,6 +343,8 @@ async def dashboard(request: Request, target_date: str | None = None):
 
         has_adjustments = bool(snap["adjustments"])
 
+        low_stock = await _low_stock_alerts(session, LOW_STOCK_THRESHOLD)
+
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -314,6 +375,8 @@ async def dashboard(request: Request, target_date: str | None = None):
             "top_labels": top_labels,
             "top_counts": top_counts,
             "days": 7,
+            "low_stock": low_stock,
+            "low_stock_threshold": LOW_STOCK_THRESHOLD,
         },
     )
 
@@ -349,11 +412,6 @@ async def toggle_seller_day(
 
 @router.post("/update_stats")
 async def update_stats(request: Request):
-    """
-    Безопасная правка статистики:
-    Sale / DailyPayment / Preorder / Booking НЕ удаляются.
-    Пишется корректировка (delta) = target − факт.
-    """
     logger.info(
         "📥 update_stats: method=%s path=%s auth=%s",
         request.method,
@@ -416,7 +474,6 @@ async def update_stats(request: Request):
                 **{k: float(raw_pay.get(k, 0)) for k in PAYMENT_METRICS},
             }
 
-            # Удаляем старые корректировки за день и пишем актуальный набор
             await session.execute(
                 delete(StatsAdjustment).where(
                     StatsAdjustment.target_date == target_date
@@ -428,7 +485,6 @@ async def update_stats(request: Request):
                 base = bases.get(metric, 0.0)
                 target = targets.get(metric, 0.0)
                 delta = target - base
-                # храним и нулевые? только ненулевые — чище
                 if abs(delta) < 1e-9:
                     continue
                 session.add(
