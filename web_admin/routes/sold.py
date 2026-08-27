@@ -1,10 +1,24 @@
+"""
+Проданные товары + отмена продажи одной кнопкой.
+
+Отмена:
+  1) товар снова в ассортименте
+  2) Sale и DailyPayment по sale_message_id удаляются (статистика откатывается)
+  3) DeletedItem помечается / удаляется
+  4) в топик продаж уходит «❌ Отмена продажи»
+"""
+from __future__ import annotations
+
+import asyncio
 import logging
 from datetime import date
 
+from aiogram import Bot
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 
+from bot import config
 from bot.db import get_async_session_factory
 from bot.models import DailyPayment, DeletedItem, Item, Sale
 from bot.services.assortment import AssortmentService
@@ -15,33 +29,57 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _is_sale_reason(reason: str | None) -> bool:
+    r = (reason or "").lower()
+    if not r:
+        return True
+    return "sale" in r or r in ("sold", "продан")
+
+
 @router.get("/")
 async def list_sold(
     request: Request,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=10, le=200),
+    q: str = Query("", max_length=120),
 ):
+    flash = request.query_params.get("ok") or request.query_params.get("err")
+    flash_ok = bool(request.query_params.get("ok"))
+    flash_msg = request.query_params.get("ok") or request.query_params.get("err") or ""
+
     async_session = get_async_session_factory()
     async with async_session() as session:
         offset = (page - 1) * per_page
 
-        count_q = (
-            select(func.count())
-            .select_from(DeletedItem)
-            .where(DeletedItem.reason == "sale_from_admin")
+        base_filter = or_(
+            DeletedItem.reason.ilike("%sale%"),
+            DeletedItem.sale_message_id.isnot(None),
+            DeletedItem.reason.is_(None),
         )
-        total = (await session.execute(count_q)).scalar() or 0
 
+        filters = [base_filter]
+        query = (q or "").strip()
+        if query:
+            like = f"%{query}%"
+            filters.append(
+                or_(
+                    DeletedItem.text.ilike(like),
+                    DeletedItem.serial.ilike(like),
+                )
+            )
+
+        count_q = select(func.count()).select_from(DeletedItem).where(*filters)
+        total = (await session.execute(count_q)).scalar() or 0
         total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
-        q = (
+        rows_q = (
             select(DeletedItem)
-            .where(DeletedItem.reason == "sale_from_admin")
+            .where(*filters)
             .order_by(DeletedItem.deleted_at.desc())
             .limit(per_page)
             .offset(offset)
         )
-        items = (await session.execute(q)).scalars().all()
+        items = (await session.execute(rows_q)).scalars().all()
 
     return templates.TemplateResponse(
         "sold.html",
@@ -52,70 +90,141 @@ async def list_sold(
             "per_page": per_page,
             "total": total,
             "total_pages": total_pages,
+            "q": query,
+            "flash_ok": flash_ok if flash else None,
+            "flash_msg": flash_msg,
         },
     )
 
 
-@router.post("/restore/{item_id}")
-async def restore_sold(item_id: int):
+@router.post("/cancel/{deleted_id}")
+@router.post("/restore/{deleted_id}")
+async def cancel_sale(deleted_id: int):
     """
-    Восстановить товар в ассортимент и откатить статистику продажи:
-    - вернуть Item
-    - удалить DeletedItem
-    - удалить Sale (по sale_message_id / item_id)
-    - удалить DailyPayment (по sale_message_id)
+    Отмена продажи / восстановление в ассортимент (одна кнопка).
     """
     async_session = get_async_session_factory()
-    async with async_session() as session, session.begin():
-        deleted = await session.get(DeletedItem, item_id)
-        if not deleted:
-            return RedirectResponse(url="/admin/sold", status_code=303)
+    item_text = ""
+    serial = ""
+    sale_message_id = None
 
-        sale_message_id = deleted.sale_message_id
-        original_item_id = deleted.item_id
-
-        # 1. Вернуть товар в ассортимент
-        session.add(
-            Item(
-                text=deleted.text,
-                serial=deleted.serial,
-                category_id=deleted.category_id,
-                is_booked=False,
-            )
-        )
-
-        # 2. Удалить запись о продаже (Sale)
-        if sale_message_id:
-            await session.execute(
-                delete(Sale).where(Sale.message_id == sale_message_id)
-            )
-            # 3. Удалить платежи, привязанные к этой продаже
-            await session.execute(
-                delete(DailyPayment).where(
-                    DailyPayment.sale_message_id == sale_message_id
-                )
-            )
-        elif original_item_id:
-            # fallback: по item_id, если message_id не сохранился
-            await session.execute(
-                delete(Sale).where(Sale.item_id == original_item_id)
-            )
-
-        # 4. Убрать из «проданных»
-        await session.delete(deleted)
-
-        logger.info(
-            "Восстановлен товар deleted_id=%s item_id=%s sale_message_id=%s",
-            item_id,
-            original_item_id,
-            sale_message_id,
-        )
-
-    # Сбросить кэш дашборда / ассортимента
     try:
-        await cache.delete(f"dashboard:summary:{date.today().isoformat()}")
-    except Exception:
-        pass
-    await AssortmentService.invalidate_cache()
+        async with async_session() as session:
+            async with session.begin():
+                deleted = await session.get(DeletedItem, deleted_id)
+                if not deleted:
+                    return RedirectResponse(
+                        url="/admin/sold?err=Запись+не+найдена",
+                        status_code=303,
+                    )
 
-    return RedirectResponse(url="/admin/sold", status_code=303)
+                if deleted.restored:
+                    return RedirectResponse(
+                        url="/admin/sold?err=Уже+восстановлено",
+                        status_code=303,
+                    )
+
+                item_text = deleted.text or ""
+                serial = (deleted.serial or "").strip() or None
+                sale_message_id = deleted.sale_message_id
+                original_item_id = deleted.item_id
+                category_id = deleted.category_id
+
+                # Серийник уже снова в складе?
+                if serial:
+                    exists = await session.scalar(
+                        select(Item.id).where(Item.serial == serial).limit(1)
+                    )
+                    if exists:
+                        serial_for_item = None
+                        logger.warning(
+                            "При отмене продажи serial=%s уже в items — восстанавливаем без serial",
+                            serial,
+                        )
+                    else:
+                        serial_for_item = serial
+                else:
+                    serial_for_item = None
+
+                session.add(
+                    Item(
+                        text=item_text,
+                        serial=serial_for_item,
+                        category_id=category_id,
+                        is_booked=False,
+                        is_sold=False,
+                    )
+                )
+
+                if sale_message_id:
+                    await session.execute(
+                        delete(Sale).where(Sale.message_id == sale_message_id)
+                    )
+                    await session.execute(
+                        delete(DailyPayment).where(
+                            DailyPayment.sale_message_id == sale_message_id
+                        )
+                    )
+                elif original_item_id:
+                    await session.execute(
+                        delete(Sale).where(Sale.item_id == original_item_id)
+                    )
+
+                deleted.restored = True
+                await session.delete(deleted)
+
+                logger.info(
+                    "Отмена продажи deleted_id=%s item_id=%s sale_message_id=%s serial=%s",
+                    deleted_id,
+                    original_item_id,
+                    sale_message_id,
+                    serial,
+                )
+
+        try:
+            await cache.delete(f"dashboard:summary:{date.today().isoformat()}")
+        except Exception:
+            pass
+        await AssortmentService.invalidate_cache()
+
+        # Уведомление в топик (после коммита)
+        asyncio.create_task(
+            _notify_cancel(item_text, serial or "", sale_message_id)
+        )
+
+        return RedirectResponse(
+            url="/admin/sold?ok=Продажа+отменена.+Товар+вернулся+в+ассортимент",
+            status_code=303,
+        )
+    except Exception as e:
+        logger.exception("Ошибка отмены продажи deleted_id=%s", deleted_id)
+        return RedirectResponse(
+            url=f"/admin/sold?err={str(e)[:80]}",
+            status_code=303,
+        )
+
+
+async def _notify_cancel(
+    item_text: str,
+    serial: str,
+    sale_message_id: int | None,
+) -> None:
+    try:
+        bot = Bot(token=config.BOT_TOKEN)
+        lines = ["❌ Отмена продажи:", ""]
+        title = (item_text or "").strip()
+        if serial and f"({serial})" not in title:
+            lines.append(f"{title} ({serial})")
+        else:
+            lines.append(title or "—")
+        lines.append("")
+        lines.append("Товар возвращён в ассортимент. Статистика продажи откатана.")
+        text = "\n".join(lines)
+        await bot.send_message(
+            chat_id=config.MAIN_GROUP_ID,
+            text=text,
+            message_thread_id=config.THREAD_SALES,
+        )
+        await bot.session.close()
+    except Exception as e:
+        logger.error("Не удалось отправить уведомление об отмене продажи: %s", e)
