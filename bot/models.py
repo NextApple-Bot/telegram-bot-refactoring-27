@@ -191,6 +191,33 @@ class DeletedItem(Base):
     sale_message_id = Column(BigInteger)
 
 
+# ====================== КОРРЕКТИРОВКИ СТАТИСТИКИ ======================
+
+class StatsAdjustment(Base):
+    """
+    Ручная корректировка KPI за день.
+    Реальные Sale / DailyPayment / Preorder / Booking НЕ удаляются.
+    На дашборде: факт + delta.
+    """
+
+    __tablename__ = "stats_adjustments"
+
+    id = Column(Integer, primary_key=True)
+    target_date = Column(Date, nullable=False, index=True)
+    metric = Column(String(64), nullable=False)
+    base_value = Column(Numeric(14, 2))
+    target_value = Column(Numeric(14, 2))
+    delta = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+    reason = Column(String(255))
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("target_date", "metric", name="uq_stats_adj_date_metric"),
+        Index("idx_stats_adjustments_date", "target_date"),
+    )
+
+
 # ====================== ПРОДАВЦЫ ======================
 
 class Seller(Base):
