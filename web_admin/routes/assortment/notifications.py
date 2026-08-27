@@ -127,29 +127,23 @@ async def send_sale_notification(
     accessories_total: float = 0.0,
     final_amount: float | None = None,
     comment: str | None = None,
+    trade_in_name: str | None = None,
+    trade_in_amount: float | None = None,
 ):
     """
-    Формат продажи:
+    Формат продажи с optional Trade-in:
 
     Товар.
-    Стоимость - N.          # без бонусов в скобках; скидка — только если есть
-    <1 пустая при аксессуарах / 2 без>
+    Стоимость - N.
+    <пусто>
     Аксессуар.
     Стоимость - N.
     <пусто>
-    <пусто>
+    Trade-in — iPhone 13, − 15 000.
+    <пусто><пусто>
     Наличными - N.
-    <пусто>
-    UDS - N.                 # если галочка «Бонусы»
-    <пусто>
-    Общая - N
-    <пусто>
-    <пусто>
-    ФИО / телефон / дата
-    <пусто>
-    Площадка - ...
-    <пусто>
-    Комментарий
+    ...
+    Общая - (цена + аксы − скидка − trade-in)
     """
     try:
         accessories = accessories or []
@@ -168,13 +162,11 @@ async def send_sale_notification(
 
         lines: list[str] = []
 
-        # --- Товар ---
         title = (item_text or "").strip()
         if title and not title.endswith("."):
             title = f"{title}."
         lines.append(title)
 
-        # --- Стоимость: бонусы НЕ пишем в скобках; только скидка ---
         if discount and float(discount) > 0:
             lines.append(
                 f"Стоимость - {format_number(price)} (Скидка {format_number(discount)})."
@@ -182,29 +174,35 @@ async def send_sale_notification(
         else:
             lines.append(f"Стоимость - {format_number(price)}.")
 
-        # Отступы + аксессуары
         if accessories:
-            lines.append("")  # 1 пустая перед аксессуарами
+            lines.append("")
             for acc in accessories:
                 name = (acc.get("text") or acc.get("name") or "Аксессуар").strip()
                 if name and not name.endswith("."):
                     name = f"{name}."
                 lines.append(name)
                 lines.append(f"Стоимость - {format_number(acc.get('price', 0))}.")
-                lines.append("")  # 1 пустая после аксессуара
-            lines.append("")  # ещё одна → 2 пустые перед оплатами
+                lines.append("")
+            lines.append("")
         else:
             lines.append("")
             lines.append("")
 
-        # --- П/О ---
+        trade_amt = float(trade_in_amount or 0)
+        if trade_amt > 0:
+            tname = (trade_in_name or "").strip()
+            if tname:
+                lines.append(f"Trade-in — {tname}, − {format_number(trade_amt)}.")
+            else:
+                lines.append(f"Trade-in, − {format_number(trade_amt)}.")
+            lines.append("")
+            lines.append("")
+
         prep = float(prepayment or 0)
         if prep > 0:
             lines.append(f"П/О - {format_number(prep)}.")
             lines.append("")
 
-        # --- Оплаты (после каждой — 1 пустая) ---
-        # Бонусы → отдельная строка UDS (не в стоимости)
         bonus_val = float(bonus or 0)
 
         if payments:
@@ -235,23 +233,21 @@ async def send_sale_notification(
             lines.append(line)
             lines.append("")
 
-        # UDS (бонусы) — как способ оплаты
         if bonus_val > 0:
             lines.append(f"UDS - {format_number(bonus_val)}.")
             lines.append("")
 
-        # --- Общая: цена товара + аксессуары − скидка (бонусы НЕ вычитаем) ---
         total = (
             float(price)
             + float(accessories_total or 0)
             - float(discount or 0)
+            - float(trade_in_amount or 0)
         )
         if total > 0:
             lines.append(f"Общая - {format_number(total)}")
             lines.append("")
             lines.append("")
 
-        # --- Клиент ---
         if full_name:
             lines.append(full_name.strip())
         if phone:
