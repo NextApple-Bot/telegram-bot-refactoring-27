@@ -64,18 +64,16 @@ async def _search(query: str) -> list[dict[str, Any]]:
     """
     Ищем:
     1) items по serial (точное / частичное)
-    2) items по text ILIKE (если похоже на SN в тексте)
+    2) items по text ILIKE
     3) deleted_items по serial (проданные)
     """
     q_upper = _norm_serial(query)
     q_like = f"%{query}%"
     serial_like = f"%{q_upper}%"
     results: list[dict[str, Any]] = []
-    seen_serials: set[str] = set()
 
     async_session = get_async_session_factory()
     async with async_session() as session:
-        # --- В наличии / бронь ---
         cat = aliased(Category)
         stock_q = (
             select(Item, cat.name)
@@ -94,8 +92,6 @@ async def _search(query: str) -> list[dict[str, Any]]:
 
         for item, cat_name in stock_rows:
             serial = _norm_serial(item.serial)
-            if serial:
-                seen_serials.add(serial)
 
             if item.is_booked:
                 status = "booked"
@@ -118,11 +114,10 @@ async def _search(query: str) -> list[dict[str, Any]]:
                     "booking_platform": item.booking_platform or "",
                     "created_at": item.created_at.isoformat() if item.created_at else None,
                     "source": "items",
-                    "link": f"/admin/assortment",
+                    "link": "/admin/assortment",
                 }
             )
 
-        # --- Проданные (deleted_items) ---
         sold_q = (
             select(DeletedItem)
             .where(
@@ -139,18 +134,15 @@ async def _search(query: str) -> list[dict[str, Any]]:
 
         for di in sold_rows:
             serial = _norm_serial(di.serial)
-            # если тот же serial снова в наличии — всё равно покажем продажу как историю
             reason = (di.reason or "").lower()
             if "sale" in reason or not reason:
-                status = "sold"
                 status_label = "Продан"
             else:
-                status = "sold"
                 status_label = f"Удалён ({di.reason})" if di.reason else "Продан"
 
             results.append(
                 {
-                    "status": status,
+                    "status": "sold",
                     "status_label": status_label,
                     "serial": serial or "—",
                     "text": di.text or "",
@@ -166,11 +158,11 @@ async def _search(query: str) -> list[dict[str, Any]]:
                 }
             )
 
-    # Точные совпадения serial — выше
+    status_order = {"in_stock": 0, "booked": 1, "sold": 2}
+
     def sort_key(r: dict) -> tuple:
         exact = 0 if _norm_serial(r.get("serial")) == q_upper else 1
-        status_ ord = {"in_stock": 0, "booked": 1, "sold": 2}.get(r.get("status"), 9)
-        return (exact, status_ord)
+        return (exact, status_order.get(r.get("status") or "", 9))
 
     results.sort(key=sort_key)
     return results[:50]
