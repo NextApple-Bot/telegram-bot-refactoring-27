@@ -114,6 +114,13 @@
                        class="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800">
                         <i class="fas fa-receipt"></i> Проданные
                     </a>
+                    <form action="/admin/sold/cancel/{{ r.item_id }}" method="post"
+                          onsubmit="return confirm('Отменить продажу и вернуть товар в ассортимент?');">
+                        <button type="submit"
+                                class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
+                            <i class="fas fa-undo"></i> Отменить продажу
+                        </button>
+                    </form>
                     {% endif %}
                 </div>
             </div>
