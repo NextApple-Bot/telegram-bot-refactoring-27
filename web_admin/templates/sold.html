@@ -6,28 +6,49 @@
 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
     <div>
         <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Проданные товары</h1>
-        <p class="text-slate-500 dark:text-slate-400 mt-1">Хранятся 7 дней · всего: {{ total }}</p>
+        <p class="text-slate-500 dark:text-slate-400 mt-1">Отмена продажи одной кнопкой · всего: {{ total }}</p>
     </div>
 </div>
+
+{% if flash_msg %}
+<div class="mb-4 rounded-xl px-4 py-3 text-sm border
+            {% if flash_ok %}bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200
+            {% else %}bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300{% endif %}">
+    {{ flash_msg }}
+</div>
+{% endif %}
+
+<form method="get" action="/admin/sold" class="mb-4 flex flex-col sm:flex-row gap-3">
+    <div class="relative flex-1">
+        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+        <input type="search" name="q" value="{{ q or '' }}" placeholder="Поиск по названию или серийнику…"
+               class="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+    </div>
+    <button type="submit"
+            class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium">
+        Найти
+    </button>
+</form>
 
 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-card overflow-hidden">
     <div class="overflow-x-auto">
         <table class="w-full text-sm">
             <thead class="bg-slate-50 dark:bg-slate-800/50 text-left text-xs uppercase tracking-wider text-slate-500">
                 <tr>
-                    <th class="px-5 py-3 font-medium">ID</th>
                     <th class="px-5 py-3 font-medium">Товар</th>
                     <th class="px-5 py-3 font-medium">Серийный</th>
-                    <th class="px-5 py-3 font-medium">Категория</th>
-                    <th class="px-5 py-3 font-medium">Дата продажи</th>
+                    <th class="px-5 py-3 font-medium">Дата</th>
+                    <th class="px-5 py-3 font-medium">Причина</th>
                     <th class="px-5 py-3 font-medium text-right">Действие</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                 {% for item in items %}
                 <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                    <td class="px-5 py-3 text-slate-500">#{{ item.id }}</td>
-                    <td class="px-5 py-3 font-medium text-slate-900 dark:text-white max-w-md">{{ item.text }}</td>
+                    <td class="px-5 py-3 font-medium text-slate-900 dark:text-white max-w-md">
+                        <div class="line-clamp-2">{{ item.text }}</div>
+                        <div class="text-xs text-slate-400 mt-0.5">#{{ item.id }}{% if item.item_id %} · item {{ item.item_id }}{% endif %}</div>
+                    </td>
                     <td class="px-5 py-3">
                         {% if item.serial %}
                         <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">{{ item.serial }}</code>
@@ -35,21 +56,26 @@
                         <span class="text-slate-400">—</span>
                         {% endif %}
                     </td>
-                    <td class="px-5 py-3 text-slate-500">{{ item.category_id or '—' }}</td>
-                    <td class="px-5 py-3 text-slate-600 dark:text-slate-300">{{ item.deleted_at|format_date if item.deleted_at else '—' }}</td>
+                    <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                        {% if item.deleted_at %}
+                        {{ item.deleted_at.strftime('%d.%m.%Y %H:%M') }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="px-5 py-3 text-slate-500 text-xs">{{ item.reason or 'sale' }}</td>
                     <td class="px-5 py-3 text-right">
-                        <form action="/admin/sold/restore/{{ item.id }}" method="post" class="inline">
+                        <form action="/admin/sold/cancel/{{ item.id }}" method="post" class="inline"
+                              onsubmit="return confirm('Отменить продажу и вернуть товар в ассортимент?\n\n{{ (item.text or '')|e }}\nСерийник: {{ item.serial or '—' }}');">
                             <button type="submit"
-                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40">
+                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900/40">
                                 <i class="fas fa-undo text-[10px]"></i>
-                                Восстановить
+                                Отменить продажу
                             </button>
                         </form>
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="6" class="px-5 py-12 text-center text-slate-400">Проданных товаров нет</td>
+                    <td colspan="5" class="px-5 py-12 text-center text-slate-400">Проданных товаров нет</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -58,9 +84,9 @@
 </div>
 
 {% if total_pages > 1 %}
-<div class="mt-6 flex justify-center gap-1">
+<div class="mt-6 flex justify-center gap-1 flex-wrap">
     {% for p in range(1, total_pages + 1) %}
-    <a href="?page={{ p }}&per_page={{ per_page }}"
+    <a href="?page={{ p }}&per_page={{ per_page }}&q={{ q or '' }}"
        class="w-9 h-9 flex items-center justify-center rounded-lg text-sm font-medium
               {% if p == page %}bg-indigo-600 text-white{% else %}bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800{% endif %}">
         {{ p }}
