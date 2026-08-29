@@ -25,6 +25,24 @@ router = Router()
 MAX_FILE_SIZE = 10 * 1024 * 1024
 
 
+def _short_line(line: str, max_len: int = 90) -> str:
+    s = (line or "").strip()
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 1] + "…"
+
+
+def _format_skipped_block(title: str, lines: list[str], limit: int = 15) -> str:
+    if not lines:
+        return ""
+    block = f"{title} ({len(lines)}):\n"
+    for line in lines[:limit]:
+        block += f"  • {_short_line(line)}\n"
+    if len(lines) > limit:
+        block += f"  … и ещё {len(lines) - limit}\n"
+    return block
+
+
 @router.message(
     F.chat.id == config.MAIN_GROUP_ID,
     F.message_thread_id == config.THREAD_ARRIVAL,
@@ -175,23 +193,28 @@ async def handle_arrival(message: Message, bot, state: FSMContext):
             cat_to_items.setdefault(category_name, []).append((line, serial))
 
     if not cat_to_items:
-        msg = "❌ Нет новых позиций для добавления."
+        msg = "❌ Нет новых позиций для добавления.\n"
         if skipped_duplicates:
-            msg += f"\n⏭ Дубликаты: {len(skipped_duplicates)}"
+            msg += _format_skipped_block("⏭ Дубликаты", skipped_duplicates, limit=10)
         if skipped_no_category:
-            msg += (
-                f"\n⚠️ Без категории (не добавлены): {len(skipped_no_category)}\n"
-                + "\n".join(skipped_no_category[:8])
+            msg += _format_skipped_block(
+                "⚠️ Без подходящей категории (не добавлены)",
+                skipped_no_category,
+                limit=15,
             )
-            if len(skipped_no_category) > 8:
-                msg += f"\n… и ещё {len(skipped_no_category) - 8}"
+        if skipped_no_serial:
+            msg += _format_skipped_block(
+                "⚠️ Без серийного номера",
+                skipped_no_serial,
+                limit=8,
+            )
         await send_and_clean(
             bot=message.bot,
             chat_id=message.chat.id,
-            text=msg,
+            text=msg.strip(),
             reply_to_message_id=message.message_id,
             message_thread_id=config.THREAD_ARRIVAL,
-            delete_after=90,
+            delete_after=120,
         )
         return
 
@@ -211,13 +234,34 @@ async def handle_arrival(message: Message, bot, state: FSMContext):
     response += "Категории:\n"
     for cat_name, items in cat_to_items.items():
         response += f"  • {cat_name}: +{len(items)}\n"
-    if skipped_no_serial:
-        response += f"⚠️ Без серийного: {len(skipped_no_serial)}\n"
-    if skipped_duplicates:
-        response += f"⏭ Дубликаты: {len(skipped_duplicates)}\n"
+
     if skipped_no_category:
-        response += f"⚠️ Без подходящей категории (не будут добавлены): {len(skipped_no_category)}\n"
+        response += "\n"
+        response += _format_skipped_block(
+            "⚠️ Без подходящей категории (не будут добавлены)",
+            skipped_no_category,
+            limit=15,
+        )
+    if skipped_no_serial:
+        response += "\n"
+        response += _format_skipped_block(
+            "⚠️ Без серийного номера (пропущены)",
+            skipped_no_serial,
+            limit=8,
+        )
+    if skipped_duplicates:
+        response += "\n"
+        response += _format_skipped_block(
+            "⏭ Дубликаты (пропущены)",
+            skipped_duplicates,
+            limit=8,
+        )
+
     response += "\nПодтвердите добавление?"
+
+    # Telegram limit ~4096
+    if len(response) > 4000:
+        response = response[:3980] + "\n…\n\nПодтвердите добавление?"
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -254,7 +298,6 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
             errors = []
             skipped_cat = []
 
-            # Загружаем id существующих категорий — без создания новых
             rows = (
                 await session.execute(select(Category.id, Category.name))
             ).all()
@@ -263,7 +306,6 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
             for cat_name, items in cat_to_items.items():
                 cat_id = name_to_id.get(cat_name)
                 if cat_id is None:
-                    # точное имя могло отличаться пробелами — ищем
                     for n, cid in name_to_id.items():
                         if n.rstrip(":").strip().lower() == cat_name.rstrip(":").strip().lower():
                             cat_id = cid
