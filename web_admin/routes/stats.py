@@ -6,7 +6,7 @@ import re
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Font, PatternFill
 from sqlalchemy import func, or_, select
 
 from bot.db import get_async_session_factory
@@ -14,6 +14,9 @@ from bot.models import Booking, Client, DailyPayment, DeletedItem, Item, Preorde
 from web_admin.templates import templates
 
 router = APIRouter()
+
+# Максимальная длина произвольного периода (защита от слишком тяжёлого графика)
+MAX_RANGE_DAYS = 366
 
 
 def _normalize_source(raw: str | None) -> str:
@@ -41,6 +44,15 @@ def _normalize_source(raw: str | None) -> str:
     return s[:40] if len(s) > 40 else s
 
 
+def _safe_parse_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value).strip()[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
 def _parse_period(
     target_date: str | None,
     days: int,
@@ -49,26 +61,63 @@ def _parse_period(
     date_from: str | None,
     date_to: str | None,
 ) -> tuple[date, date, str]:
-    if not target_date:
-        target_date = date.today().isoformat()
-    target = datetime.strptime(target_date, "%Y-%m-%d").date()
+    """
+    Режимы:
+      - preset: последние N дней включая сегодня (target_date или today)
+      - month: календарный месяц YYYY-MM
+      - range / произвольные date_from + date_to
+    Если date_from > date_to — меняем местами.
+    Период режется до MAX_RANGE_DAYS.
+    """
+    today = date.today()
+    target = _safe_parse_date(target_date) or today
+    mode = (mode or "preset").strip().lower()
+
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = 7
+    days = max(1, min(days, MAX_RANGE_DAYS))
+
+    start_date: date
+    end_date: date
 
     if mode == "preset":
-        start_date = target - timedelta(days=days - 1)
         end_date = target
+        start_date = end_date - timedelta(days=days - 1)
     elif mode == "month" and month:
-        year, mon = map(int, month.split("-"))
-        start_date = date(year, mon, 1)
-        if mon == 12:
-            end_date = date(year + 1, 1, 1) - timedelta(days=1)
-        else:
-            end_date = date(year, mon + 1, 1) - timedelta(days=1)
-    elif date_from and date_to:
-        start_date = datetime.strptime(date_from, "%Y-%m-%d").date()
-        end_date = datetime.strptime(date_to, "%Y-%m-%d").date()
+        try:
+            year, mon = map(int, month.split("-"))
+            start_date = date(year, mon, 1)
+            if mon == 12:
+                end_date = date(year + 1, 1, 1) - timedelta(days=1)
+            else:
+                end_date = date(year, mon + 1, 1) - timedelta(days=1)
+        except (ValueError, TypeError):
+            end_date = today
+            start_date = end_date - timedelta(days=6)
     else:
-        start_date = target - timedelta(days=6)
-        end_date = target
+        # range / любое другое: свободные даты
+        df = _safe_parse_date(date_from)
+        dt = _safe_parse_date(date_to)
+        if df and dt:
+            start_date, end_date = df, dt
+        elif df and not dt:
+            start_date = end_date = df
+        elif dt and not df:
+            start_date = end_date = dt
+        else:
+            # fallback — 7 дней
+            end_date = today
+            start_date = end_date - timedelta(days=6)
+
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    # ограничение длины
+    span = (end_date - start_date).days + 1
+    if span > MAX_RANGE_DAYS:
+        start_date = end_date - timedelta(days=MAX_RANGE_DAYS - 1)
 
     period_label = f"{start_date.strftime('%d.%m.%Y')} — {end_date.strftime('%d.%m.%Y')}"
     return start_date, end_date, period_label
@@ -109,24 +158,43 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
     )
     bookings_row = bookings_data.mappings().one()
 
-    chart_dates, chart_sales, chart_revenue = [], [], []
+    # График по дням — один запрос вместо N×2
+    sales_by_day = {
+        row.d: int(row.cnt)
+        for row in (
+            await session.execute(
+                select(
+                    func.date(Sale.sold_at).label("d"),
+                    func.count(Sale.id).label("cnt"),
+                )
+                .where(func.date(Sale.sold_at).between(start_date, end_date))
+                .group_by(func.date(Sale.sold_at))
+            )
+        ).all()
+    }
+    revenue_by_day = {
+        row.d: float(row.amt or 0)
+        for row in (
+            await session.execute(
+                select(
+                    func.date(DailyPayment.created_at).label("d"),
+                    func.coalesce(func.sum(DailyPayment.amount), 0).label("amt"),
+                )
+                .where(func.date(DailyPayment.created_at).between(start_date, end_date))
+                .group_by(func.date(DailyPayment.created_at))
+            )
+        ).all()
+    }
+
+    chart_dates: list[str] = []
+    chart_sales: list[int] = []
+    chart_revenue: list[float] = []
     current = start_date
     while current <= end_date:
         chart_dates.append(current.strftime("%d.%m"))
-        day_sales = (
-            await session.execute(
-                select(func.count(Sale.id)).where(func.date(Sale.sold_at) == current)
-            )
-        ).scalar() or 0
-        day_revenue = (
-            await session.execute(
-                select(func.coalesce(func.sum(DailyPayment.amount), 0)).where(
-                    func.date(DailyPayment.created_at) == current
-                )
-            )
-        ).scalar() or 0
-        chart_sales.append(day_sales)
-        chart_revenue.append(float(day_revenue))
+        # key may be date or datetime.date from DB driver
+        chart_sales.append(int(sales_by_day.get(current, 0) or 0))
+        chart_revenue.append(float(revenue_by_day.get(current, 0) or 0))
         current += timedelta(days=1)
 
     purchase_rows = (
@@ -168,7 +236,6 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
             name = (it.get("item_text") or it.get("text") or it.get("name") or "").strip()
             if not name:
                 continue
-            # trade-in не в топ моделей
             if name.lower().startswith("trade-in"):
                 continue
             price = float(it.get("price") or 0)
@@ -177,7 +244,6 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
             model_agg[name]["count"] += 1
             model_agg[name]["amount"] += price
 
-    # Fallback: DeletedItem text, если покупок с items_json мало
     if len(model_agg) < 5:
         deleted_rows = (
             await session.execute(
@@ -200,7 +266,6 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
                 continue
             if name not in model_agg:
                 model_agg[name] = {"count": 0, "amount": 0.0}
-            # не затираем, если уже есть из purchases — дополняем count только если 0
             if model_agg[name]["count"] == 0:
                 model_agg[name]["count"] = int(cnt or 0)
 
@@ -247,11 +312,65 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
     }
 
 
+def _template_ctx(
+    request: Request,
+    *,
+    mode: str,
+    days: int,
+    month: str | None,
+    start_date: date,
+    end_date: date,
+    period_label: str,
+    data: dict,
+) -> dict:
+    sales_row = data["sales_row"]
+    return {
+        "request": request,
+        "mode": mode,
+        "target_date": end_date.isoformat(),
+        "days": days,
+        "month": month,
+        "date_from": start_date.isoformat(),
+        "date_to": end_date.isoformat(),
+        "period_label": period_label,
+        "sales_count": sales_row["count"],
+        "preorders_count": data["preorders_row"]["count"],
+        "bookings_count": data["bookings_row"]["count"],
+        "payment_labels": [
+            "Наличные",
+            "Терминал",
+            "QR",
+            "Перевод",
+            "По счёту",
+            "Рассрочка",
+        ],
+        "payment_values": [
+            float(sales_row["cash"]),
+            float(sales_row["terminal"]),
+            float(sales_row["qr"]),
+            float(sales_row["transfer"]),
+            float(sales_row["invoice"]),
+            float(sales_row["installment"]),
+        ],
+        "chart_dates": data["chart_dates"],
+        "chart_revenue": data["chart_revenue"],
+        "chart_sales": data["chart_sales"],
+        "source_labels": data["source_labels"],
+        "source_counts": data["source_counts"],
+        "source_amounts": data["source_amounts"],
+        "sources_table": data["sources_table"],
+        "booking_sources_table": data["booking_sources_table"],
+        "models_table": data["models_table"],
+        "model_labels": data["model_labels"],
+        "model_counts": data["model_counts"],
+    }
+
+
 @router.get("/")
 async def stats_page(
     request: Request,
     target_date: str | None = None,
-    days: int = Query(7, ge=1, le=365),
+    days: int = Query(7, ge=1, le=366),
     mode: str = Query("preset"),
     month: str | None = None,
     date_from: str | None = None,
@@ -265,59 +384,25 @@ async def stats_page(
     async with async_session() as session:
         data = await _collect_report(session, start_date, end_date)
 
-    sales_row = data["sales_row"]
-    preorders_row = data["preorders_row"]
-    bookings_row = data["bookings_row"]
-
     return templates.TemplateResponse(
         "stats.html",
-        {
-            "request": request,
-            "mode": mode,
-            "target_date": target_date or date.today().isoformat(),
-            "days": days,
-            "month": month,
-            "date_from": date_from or start_date.isoformat(),
-            "date_to": date_to or end_date.isoformat(),
-            "period_label": period_label,
-            "sales_count": sales_row["count"],
-            "preorders_count": preorders_row["count"],
-            "bookings_count": bookings_row["count"],
-            "payment_labels": [
-                "Наличные",
-                "Терминал",
-                "QR",
-                "Перевод",
-                "По счёту",
-                "Рассрочка",
-            ],
-            "payment_values": [
-                float(sales_row["cash"]),
-                float(sales_row["terminal"]),
-                float(sales_row["qr"]),
-                float(sales_row["transfer"]),
-                float(sales_row["invoice"]),
-                float(sales_row["installment"]),
-            ],
-            "chart_dates": data["chart_dates"],
-            "chart_revenue": data["chart_revenue"],
-            "chart_sales": data["chart_sales"],
-            "source_labels": data["source_labels"],
-            "source_counts": data["source_counts"],
-            "source_amounts": data["source_amounts"],
-            "sources_table": data["sources_table"],
-            "booking_sources_table": data["booking_sources_table"],
-            "models_table": data["models_table"],
-            "model_labels": data["model_labels"],
-            "model_counts": data["model_counts"],
-        },
+        _template_ctx(
+            request,
+            mode=mode,
+            days=days,
+            month=month,
+            start_date=start_date,
+            end_date=end_date,
+            period_label=period_label,
+            data=data,
+        ),
     )
 
 
 @router.get("/export.xlsx")
 async def export_excel(
     target_date: str | None = None,
-    days: int = Query(7, ge=1, le=365),
+    days: int = Query(7, ge=1, le=366),
     mode: str = Query("preset"),
     month: str | None = None,
     date_from: str | None = None,
@@ -334,9 +419,7 @@ async def export_excel(
     wb = Workbook()
     header_fill = PatternFill("solid", fgColor="4F46E5")
     header_font = Font(color="FFFFFF", bold=True)
-    money_font = Font(bold=True)
 
-    # Sheet 1: summary
     ws = wb.active
     ws.title = "Сводка"
     ws.append(["Период", period_label])
@@ -364,7 +447,6 @@ async def export_excel(
     ]:
         ws.append([label, float(sales_row[key])])
 
-    # Sheet 2: sources
     ws2 = wb.create_sheet("Источники")
     ws2.append(["Источник", "Покупок", "Сумма ₽"])
     for cell in ws2[1]:
@@ -373,7 +455,6 @@ async def export_excel(
     for row in data["sources_table"]:
         ws2.append([row["name"], row["count"], round(row["amount"], 2)])
 
-    # Sheet 3: models
     ws3 = wb.create_sheet("Топ моделей")
     ws3.append(["Модель / товар", "Кол-во", "Сумма ₽"])
     for cell in ws3[1]:
@@ -382,7 +463,6 @@ async def export_excel(
     for row in data["models_table"]:
         ws3.append([row["name"], row["count"], round(row["amount"], 2)])
 
-    # Sheet 4: bookings by platform
     ws4 = wb.create_sheet("Брони по площадкам")
     ws4.append(["Площадка", "Броней"])
     for cell in ws4[1]:
@@ -391,7 +471,6 @@ async def export_excel(
     for row in data["booking_sources_table"]:
         ws4.append([row["name"], row["count"]])
 
-    # Sheet 5: daily
     ws5 = wb.create_sheet("По дням")
     ws5.append(["Дата", "Продажи", "Выручка ₽"])
     for cell in ws5[1]:
@@ -424,13 +503,12 @@ async def export_excel(
 async def stats_print(
     request: Request,
     target_date: str | None = None,
-    days: int = Query(7, ge=1, le=365),
+    days: int = Query(7, ge=1, le=366),
     mode: str = Query("preset"),
     month: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    """Версия для печати → PDF через браузер (Ctrl/Cmd+P → Сохранить как PDF)."""
     start_date, end_date, period_label = _parse_period(
         target_date, days, mode, month, date_from, date_to
     )
@@ -438,38 +516,16 @@ async def stats_print(
     async with async_session() as session:
         data = await _collect_report(session, start_date, end_date)
 
-    sales_row = data["sales_row"]
     return templates.TemplateResponse(
         "stats_print.html",
-        {
-            "request": request,
-            "period_label": period_label,
-            "sales_count": sales_row["count"],
-            "preorders_count": data["preorders_row"]["count"],
-            "bookings_count": data["bookings_row"]["count"],
-            "payment_labels": [
-                "Наличные",
-                "Терминал",
-                "QR",
-                "Перевод",
-                "По счёту",
-                "Рассрочка",
-            ],
-            "payment_values": [
-                float(sales_row["cash"]),
-                float(sales_row["terminal"]),
-                float(sales_row["qr"]),
-                float(sales_row["transfer"]),
-                float(sales_row["invoice"]),
-                float(sales_row["installment"]),
-            ],
-            "sources_table": data["sources_table"],
-            "models_table": data["models_table"],
-            "booking_sources_table": data["booking_sources_table"],
-            "chart_dates": data["chart_dates"],
-            "chart_sales": data["chart_sales"],
-            "chart_revenue": data["chart_revenue"],
-            "date_from": start_date.isoformat(),
-            "date_to": end_date.isoformat(),
-        },
+        _template_ctx(
+            request,
+            mode=mode,
+            days=days,
+            month=month,
+            start_date=start_date,
+            end_date=end_date,
+            period_label=period_label,
+            data=data,
+        ),
     )
