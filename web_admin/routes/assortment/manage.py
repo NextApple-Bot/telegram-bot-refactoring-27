@@ -43,7 +43,6 @@ def validate_comment(comment: str | None) -> bool:
 
 
 def _htmx_done(redirect_url: str = "/admin/assortment") -> Response:
-    """Закрыть модалку и обновить страницу после успешного HTMX-запроса."""
     return Response(
         status_code=200,
         headers={
@@ -52,13 +51,23 @@ def _htmx_done(redirect_url: str = "/admin/assortment") -> Response:
     )
 
 
+async def _load_categories_for_manage(session):
+    result = await session.execute(
+        select(Category)
+        .where(Category.name != "__SYSTEM__")
+        .order_by(Category.sort_order, Category.name)
+    )
+    return result.scalars().all()
+
+
 @router.get("/add")
 async def add_item_form(request: Request):
-    """Форма добавления товара для HTMX-модалки."""
     async_session = get_async_session_factory()
     async with async_session() as session:
         categories_result = await session.execute(
-            select(Category.id, Category.name).order_by(Category.sort_order, Category.name)
+            select(Category.id, Category.name)
+            .where(Category.name != "__SYSTEM__")
+            .order_by(Category.sort_order, Category.name)
         )
         categories = [{"id": row.id, "name": row.name} for row in categories_result.all()]
 
@@ -77,7 +86,9 @@ async def edit_item_form(request: Request, item_id: int):
             raise HTTPException(status_code=404, detail="Товар не найден")
 
         categories_result = await session.execute(
-            select(Category.id, Category.name).order_by(Category.sort_order, Category.name)
+            select(Category.id, Category.name)
+            .where(Category.name != "__SYSTEM__")
+            .order_by(Category.sort_order, Category.name)
         )
         categories = [{"id": row.id, "name": row.name} for row in categories_result.all()]
 
@@ -192,7 +203,6 @@ async def edit_item_submit(
                         return _htmx_done()
                     return RedirectResponse(url="/admin/assortment", status_code=303)
 
-                # Обычное редактирование
                 booking_fields = [
                     "booking_price", "booking_bonus", "booking_prepayment", "booking_platform",
                     "booking_full_name", "booking_phone", "booking_payment_type", "booking_birth_date",
@@ -360,6 +370,8 @@ async def add_category(request: Request, name: str = Form(...)):
     name = name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Название категории не может быть пустым")
+    if name == "__SYSTEM__":
+        raise HTTPException(status_code=400, detail="Зарезервированное имя")
 
     async_session = get_async_session_factory()
     async with async_session() as session, session.begin():
@@ -369,11 +381,24 @@ async def add_category(request: Request, name: str = Form(...)):
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Категория с таким названием уже существует")
 
-        max_order = await session.execute(select(func.coalesce(func.max(Category.sort_order), -1)))
+        max_order = await session.execute(
+            select(func.coalesce(func.max(Category.sort_order), -1))
+            .where(Category.name != "__SYSTEM__")
+        )
         new_category = Category(name=name, sort_order=max_order.scalar() + 1)
         session.add(new_category)
 
     await AssortmentService.invalidate_cache()
+
+    # HTMX: обновить содержимое модалки списком категорий
+    if request.headers.get("hx-request") == "true":
+        async with async_session() as session:
+            categories = await _load_categories_for_manage(session)
+        return templates.TemplateResponse(
+            "partials/manage_categories.html",
+            {"request": request, "categories": categories},
+        )
+
     return RedirectResponse(url="/admin/assortment", status_code=303)
 
 
@@ -381,12 +406,11 @@ async def add_category(request: Request, name: str = Form(...)):
 async def manage_categories(request: Request):
     async_session = get_async_session_factory()
     async with async_session() as session:
-        result = await session.execute(select(Category).order_by(Category.sort_order))
-        categories = result.scalars().all()
+        categories = await _load_categories_for_manage(session)
 
     return templates.TemplateResponse(
         "partials/manage_categories.html",
-        {"request": request, "categories": categories}
+        {"request": request, "categories": categories},
     )
 
 
@@ -398,8 +422,12 @@ async def reorder_categories(request: Request):
     async_session = get_async_session_factory()
     async with async_session() as session:
         for index, cat_id in enumerate(category_ids):
+            try:
+                cid = int(cat_id)
+            except (TypeError, ValueError):
+                continue
             await session.execute(
-                update(Category).where(Category.id == cat_id).values(sort_order=index)
+                update(Category).where(Category.id == cid).values(sort_order=index)
             )
         await session.commit()
 
