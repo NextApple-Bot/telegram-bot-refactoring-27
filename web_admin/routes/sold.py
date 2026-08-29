@@ -6,6 +6,9 @@
   2) Sale и DailyPayment по sale_message_id удаляются (статистика откатывается)
   3) DeletedItem помечается / удаляется
   4) в топик продаж уходит «❌ Отмена продажи»
+
+«Отменить все продажи» — массовая отмена всех проданных позиций
+с двухэтапным подтверждением (ввод слова ОТМЕНИТЬ).
 """
 from __future__ import annotations
 
@@ -14,7 +17,7 @@ import logging
 from datetime import date
 
 from aiogram import Bot
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, func, or_, select
 
@@ -204,6 +207,103 @@ async def cancel_sale(deleted_id: int):
         )
 
 
+@router.post("/cancel-all")
+async def cancel_all_sales(confirm: str = Form("...")):
+    """
+    Массовая отмена ВСЕХ продаж.
+    Требует двухэтапного подтверждения: confirm == 'ОТМЕНИТЬ'.
+    """
+    if (confirm or "").strip().upper() != "ОТМЕНИТЬ":
+        return RedirectResponse(
+            url="/admin/sold?err=Для+отмены+всех+продаж+введите+слово+ОТМЕНИТЬ",
+            status_code=303,
+        )
+
+    async_session = get_async_session_factory()
+    cancelled = 0
+    restored_items: list[tuple[str, str | None, int | None]] = []
+
+    try:
+        async with async_session() as session:
+            async with session.begin():
+                base_filter = or_(
+                    DeletedItem.reason.ilike("%sale%"),
+                    DeletedItem.sale_message_id.isnot(None),
+                    DeletedItem.reason.is_(None),
+                )
+                rows = (
+                    await session.execute(
+                        select(DeletedItem).where(base_filter, DeletedItem.restored.is_(False))
+                    )
+                ).scalars().all()
+
+                for deleted in rows:
+                    item_text = deleted.text or ""
+                    serial = (deleted.serial or "").strip() or None
+                    sale_message_id = deleted.sale_message_id
+                    original_item_id = deleted.item_id
+                    category_id = deleted.category_id
+
+                    if serial:
+                        exists = await session.scalar(
+                            select(Item.id).where(Item.serial == serial).limit(1)
+                        )
+                        serial_for_item = None if exists else serial
+                    else:
+                        serial_for_item = None
+
+                    session.add(
+                        Item(
+                            text=item_text,
+                            serial=serial_for_item,
+                            category_id=category_id,
+                            is_booked=False,
+                            is_sold=False,
+                        )
+                    )
+
+                    if sale_message_id:
+                        await session.execute(
+                            delete(Sale).where(Sale.message_id == sale_message_id)
+                        )
+                        await session.execute(
+                            delete(DailyPayment).where(
+                                DailyPayment.sale_message_id == sale_message_id
+                            )
+                        )
+                    elif original_item_id:
+                        await session.execute(
+                            delete(Sale).where(Sale.item_id == original_item_id)
+                        )
+
+                    deleted.restored = True
+                    await session.delete(deleted)
+                    cancelled += 1
+                    restored_items.append((item_text, serial, sale_message_id))
+
+                logger.info("Массовая отмена продаж: отменено %s шт.", cancelled)
+
+        try:
+            await cache.delete(f"dashboard:summary:{date.today().isoformat()}")
+        except Exception:
+            pass
+        await AssortmentService.invalidate_cache()
+
+        if cancelled:
+            asyncio.create_task(_notify_cancel_all(cancelled, restored_items))
+
+        return RedirectResponse(
+            url=f"/admin/sold?ok=Отменено+продаж:+{cancelled}.+Товары+вернулись+в+ассортимент",
+            status_code=303,
+        )
+    except Exception as e:
+        logger.exception("Ошибка массовой отмены продаж")
+        return RedirectResponse(
+            url=f"/admin/sold?err={str(e)[:80]}",
+            status_code=303,
+        )
+
+
 async def _notify_cancel(
     item_text: str,
     serial: str,
@@ -228,3 +328,38 @@ async def _notify_cancel(
         await bot.session.close()
     except Exception as e:
         logger.error("Не удалось отправить уведомление об отмене продажи: %s", e)
+
+
+async def _notify_cancel_all(
+    count: int,
+    items: list[tuple[str, str | None, int | None]],
+) -> None:
+    try:
+        bot = Bot(token=config.BOT_TOKEN)
+        lines = [
+            "❌ Отменены все продажи",
+            "",
+            f"Всего отменено: {count}",
+            "",
+            "Товары возвращены в ассортимент. Статистика откатана.",
+        ]
+        # Показываем первые 10 позиций, чтобы не раздувать сообщение
+        preview = items[:10]
+        if preview:
+            lines.append("")
+            lines.append("Примеры:")
+            for text, serial, _ in preview:
+                t = (text or "—").strip()
+                if serial and f"({serial})" not in t:
+                    t = f"{t} ({serial})"
+                lines.append(f"• {t}")
+            if len(items) > 10:
+                lines.append(f"… и ещё {len(items) - 10}")
+        await bot.send_message(
+            chat_id=config.MAIN_GROUP_ID,
+            text="\n".join(lines),
+            message_thread_id=config.THREAD_SALES,
+        )
+        await bot.session.close()
+    except Exception as e:
+        logger.error("Не удалось отправить уведомление о массовой отмене: %s", e)
