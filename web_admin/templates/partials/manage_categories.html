@@ -1,8 +1,8 @@
 <!-- Partial for HTMX modal — NO extends -->
 <div class="space-y-5" id="manage-categories-root">
     <p class="text-sm text-slate-500 dark:text-slate-400">
-        На телефоне двигайте стрелками ↑ ↓. На компьютере можно и перетаскивать.
-        Рядом — число товаров. Крестик удаляет пустую категорию.
+        ↑↓ — порядок, карандаш — переименовать, × — удалить пустую.
+        После смены порядка нажмите «Сохранить порядок».
     </p>
 
     <form
@@ -23,7 +23,7 @@
 
     <div id="category-list" class="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
         {% for cat in categories %}
-        <div class="category-item flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-2.5 py-2 rounded-xl"
+        <div class="category-item flex items-center gap-1.5 sm:gap-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-2 py-2 rounded-xl"
              data-id="{{ cat.id }}">
             <div class="flex flex-col shrink-0">
                 <button type="button" class="cat-move-up w-9 h-8 flex items-center justify-center text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg touch-manipulation"
@@ -36,24 +36,32 @@
                 </button>
             </div>
             <i class="fas fa-grip-vertical text-slate-300 dark:text-slate-600 shrink-0 hidden sm:inline cat-drag-handle cursor-grab"></i>
-            <div class="flex-1 min-w-0">
-                <div class="font-medium text-sm text-slate-900 dark:text-white truncate">{{ cat.name }}</div>
-                <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <div class="flex-1 min-w-0 cat-name-wrap">
+                <div class="cat-name-view font-medium text-sm text-slate-900 dark:text-white truncate" title="{{ cat.name }}">{{ cat.name }}</div>
+                <input type="text" class="cat-name-input hidden w-full border border-indigo-400 dark:border-indigo-500 bg-white dark:bg-slate-900 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       value="{{ cat.name }}" data-original="{{ cat.name }}">
+                <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 cat-count-label">
                     {% set cnt = cat.item_count if cat.item_count is defined else 0 %}
-                    {% if cnt == 0 %}
-                        нет товаров
-                    {% elif cnt == 1 %}
-                        1 товар
-                    {% elif cnt < 5 %}
-                        {{ cnt }} товара
-                    {% else %}
-                        {{ cnt }} товаров
-                    {% endif %}
+                    {% if cnt == 0 %}нет товаров{% elif cnt == 1 %}1 товар{% elif cnt < 5 %}{{ cnt }} товара{% else %}{{ cnt }} товаров{% endif %}
                 </div>
             </div>
             <span class="inline-flex items-center justify-center min-w-[2rem] px-2 py-1 rounded-lg text-xs font-semibold bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200 shrink-0">
                 {{ cat.item_count if cat.item_count is defined else 0 }}
             </span>
+            <button type="button"
+                    class="cat-rename w-10 h-10 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl shrink-0 touch-manipulation"
+                    data-id="{{ cat.id }}"
+                    title="Переименовать"
+                    aria-label="Переименовать">
+                <i class="fas fa-pen text-xs"></i>
+            </button>
+            <button type="button"
+                    class="cat-rename-save hidden w-10 h-10 flex items-center justify-center text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl shrink-0 touch-manipulation"
+                    data-id="{{ cat.id }}"
+                    title="Сохранить имя"
+                    aria-label="Сохранить">
+                <i class="fas fa-check text-sm"></i>
+            </button>
             <button type="button"
                     class="cat-delete w-10 h-10 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl shrink-0 touch-manipulation"
                     data-id="{{ cat.id }}"
@@ -100,22 +108,109 @@
         });
     }
 
+    function enterRename(row) {
+        const view = row.querySelector('.cat-name-view');
+        const input = row.querySelector('.cat-name-input');
+        const pen = row.querySelector('.cat-rename');
+        const saveBtn = row.querySelector('.cat-rename-save');
+        if (!view || !input) return;
+        view.classList.add('hidden');
+        input.classList.remove('hidden');
+        pen.classList.add('hidden');
+        if (saveBtn) saveBtn.classList.remove('hidden');
+        input.focus();
+        input.select();
+    }
+
+    function exitRename(row, newName) {
+        const view = row.querySelector('.cat-name-view');
+        const input = row.querySelector('.cat-name-input');
+        const pen = row.querySelector('.cat-rename');
+        const saveBtn = row.querySelector('.cat-rename-save');
+        const del = row.querySelector('.cat-delete');
+        if (view) {
+            view.textContent = newName;
+            view.classList.remove('hidden');
+        }
+        if (input) {
+            input.value = newName;
+            input.dataset.original = newName;
+            input.classList.add('hidden');
+        }
+        if (pen) pen.classList.remove('hidden');
+        if (saveBtn) saveBtn.classList.add('hidden');
+        if (del) del.dataset.name = newName;
+    }
+
+    async function saveRename(row) {
+        const id = row.dataset.id;
+        const input = row.querySelector('.cat-name-input');
+        if (!input || !id) return;
+        const name = (input.value || '').trim();
+        const original = (input.dataset.original || '').trim();
+        if (!name) {
+            alert('Название не может быть пустым');
+            input.focus();
+            return;
+        }
+        if (name === original) {
+            exitRename(row, original);
+            return;
+        }
+        try {
+            const response = await fetch('/admin/assortment/categories/' + id + '/rename', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({ name: name })
+            });
+            if (!response.ok) {
+                let msg = 'Ошибка переименования';
+                try {
+                    const j = await response.json();
+                    msg = j.detail || msg;
+                } catch (_) {
+                    msg = (await response.text()).slice(0, 200) || msg;
+                }
+                alert(msg);
+                input.value = original;
+                return;
+            }
+            const data = await response.json();
+            exitRename(row, data.name || name);
+        } catch (err) {
+            alert('Ошибка соединения: ' + (err && err.message ? err.message : err));
+        }
+    }
+
     list.addEventListener('click', function (e) {
         const up = e.target.closest('.cat-move-up');
         const down = e.target.closest('.cat-move-down');
         const del = e.target.closest('.cat-delete');
+        const rename = e.target.closest('.cat-rename');
+        const saveRenameBtn = e.target.closest('.cat-rename-save');
+
         if (up) {
             const row = up.closest('.category-item');
-            if (row && row.previousElementSibling) {
-                list.insertBefore(row, row.previousElementSibling);
-            }
+            if (row && row.previousElementSibling) list.insertBefore(row, row.previousElementSibling);
             return;
         }
         if (down) {
             const row = down.closest('.category-item');
-            if (row && row.nextElementSibling) {
-                list.insertBefore(row.nextElementSibling, row);
-            }
+            if (row && row.nextElementSibling) list.insertBefore(row.nextElementSibling, row);
+            return;
+        }
+        if (rename) {
+            const row = rename.closest('.category-item');
+            if (row) enterRename(row);
+            return;
+        }
+        if (saveRenameBtn) {
+            const row = saveRenameBtn.closest('.category-item');
+            if (row) saveRename(row);
             return;
         }
         if (del) {
@@ -142,7 +237,6 @@
                     }
                     return;
                 }
-                // Перезагрузить модалку
                 if (window.htmx) {
                     htmx.ajax('GET', '/admin/assortment/categories/manage', { target: '#htmxModalContent', swap: 'innerHTML' });
                 } else {
@@ -151,6 +245,21 @@
             }).catch(function (err) {
                 alert('Ошибка соединения: ' + (err && err.message ? err.message : err));
             });
+        }
+    });
+
+    list.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.classList.contains('cat-name-input')) {
+            e.preventDefault();
+            const row = e.target.closest('.category-item');
+            if (row) saveRename(row);
+        }
+        if (e.key === 'Escape' && e.target.classList.contains('cat-name-input')) {
+            const row = e.target.closest('.category-item');
+            if (row) {
+                e.target.value = e.target.dataset.original || '';
+                exitRename(row, e.target.dataset.original || '');
+            }
         }
     });
 
