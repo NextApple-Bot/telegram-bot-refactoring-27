@@ -262,7 +262,7 @@
 </div>
 
 <div id="editStatsModal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-    <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 dark:border-slate-700 overflow-hidden max-h-[90vh] flex flex-col">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-xl border border-slate-200 dark:border-slate-700 overflow-hidden max-h-[92vh] flex flex-col">
         <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
             <div>
                 <h3 class="text-lg font-semibold">Статистика за {{ target_date }}</h3>
@@ -273,6 +273,30 @@
             </button>
         </div>
         <div class="p-5 overflow-y-auto flex-1">
+            <!-- Вставка итога дня -->
+            <div class="mb-5 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-4">
+                <label class="block text-sm font-semibold text-indigo-900 dark:text-indigo-200 mb-1.5">
+                    <i class="fas fa-paste text-xs mr-1"></i> Вставить итог дня
+                </label>
+                <p class="text-xs text-indigo-700/80 dark:text-indigo-400/80 mb-2">
+                    Скопируйте весь текст итога (как вы пишете в чат) и нажмите «Распарсить» — цифры заполнятся автоматически.
+                </p>
+                <textarea id="pasteReportText" rows="5"
+                    placeholder="📊 Статистика за 01.08.2026:&#10;• Предзаказов: 0&#10;• Броней: 0&#10;• Продаж: 12&#10;...&#10;2. Наличные — 697 000&#10;3. QR-код — 0&#10;..."
+                    class="w-full rounded-xl border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-y"></textarea>
+                <div class="flex flex-wrap items-center gap-2 mt-2">
+                    <button type="button" onclick="parseDailyReport()"
+                        class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl">
+                        <i class="fas fa-magic text-xs"></i> Распарсить
+                    </button>
+                    <button type="button" onclick="document.getElementById('pasteReportText').value=''"
+                        class="px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl">
+                        Очистить
+                    </button>
+                    <span id="parseStatus" class="text-xs text-slate-500"></span>
+                </div>
+            </div>
+
             <form id="editStatsForm" class="space-y-4">
                 <input type="hidden" name="target_date" value="{{ target_date_iso }}">
                 <div class="grid grid-cols-2 gap-3">
@@ -304,7 +328,7 @@
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-slate-500 mb-1">Комментарий (необязательно)</label>
-                    <input type="text" name="reason" placeholder="Например: ручной ввод за 5 августа"
+                    <input type="text" name="reason" placeholder="Например: ручной ввод за 5 августа / из итога дня"
                            class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                 </div>
             </form>
@@ -350,6 +374,7 @@ new Chart(document.getElementById('revenueChart'), {
     },
     options: chartDefaults
 });
+
 async function toggleSeller(sellerId) {
     const btn = document.getElementById('seller-btn-' + sellerId);
     try {
@@ -366,6 +391,119 @@ async function toggleSeller(sellerId) {
         }
     } catch (e) { alert('Ошибка при обновлении'); }
 }
+
+/** Извлекает число из строки вида «697 000», «0₽», «1.234,56» */
+function extractNumber(raw) {
+    if (raw == null) return null;
+    let s = String(raw).trim()
+        .replace(/\u00a0/g, ' ')
+        .replace(/[₽руб\.]/gi, '')
+        .replace(/\s+/g, '')
+        .replace(/,/g, '.');
+    // убираем всё кроме цифр и точки
+    s = s.replace(/[^0-9.]/g, '');
+    if (!s) return null;
+    // если несколько точек — оставляем последнюю как десятичную
+    const parts = s.split('.');
+    if (parts.length > 2) {
+        s = parts.slice(0, -1).join('') + '.' + parts[parts.length - 1];
+    }
+    const n = parseFloat(s);
+    return isNaN(n) ? null : n;
+}
+
+/**
+ * Парсит текст итога дня в стиле магазина.
+ * Поддерживает:
+ *  • Продаж: 12
+ *  • Предзаказов: 0
+ *  • Броней: 0
+ *  2. Наличные — 697 000
+ *  3. QR-код — 0
+ *  5. Оплата по счёту — 0₽
+ *  6. Терминал — 0
+ *  7. Перевод — 0₽
+ *  4. Рассрочка — 0
+ */
+function parseDailyReport() {
+    const text = (document.getElementById('pasteReportText').value || '').trim();
+    const statusEl = document.getElementById('parseStatus');
+    if (!text) {
+        statusEl.textContent = 'Вставьте текст итога';
+        statusEl.className = 'text-xs text-amber-600';
+        return;
+    }
+
+    const result = {
+        sales_count: null,
+        preorders_count: null,
+        bookings_count: null,
+        cash: null,
+        terminal: null,
+        qr: null,
+        transfer: null,
+        invoice: null,
+        installment: null,
+    };
+
+    // Счётчики: • Продаж: 12  /  Продаж — 12  /  Продажи: 12
+    const countPatterns = [
+        { key: 'sales_count', re: /(?:^|[•\-–—]|\d+[.)])\s*Продаж(?:и|а)?\s*[:\-–—]\s*([\d\s\u00a0]+)/im },
+        { key: 'preorders_count', re: /(?:^|[•\-–—]|\d+[.)])\s*Предзаказ(?:ов|а|ы)?\s*[:\-–—]\s*([\d\s\u00a0]+)/im },
+        { key: 'bookings_count', re: /(?:^|[•\-–—]|\d+[.)])\s*Брон(?:ей|и|ь)\s*[:\-–—]\s*([\d\s\u00a0]+)/im },
+    ];
+    for (const { key, re } of countPatterns) {
+        const m = text.match(re);
+        if (m) result[key] = extractNumber(m[1]);
+    }
+
+    // Платежи — несколько вариантов написания
+    const paymentPatterns = [
+        { key: 'cash', re: /(?:Наличн(?:ые|ых|ая)|Нал)\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
+        { key: 'terminal', re: /Терминал\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
+        { key: 'qr', re: /QR(?:[\-\s]?код)?\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
+        { key: 'transfer', re: /Перевод\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
+        { key: 'invoice', re: /(?:Оплата\s+по\s+сч[её]ту|По\s+сч[её]ту|Сч[её]т)\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
+        { key: 'installment', re: /Рассрочк[аи]\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
+    ];
+    for (const { key, re } of paymentPatterns) {
+        const m = text.match(re);
+        if (m) result[key] = extractNumber(m[1]);
+    }
+
+    // Заполняем форму
+    const form = document.getElementById('editStatsForm');
+    let filled = 0;
+    const found = [];
+
+    for (const [key, val] of Object.entries(result)) {
+        if (val === null || val === undefined) continue;
+        const input = form.querySelector(`[name="${key}"]`);
+        if (input) {
+            input.value = Number.isInteger(val) ? val : Math.round(val * 100) / 100;
+            filled++;
+            found.push(key);
+            // лёгкая подсветка
+            input.classList.add('ring-2', 'ring-emerald-400');
+            setTimeout(() => input.classList.remove('ring-2', 'ring-emerald-400'), 1800);
+        }
+    }
+
+    // Комментарий
+    const reasonInput = form.querySelector('[name="reason"]');
+    if (reasonInput && !reasonInput.value.trim()) {
+        reasonInput.value = 'из итога дня (автопарсинг)';
+    }
+
+    if (filled === 0) {
+        statusEl.textContent = 'Не удалось найти цифры. Проверьте формат текста.';
+        statusEl.className = 'text-xs text-red-600';
+    } else {
+        statusEl.textContent = `Заполнено полей: ${filled} (${found.join(', ')})`;
+        statusEl.className = 'text-xs text-emerald-600';
+    }
+}
+
 async function saveStats() {
     const form = document.getElementById('editStatsForm');
     const data = Object.fromEntries(new FormData(form).entries());
@@ -385,7 +523,6 @@ async function saveStats() {
             return;
         }
         if (result && result.success) {
-            // Остаёмся на том же дне после сохранения
             window.location.href = '/admin/dashboard?target_date={{ target_date_iso }}';
             return;
         }
