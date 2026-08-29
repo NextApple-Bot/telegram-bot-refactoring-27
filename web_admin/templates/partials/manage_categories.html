@@ -1,52 +1,89 @@
-<div class="p-2">
-    <div class="mb-4 text-sm text-slate-500">
-        Перетаскивайте категории, чтобы изменить их порядок отображения.
-    </div>
+<!-- Partial for HTMX modal — NO extends -->
+<div class="space-y-5" id="manage-categories-root">
+    <p class="text-sm text-slate-500 dark:text-slate-400">
+        Перетаскивайте строки, чтобы задать порядок категорий (как в файле ассортимента).
+        Новый порядок сохраняется кнопкой ниже.
+    </p>
 
-    <div id="category-list" class="space-y-2">
-        {% for cat in categories %}
-        <div class="category-item flex items-center justify-between bg-white border border-slate-200 px-4 py-3 rounded-2xl cursor-move"
-             data-id="{{ cat.id }}">
-            <div class="flex items-center gap-x-3">
-                <i class="fas fa-grip-vertical text-slate-400"></i>
-                <span class="font-medium">{{ cat.name }}</span>
-            </div>
-            <span class="text-xs text-slate-400">#{{ cat.id }}</span>
+    <!-- Добавить категорию -->
+    <form
+        hx-post="/admin/assortment/add_category"
+        hx-target="#htmxModalContent"
+        hx-swap="innerHTML"
+        class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end">
+        <div class="flex-1">
+            <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Новая категория</label>
+            <input type="text" name="name" required placeholder="Например: iPhone 17 Pro Max"
+                   class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
         </div>
+        <button type="submit"
+                class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl whitespace-nowrap">
+            <i class="fas fa-plus text-xs mr-1"></i> Создать
+        </button>
+    </form>
+
+    <div id="category-list" class="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+        {% for cat in categories %}
+        <div class="category-item flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-xl cursor-grab active:cursor-grabbing"
+             data-id="{{ cat.id }}">
+            <i class="fas fa-grip-vertical text-slate-400 shrink-0"></i>
+            <span class="font-medium text-sm text-slate-900 dark:text-white flex-1 min-w-0 truncate">{{ cat.name }}</span>
+            <span class="text-[10px] text-slate-400 shrink-0">#{{ loop.index }}</span>
+        </div>
+        {% else %}
+        <p class="text-sm text-slate-400 text-center py-6">Категорий пока нет — создайте первую выше</p>
         {% endfor %}
     </div>
 
-    <div class="mt-6 flex justify-end">
-        <button onclick="saveCategoryOrder()"
-                class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-2xl transition-colors">
-            Сохранить порядок
+    <div class="flex items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <button type="button"
+                @click="$store.modal.show = false"
+                class="px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl">
+            Закрыть
+        </button>
+        <button type="button" onclick="saveCategoryOrder()"
+                class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl shadow-sm">
+            <i class="fas fa-save text-xs mr-1"></i> Сохранить порядок
         </button>
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
-    // Инициализация SortableJS
-    new Sortable(document.getElementById('category-list'), {
-        animation: 150,
-        ghostClass: 'bg-indigo-50'
-    });
-
-    async function saveCategoryOrder() {
-        const items = document.querySelectorAll('#category-list .category-item');
-        const order = Array.from(items).map(el => el.dataset.id);
-
-        const response = await fetch('/admin/assortment/categories/reorder', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ order: order })
+(function () {
+    const list = document.getElementById('category-list');
+    if (list && window.Sortable) {
+        new Sortable(list, {
+            animation: 150,
+            handle: '.category-item',
+            ghostClass: 'opacity-50',
+            chosenClass: 'ring-2 ring-indigo-400',
         });
-
-        if (response.ok) {
-            // Закрываем модалку и обновляем страницу
-            document.querySelector('[x-data]').__x.$data.show = false;
-            window.location.reload();
-        } else {
-            alert('Ошибка при сохранении порядка');
-        }
     }
+
+    window.saveCategoryOrder = async function () {
+        const items = document.querySelectorAll('#category-list .category-item');
+        const order = Array.from(items).map(el => parseInt(el.dataset.id, 10)).filter(Boolean);
+
+        try {
+            const response = await fetch('/admin/assortment/categories/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ order: order })
+            });
+            if (!response.ok) {
+                const t = await response.text();
+                alert('Ошибка сохранения: ' + t.slice(0, 200));
+                return;
+            }
+            if (window.Alpine && Alpine.store('modal')) {
+                Alpine.store('modal').show = false;
+            }
+            window.location.reload();
+        } catch (e) {
+            alert('Ошибка соединения: ' + (e && e.message ? e.message : e));
+        }
+    };
+})();
 </script>
