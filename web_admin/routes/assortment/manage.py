@@ -2,8 +2,8 @@ import asyncio
 import logging
 import re
 from fastapi import APIRouter, Form, HTTPException, Request, Depends
-from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import func, select, update
+from fastapi.responses import RedirectResponse, Response, JSONResponse
+from sqlalchemy import func, select, update, delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram import Bot
@@ -52,12 +52,33 @@ def _htmx_done(redirect_url: str = "/admin/assortment") -> Response:
 
 
 async def _load_categories_for_manage(session):
+    """Категории с числом товаров (для модалки управления)."""
+    counts_subq = (
+        select(Item.category_id, func.count(Item.id).label("item_count"))
+        .group_by(Item.category_id)
+        .subquery()
+    )
     result = await session.execute(
-        select(Category)
+        select(
+            Category.id,
+            Category.name,
+            Category.sort_order,
+            func.coalesce(counts_subq.c.item_count, 0).label("item_count"),
+        )
+        .outerjoin(counts_subq, Category.id == counts_subq.c.category_id)
         .where(Category.name != "__SYSTEM__")
         .order_by(Category.sort_order, Category.name)
     )
-    return result.scalars().all()
+    rows = result.all()
+    return [
+        {
+            "id": row.id,
+            "name": row.name,
+            "sort_order": row.sort_order,
+            "item_count": int(row.item_count or 0),
+        }
+        for row in rows
+    ]
 
 
 @router.get("/add")
@@ -390,7 +411,6 @@ async def add_category(request: Request, name: str = Form(...)):
 
     await AssortmentService.invalidate_cache()
 
-    # HTMX: обновить содержимое модалки списком категорий
     if request.headers.get("hx-request") == "true":
         async with async_session() as session:
             categories = await _load_categories_for_manage(session)
@@ -433,3 +453,30 @@ async def reorder_categories(request: Request):
 
     await AssortmentService.invalidate_cache()
     return {"status": "success"}
+
+
+@router.delete("/categories/{category_id}")
+async def delete_category(request: Request, category_id: int):
+    """Удаляет только пустую категорию (без товаров)."""
+    async_session = get_async_session_factory()
+    async with async_session() as session, session.begin():
+        cat = await session.get(Category, category_id)
+        if not cat:
+            raise HTTPException(status_code=404, detail="Категория не найдена")
+        if cat.name == "__SYSTEM__":
+            raise HTTPException(status_code=400, detail="Системную категорию нельзя удалить")
+
+        cnt = await session.execute(
+            select(func.count(Item.id)).where(Item.category_id == category_id)
+        )
+        item_count = int(cnt.scalar() or 0)
+        if item_count > 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"В категории «{cat.name}» ещё {item_count} товар(ов). Сначала перенесите или удалите их.",
+            )
+
+        await session.delete(cat)
+
+    await AssortmentService.invalidate_cache()
+    return JSONResponse({"status": "ok", "deleted_id": category_id})
