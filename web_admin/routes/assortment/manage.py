@@ -455,6 +455,48 @@ async def reorder_categories(request: Request):
     return {"status": "success"}
 
 
+@router.post("/categories/{category_id}/rename")
+async def rename_category(request: Request, category_id: int):
+    """Переименование категории. Товары остаются привязаны по category_id."""
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Некорректный JSON")
+
+    name = (data.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Название не может быть пустым")
+    if name == "__SYSTEM__":
+        raise HTTPException(status_code=400, detail="Зарезервированное имя")
+    if len(name) > 120:
+        raise HTTPException(status_code=400, detail="Слишком длинное название (макс. 120)")
+
+    async_session = get_async_session_factory()
+    async with async_session() as session, session.begin():
+        cat = await session.get(Category, category_id)
+        if not cat:
+            raise HTTPException(status_code=404, detail="Категория не найдена")
+        if cat.name == "__SYSTEM__":
+            raise HTTPException(status_code=400, detail="Системную категорию нельзя переименовать")
+
+        existing = await session.execute(
+            select(Category.id).where(
+                func.lower(Category.name) == func.lower(name),
+                Category.id != category_id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Категория «{name}» уже существует",
+            )
+
+        cat.name = name
+
+    await AssortmentService.invalidate_cache()
+    return JSONResponse({"status": "ok", "id": category_id, "name": name})
+
+
 @router.delete("/categories/{category_id}")
 async def delete_category(request: Request, category_id: int):
     """Удаляет только пустую категорию (без товаров)."""
