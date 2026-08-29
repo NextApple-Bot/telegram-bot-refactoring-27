@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import calendar
 import os
 
 from fastapi import APIRouter, Form, Request
@@ -31,7 +32,6 @@ PAYMENT_METRICS = ("cash", "terminal", "qr", "transfer", "invoice", "installment
 COUNT_METRICS = ("sales_count", "preorders_count", "bookings_count")
 ALL_METRICS = COUNT_METRICS + PAYMENT_METRICS
 
-# Порог «мало на складе» (свободные, не в брони). Env: LOW_STOCK_THRESHOLD
 LOW_STOCK_THRESHOLD = max(0, int(os.getenv("LOW_STOCK_THRESHOLD", "3")))
 SKIP_CATEGORY_NAMES = {"б/у", "б/у:", "ns", "ns:", "общее", "общее:"}
 
@@ -210,11 +210,53 @@ async def _day_snapshot(session, day) -> dict:
     }
 
 
+async def _month_totals(session, day) -> dict:
+    """Сумма скорректированных KPI за календарный месяц выбранного дня."""
+    first = day.replace(day=1)
+    last_day = calendar.monthrange(day.year, day.month)[1]
+    last = day.replace(day=last_day)
+
+    sales = 0
+    revenue = 0.0
+    preorders = 0
+    bookings = 0
+    payments = {k: 0.0 for k in PAYMENT_METRICS}
+    days_with_data = 0
+
+    d = first
+    while d <= last:
+        s = await _day_snapshot(session, d)
+        sales += s["sales_count"]
+        preorders += s["preorders_count"]
+        bookings += s["bookings_count"]
+        revenue += float(s["total_revenue"])
+        for k in PAYMENT_METRICS:
+            payments[k] += float(s["payments"].get(k, 0))
+        if (
+            s["sales_count"]
+            or s["preorders_count"]
+            or s["bookings_count"]
+            or s["total_revenue"]
+            or s["adjustments"]
+        ):
+            days_with_data += 1
+        d += timedelta(days=1)
+
+    return {
+        "sales_count": sales,
+        "preorders_count": preorders,
+        "bookings_count": bookings,
+        "revenue": revenue,
+        "payments": payments,
+        "days_with_data": days_with_data,
+        "month_label": first.strftime("%m.%Y"),
+        "month_name": first.strftime("%B %Y"),
+        "first": first.isoformat(),
+        "last": last.isoformat(),
+    }
+
+
 async def _low_stock_alerts(session, threshold: int) -> list[dict]:
-    """
-    Категории, где свободно (не в брони) товаров <= threshold.
-    Считаем и booked отдельно для подсказки.
-    """
     free_q = (
         select(
             Category.id,
@@ -245,10 +287,9 @@ async def _low_stock_alerts(session, threshold: int) -> list[dict]:
         if name_clean.lower().rstrip(":") in SKIP_CATEGORY_NAMES:
             continue
         free = int(free_count or 0)
-        # только категории, где хоть что-то было / есть смысл
         booked = booked_map.get(cat_id, 0)
         if free == 0 and booked == 0:
-            continue  # пустая категория без товаров
+            continue
         if free <= threshold:
             level = "critical" if free == 0 else "warning"
             alerts.append(
@@ -266,13 +307,19 @@ async def _low_stock_alerts(session, threshold: int) -> list[dict]:
 
 @router.get("/")
 async def dashboard(request: Request, target_date: str | None = None):
-    today = (
-        datetime.now().date()
-        if not target_date
-        else datetime.strptime(target_date, "%Y-%m-%d").date()
-    )
+    try:
+        today = (
+            datetime.now().date()
+            if not target_date
+            else datetime.strptime(target_date[:10], "%Y-%m-%d").date()
+        )
+    except ValueError:
+        today = datetime.now().date()
+
     yesterday = today - timedelta(days=1)
+    tomorrow = today + timedelta(days=1)
     week_ago = today - timedelta(days=7)
+    real_today = datetime.now().date()
 
     async_session = get_async_session_factory()
     async with async_session() as session:
@@ -282,6 +329,7 @@ async def dashboard(request: Request, target_date: str | None = None):
         snap = await _day_snapshot(session, today)
         snap_y = await _day_snapshot(session, yesterday)
         snap_w = await _day_snapshot(session, week_ago)
+        month = await _month_totals(session, today)
 
         sales_today = snap["sales_count"]
         revenue_today = snap["total_revenue"]
@@ -352,6 +400,9 @@ async def dashboard(request: Request, target_date: str | None = None):
             "target_date": today.strftime("%d.%m.%Y"),
             "target_date_iso": today.isoformat(),
             "yesterday_iso": yesterday.isoformat(),
+            "tomorrow_iso": tomorrow.isoformat(),
+            "real_today_iso": real_today.isoformat(),
+            "is_today": today == real_today,
             "sales_today": sales_today,
             "revenue_today": total_revenue,
             "sales_change_yesterday": sales_change_yesterday,
@@ -377,6 +428,7 @@ async def dashboard(request: Request, target_date: str | None = None):
             "days": 7,
             "low_stock": low_stock,
             "low_stock_threshold": LOW_STOCK_THRESHOLD,
+            "month": month,
         },
     )
 
@@ -386,7 +438,7 @@ async def toggle_seller_day(
     seller_id: int = Form(...), target_date: str = Form(...)
 ):
     try:
-        date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
+        date_obj = datetime.strptime(target_date[:10], "%Y-%m-%d").date()
     except ValueError:
         return JSONResponse({"success": False, "error": "Неверная дата"}, status_code=400)
 
@@ -510,6 +562,7 @@ async def update_stats(request: Request):
             {
                 "success": True,
                 "mode": "adjustment",
+                "target_date": target_date.isoformat(),
                 "message": "Сохранено как корректировка. Реальные продажи не удалялись.",
             }
         )
@@ -527,7 +580,7 @@ async def top_models_data(
     request: Request, days: int = 7, target_date: str | None = None
 ):
     end_date = (
-        datetime.strptime(target_date, "%Y-%m-%d").date()
+        datetime.strptime(target_date[:10], "%Y-%m-%d").date()
         if target_date
         else datetime.now().date()
     )
