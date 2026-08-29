@@ -10,13 +10,25 @@ from openpyxl.styles import Font, PatternFill
 from sqlalchemy import func, or_, select
 
 from bot.db import get_async_session_factory
-from bot.models import Booking, Client, DailyPayment, DeletedItem, Item, Preorder, Purchase, Sale
+from bot.models import (
+    Booking,
+    Client,
+    DailyPayment,
+    DeletedItem,
+    Item,
+    Preorder,
+    Purchase,
+    Sale,
+    StatsAdjustment,
+)
 from web_admin.templates import templates
 
 router = APIRouter()
 
-# Максимальная длина произвольного периода (защита от слишком тяжёлого графика)
 MAX_RANGE_DAYS = 366
+
+PAYMENT_METRICS = ("cash", "terminal", "qr", "transfer", "invoice", "installment")
+COUNT_METRICS = ("sales_count", "preorders_count", "bookings_count")
 
 
 def _normalize_source(raw: str | None) -> str:
@@ -61,14 +73,6 @@ def _parse_period(
     date_from: str | None,
     date_to: str | None,
 ) -> tuple[date, date, str]:
-    """
-    Режимы:
-      - preset: последние N дней включая сегодня (target_date или today)
-      - month: календарный месяц YYYY-MM
-      - range / произвольные date_from + date_to
-    Если date_from > date_to — меняем местами.
-    Период режется до MAX_RANGE_DAYS.
-    """
     today = date.today()
     target = _safe_parse_date(target_date) or today
     mode = (mode or "preset").strip().lower()
@@ -97,7 +101,6 @@ def _parse_period(
             end_date = today
             start_date = end_date - timedelta(days=6)
     else:
-        # range / любое другое: свободные даты
         df = _safe_parse_date(date_from)
         dt = _safe_parse_date(date_to)
         if df and dt:
@@ -107,20 +110,46 @@ def _parse_period(
         elif dt and not df:
             start_date = end_date = dt
         else:
-            # fallback — 7 дней
             end_date = today
             start_date = end_date - timedelta(days=6)
 
     if start_date > end_date:
         start_date, end_date = end_date, start_date
 
-    # ограничение длины
     span = (end_date - start_date).days + 1
     if span > MAX_RANGE_DAYS:
         start_date = end_date - timedelta(days=MAX_RANGE_DAYS - 1)
 
     period_label = f"{start_date.strftime('%d.%m.%Y')} — {end_date.strftime('%d.%m.%Y')}"
     return start_date, end_date, period_label
+
+
+async def _load_adjustments_range(session, start_date: date, end_date: date) -> dict:
+    """
+    Возвращает:
+      by_day[date][metric] = delta
+      totals[metric] = sum(delta)
+    """
+    rows = (
+        await session.execute(
+            select(
+                StatsAdjustment.target_date,
+                StatsAdjustment.metric,
+                StatsAdjustment.delta,
+            ).where(StatsAdjustment.target_date.between(start_date, end_date))
+        )
+    ).all()
+
+    by_day: dict[date, dict[str, float]] = {}
+    totals: dict[str, float] = {}
+    for d, metric, delta in rows:
+        day = d if isinstance(d, date) else d
+        val = float(delta or 0)
+        if day not in by_day:
+            by_day[day] = {}
+        by_day[day][metric] = by_day[day].get(metric, 0.0) + val
+        totals[metric] = totals.get(metric, 0.0) + val
+    return {"by_day": by_day, "totals": totals}
 
 
 async def _collect_report(session, start_date: date, end_date: date) -> dict:
@@ -135,7 +164,50 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
             func.count(Sale.id).label("count"),
         ).where(func.date(Sale.sold_at).between(start_date, end_date))
     )
-    sales_row = sales_data.mappings().one()
+    sales_row = dict(sales_data.mappings().one())
+
+    # Доп. база платежей из DailyPayment (как на дашборде) — берём max по каждому типу
+    dp_row = (
+        await session.execute(
+            select(
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == "cash"), 0
+                ).label("cash"),
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == "terminal"), 0
+                ).label("terminal"),
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == "qr"), 0
+                ).label("qr"),
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == "transfer"), 0
+                ).label("transfer"),
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(DailyPayment.payment_type == "invoice"), 0
+                ).label("invoice"),
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(
+                        DailyPayment.payment_type == "installment"
+                    ),
+                    0,
+                ).label("installment"),
+            ).where(func.date(DailyPayment.created_at).between(start_date, end_date))
+        )
+    ).mappings().one()
+
+    for k in PAYMENT_METRICS:
+        sales_row[k] = max(float(sales_row.get(k) or 0), float(dp_row.get(k) or 0))
+
+    # Количество продаж: max(Sale, DailyPayment type=sale)
+    sales_from_dp = (
+        await session.execute(
+            select(func.count(DailyPayment.id)).where(
+                func.date(DailyPayment.created_at).between(start_date, end_date),
+                DailyPayment.type == "sale",
+            )
+        )
+    ).scalar() or 0
+    sales_row["count"] = int(max(int(sales_row["count"] or 0), int(sales_from_dp)))
 
     preorders_data = await session.execute(
         select(
@@ -148,7 +220,17 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
             func.count(Preorder.id).label("count"),
         ).where(func.date(Preorder.created_at).between(start_date, end_date))
     )
-    preorders_row = preorders_data.mappings().one()
+    preorders_row = dict(preorders_data.mappings().one())
+
+    pre_from_dp = (
+        await session.execute(
+            select(func.count(DailyPayment.id)).where(
+                func.date(DailyPayment.created_at).between(start_date, end_date),
+                DailyPayment.type == "preorder",
+            )
+        )
+    ).scalar() or 0
+    preorders_row["count"] = int(max(int(preorders_row["count"] or 0), int(pre_from_dp)))
 
     bookings_data = await session.execute(
         select(
@@ -156,9 +238,26 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
             func.count(Booking.id).label("count"),
         ).where(func.date(Booking.booked_at).between(start_date, end_date))
     )
-    bookings_row = bookings_data.mappings().one()
+    bookings_row = dict(bookings_data.mappings().one())
 
-    # График по дням — один запрос вместо N×2
+    # --- Корректировки с дашборда ---
+    adj = await _load_adjustments_range(session, start_date, end_date)
+    totals_adj = adj["totals"]
+    by_day_adj = adj["by_day"]
+
+    sales_row["count"] = max(
+        0, int(round(float(sales_row["count"]) + totals_adj.get("sales_count", 0)))
+    )
+    preorders_row["count"] = max(
+        0, int(round(float(preorders_row["count"]) + totals_adj.get("preorders_count", 0)))
+    )
+    bookings_row["count"] = max(
+        0, int(round(float(bookings_row["count"]) + totals_adj.get("bookings_count", 0)))
+    )
+    for k in PAYMENT_METRICS:
+        sales_row[k] = max(0.0, float(sales_row.get(k) or 0) + totals_adj.get(k, 0.0))
+
+    # График по дням
     sales_by_day = {
         row.d: int(row.cnt)
         for row in (
@@ -169,6 +268,23 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
                 )
                 .where(func.date(Sale.sold_at).between(start_date, end_date))
                 .group_by(func.date(Sale.sold_at))
+            )
+        ).all()
+    }
+    # DailyPayment sale counts by day
+    dp_sales_by_day = {
+        row.d: int(row.cnt)
+        for row in (
+            await session.execute(
+                select(
+                    func.date(DailyPayment.created_at).label("d"),
+                    func.count(DailyPayment.id).label("cnt"),
+                )
+                .where(
+                    func.date(DailyPayment.created_at).between(start_date, end_date),
+                    DailyPayment.type == "sale",
+                )
+                .group_by(func.date(DailyPayment.created_at))
             )
         ).all()
     }
@@ -192,9 +308,17 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
     current = start_date
     while current <= end_date:
         chart_dates.append(current.strftime("%d.%m"))
-        # key may be date or datetime.date from DB driver
-        chart_sales.append(int(sales_by_day.get(current, 0) or 0))
-        chart_revenue.append(float(revenue_by_day.get(current, 0) or 0))
+        raw_sales = max(
+            int(sales_by_day.get(current, 0) or 0),
+            int(dp_sales_by_day.get(current, 0) or 0),
+        )
+        day_adj = by_day_adj.get(current, {})
+        adj_sales = float(day_adj.get("sales_count", 0))
+        chart_sales.append(max(0, int(round(raw_sales + adj_sales))))
+
+        raw_rev = float(revenue_by_day.get(current, 0) or 0)
+        adj_rev = sum(float(day_adj.get(k, 0)) for k in PAYMENT_METRICS)
+        chart_revenue.append(max(0.0, raw_rev + adj_rev))
         current += timedelta(days=1)
 
     purchase_rows = (
@@ -284,10 +408,12 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
     sources_sorted = sorted(source_agg.items(), key=lambda x: x[1]["amount"], reverse=True)
     models_sorted = sorted(model_agg.items(), key=lambda x: x[1]["count"], reverse=True)[:20]
 
+    has_adjustments = bool(totals_adj)
+
     return {
-        "sales_row": dict(sales_row),
-        "preorders_row": dict(preorders_row),
-        "bookings_row": dict(bookings_row),
+        "sales_row": sales_row,
+        "preorders_row": preorders_row,
+        "bookings_row": bookings_row,
         "chart_dates": chart_dates,
         "chart_sales": chart_sales,
         "chart_revenue": chart_revenue,
@@ -309,6 +435,7 @@ async def _collect_report(session, start_date: date, end_date: date) -> dict:
         ],
         "model_labels": [n for n, _ in models_sorted[:10]],
         "model_counts": [d["count"] for _, d in models_sorted[:10]],
+        "has_adjustments": has_adjustments,
     }
 
 
@@ -363,6 +490,7 @@ def _template_ctx(
         "models_table": data["models_table"],
         "model_labels": data["model_labels"],
         "model_counts": data["model_counts"],
+        "has_adjustments": data.get("has_adjustments", False),
     }
 
 
@@ -423,9 +551,11 @@ async def export_excel(
     ws = wb.active
     ws.title = "Сводка"
     ws.append(["Период", period_label])
+    if data.get("has_adjustments"):
+        ws.append(["Примечание", "Учтены ручные корректировки с дашборда"])
     ws.append([])
     ws.append(["Показатель", "Значение"])
-    for cell in ws[3]:
+    for cell in ws[ws.max_row]:
         cell.fill = header_fill
         cell.font = header_font
     sales_row = data["sales_row"]
@@ -434,7 +564,7 @@ async def export_excel(
     ws.append(["Брони (шт)", data["bookings_row"]["count"]])
     ws.append([])
     ws.append(["Оплата", "Сумма ₽"])
-    for cell in ws[8]:
+    for cell in ws[ws.max_row]:
         cell.fill = header_fill
         cell.font = header_font
     for label, key in [
