@@ -1,5 +1,8 @@
 # bot/utils/sort.py
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_name(name):
@@ -21,11 +24,8 @@ def normalize_category_key(name: str) -> str:
     s = re.sub(r"[•·|/]+", " ", s)
     s = re.sub(r"[()\[\]]", " ", s)
 
-    # Series → S (главное правило)
     s = re.sub(r"\bseries\b", "s", s, flags=re.IGNORECASE)
-    # S 11 / S11 / s 11 → s11
     s = re.sub(r"\bs\s*(\d+)\b", r"s\1", s)
-    # SE 3 → se3
     s = re.sub(r"\bse\s*(\d+)\b", r"se\1", s)
 
     s = s.replace("apple watch", "watch")
@@ -119,11 +119,12 @@ def detect_sim_type(text):
     if is_marker_line(text):
         return "other"
     lower = (text or "").lower()
-    if re.search(r"\(sim\s*\+\s*esim\)|\bsim\s*\+\s*esim\b", lower):
+    # Сначала SIM+eSIM, иначе «esim» внутри «sim+esim» даст ложный eSIM
+    if re.search(r"sim\s*\+\s*esim|sim\s*\+\s*e\s*sim", lower):
         return "SIM+eSIM"
-    if re.search(r"\(esim\)|\besim\b", lower):
+    if re.search(r"\besim\b", lower):
         return "eSIM"
-    if re.search(r"\(sim\)|\bsim\b", lower) and "esim" not in lower:
+    if re.search(r"\bsim\b", lower):
         return "SIM"
     return "other"
 
@@ -143,17 +144,12 @@ def extract_base_name(item):
     base = f"{model_part} {memory}" if memory else model_part
     base = normalize_name(base)
     base = normalize_model(base)
-    # Series → S и в базовом имени
     base = re.sub(r"\bSeries\b", "S", base, flags=re.IGNORECASE)
     base = re.sub(r"\bS\s+(\d+)\b", r"S\1", base, flags=re.IGNORECASE)
     return base
 
 
 def match_existing_category(item_text: str, categories: list) -> str | None:
-    """
-    Подбирает ТОЛЬКО существующую категорию. Новые не создаёт.
-    Series всегда приравнивается к S.
-    """
     if not categories:
         return None
 
@@ -306,78 +302,31 @@ def _filter_real_items(item_strings):
     return [s for s in item_strings if s and not is_marker_line(s)]
 
 
-def _export_preserve_order_with_markers(item_strings, header):
-    items = _filter_real_items(item_strings)
-    if not items:
-        return []
-
-    header_lower = (header or "").lower()
-    has_watch = any(extract_watch_size(s) is not None for s in items)
-    has_memory = any(extract_memory(s) is not None for s in items)
-    is_watch = "watch" in header_lower or (
-        has_watch and not has_memory and sum(1 for s in items if extract_watch_size(s)) >= max(1, len(items) // 2)
-    )
-
-    output = []
-    prev_vol = object()
-    prev_sim = object()
-    prev_size = object()
-
-    for item in items:
-        if is_watch:
-            size = extract_watch_size(item)
-            if size != prev_size:
-                if output and output[-1].strip() != "-":
-                    output.append("-")
-                if size is not None:
-                    output.append(f"-{size}mm-")
-                output.append("-")
-                prev_size = size
-            output.append(item)
-        elif has_memory:
-            vol = extract_memory(item)
-            sim = detect_sim_type(item)
-            vol_changed = vol != prev_vol
-            sim_changed = sim != prev_sim
-            if vol_changed or (sim_changed and sim != "other"):
-                if output and output[-1].strip() != "-":
-                    output.append("-")
-                if vol_changed and vol is not None:
-                    output.append(f"-{vol}-")
-                    prev_sim = object()
-                    sim_changed = True
-                if sim_changed and sim != "other":
-                    output.append(f"-{sim}-")
-                output.append("-")
-                prev_vol = vol
-                prev_sim = sim
-            output.append(item)
-        else:
-            output.append(item)
-
-    return output
-
-
 def _sort_by_memory_and_sim(item_strings):
+    """
+    Всегда одна секция на объём, внутри: eSIM → SIM+eSIM → SIM → остальное.
+    Не зависит от порядка вставки после прибытия.
+    """
     item_strings = _filter_real_items(item_strings)
-    groups = {}
+    groups: dict = {}
     for item_str in item_strings:
         sim = detect_sim_type(item_str)
         vol_gb = extract_memory_gb(item_str)
         vol_str = extract_memory(item_str)
-        key = (vol_gb, vol_str)
+        key = (vol_gb if vol_gb is not None else -1, vol_str or "")
         if key not in groups:
             groups[key] = {"eSIM": [], "SIM+eSIM": [], "SIM": [], "other": []}
         groups[key][sim].append(item_str)
 
     sorted_keys = sorted(
         groups.keys(),
-        key=lambda k: (k[0] is None, k[0] if k[0] is not None else float("inf")),
+        key=lambda k: (k[0] < 0, k[0] if k[0] >= 0 else 10**9),
     )
 
     output = []
-    for vol_gb, vol_str in sorted_keys:
-        bucket = groups[(vol_gb, vol_str)]
+    for key in sorted_keys:
+        vol_gb, vol_str = key
+        bucket = groups[key]
         total_in_vol = sum(len(bucket[s]) for s in bucket)
         if total_in_vol == 0:
             continue
@@ -385,7 +334,7 @@ def _sort_by_memory_and_sim(item_strings):
         if output:
             output.append("-")
 
-        if vol_str is not None:
+        if vol_str:
             output.append(f"-{vol_str}-")
 
         first_sim_in_vol = True
@@ -393,6 +342,8 @@ def _sort_by_memory_and_sim(item_strings):
             items_list = bucket[sim_type]
             if not items_list:
                 continue
+            # стабильный порядок внутри группы
+            items_list = sorted(items_list, key=lambda x: x.lower())
 
             if not first_sim_in_vol:
                 output.append("-")
@@ -409,7 +360,7 @@ def _sort_by_memory_and_sim(item_strings):
 
 def _sort_by_watch_size(item_strings):
     item_strings = _filter_real_items(item_strings)
-    size_groups = {}
+    size_groups: dict = {}
     for item_str in item_strings:
         size = extract_watch_size(item_str)
         size_groups.setdefault(size, []).append(item_str)
@@ -420,7 +371,7 @@ def _sort_by_watch_size(item_strings):
     )
     output = []
     for size in sorted_sizes:
-        items_list = size_groups[size]
+        items_list = sorted(size_groups[size], key=lambda x: x.lower())
         if not items_list:
             continue
         if output:
@@ -441,11 +392,15 @@ _PHONE_BRANDS = (
     "samsung", "galaxy", "huawei", "xiaomi", "redmi", "poco",
     "pixel", "oneplus", "honor", "realme", "oppo", "vivo",
     "nothing", "motorola", "nokia", "sony", "xperia", "asus",
-    "rog phone", "zte", "tecno", "infinix",
+    "rog phone", "zte", "tecno", "infinix", "playstation", "dualsense",
 )
 
 
-def sort_items_in_category(items, header, preserve_order: bool = True):
+def sort_items_in_category(items, header, preserve_order: bool = False):
+    """
+    preserve_order больше не используется для устройств с памятью/SIM:
+    после прибытия порядок в БД ломает блоки -256GB- / -eSIM-.
+    """
     if items and isinstance(items[0], dict):
         item_strings = [item.get("text", "") for item in items if item.get("text")]
     else:
@@ -471,20 +426,19 @@ def sort_items_in_category(items, header, preserve_order: bool = True):
 
     is_memory_device = has_memory or any(b in header_lower for b in _PHONE_BRANDS)
 
-    # После «прибытия» новые позиции идут в конец (по id).
-    # Если просто «сохранять порядок», появляются повторные блоки -256GB- / -eSIM-.
-    # Для телефонов / часов / памяти всегда пересобираем группы.
     if is_watch:
         return _sort_by_watch_size(item_strings)
     if is_memory_device:
         return _sort_by_memory_and_sim(item_strings)
-
-    if preserve_order:
-        return _export_preserve_order_with_markers(item_strings, header)
     return _sort_plain(item_strings)
 
 
-def build_output_text(categories, preserve_order: bool = True):
+def build_output_text(categories, preserve_order: bool = False):
+    """
+    Сборка файла ассортимента.
+    Категории — в переданном порядке (sort_order из БД).
+    Внутри категории телефоны/часы всегда перегруппировываются.
+    """
     output_lines = []
     for cat in categories:
         header = cat.get("header") or cat.get("name")
@@ -505,7 +459,7 @@ def build_output_text(categories, preserve_order: bool = True):
 
         items = cat.get("items", []) or []
         sorted_output = (
-            sort_items_in_category(items, header, preserve_order=preserve_order)
+            sort_items_in_category(items, header, preserve_order=False)
             if items
             else []
         )
