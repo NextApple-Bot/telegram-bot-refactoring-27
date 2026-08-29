@@ -455,9 +455,6 @@ def sort_items_in_category(items, header, preserve_order: bool = True):
     if not item_strings:
         return []
 
-    if preserve_order:
-        return _export_preserve_order_with_markers(item_strings, header)
-
     header_lower = (header or "").lower()
     has_watch_size = any(extract_watch_size(s) is not None for s in item_strings)
     has_memory = any(extract_memory(s) is not None for s in item_strings)
@@ -474,10 +471,16 @@ def sort_items_in_category(items, header, preserve_order: bool = True):
 
     is_memory_device = has_memory or any(b in header_lower for b in _PHONE_BRANDS)
 
+    # После «прибытия» новые позиции идут в конец (по id).
+    # Если просто «сохранять порядок», появляются повторные блоки -256GB- / -eSIM-.
+    # Для телефонов / часов / памяти всегда пересобираем группы.
     if is_watch:
         return _sort_by_watch_size(item_strings)
     if is_memory_device:
         return _sort_by_memory_and_sim(item_strings)
+
+    if preserve_order:
+        return _export_preserve_order_with_markers(item_strings, header)
     return _sort_plain(item_strings)
 
 
