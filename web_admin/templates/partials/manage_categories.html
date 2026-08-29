@@ -1,11 +1,10 @@
 <!-- Partial for HTMX modal — NO extends -->
 <div class="space-y-5" id="manage-categories-root">
     <p class="text-sm text-slate-500 dark:text-slate-400">
-        Перетаскивайте строки, чтобы задать порядок категорий (как в файле ассортимента).
-        Новый порядок сохраняется кнопкой ниже.
+        На телефоне двигайте стрелками ↑ ↓. На компьютере можно и перетаскивать.
+        Рядом — число товаров. Крестик удаляет пустую категорию.
     </p>
 
-    <!-- Добавить категорию -->
     <form
         hx-post="/admin/assortment/add_category"
         hx-target="#htmxModalContent"
@@ -24,11 +23,46 @@
 
     <div id="category-list" class="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
         {% for cat in categories %}
-        <div class="category-item flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-xl cursor-grab active:cursor-grabbing"
+        <div class="category-item flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-2.5 py-2 rounded-xl"
              data-id="{{ cat.id }}">
-            <i class="fas fa-grip-vertical text-slate-400 shrink-0"></i>
-            <span class="font-medium text-sm text-slate-900 dark:text-white flex-1 min-w-0 truncate">{{ cat.name }}</span>
-            <span class="text-[10px] text-slate-400 shrink-0">#{{ loop.index }}</span>
+            <div class="flex flex-col shrink-0">
+                <button type="button" class="cat-move-up w-9 h-8 flex items-center justify-center text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg touch-manipulation"
+                        title="Выше" aria-label="Выше">
+                    <i class="fas fa-chevron-up text-xs"></i>
+                </button>
+                <button type="button" class="cat-move-down w-9 h-8 flex items-center justify-center text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg touch-manipulation"
+                        title="Ниже" aria-label="Ниже">
+                    <i class="fas fa-chevron-down text-xs"></i>
+                </button>
+            </div>
+            <i class="fas fa-grip-vertical text-slate-300 dark:text-slate-600 shrink-0 hidden sm:inline cat-drag-handle cursor-grab"></i>
+            <div class="flex-1 min-w-0">
+                <div class="font-medium text-sm text-slate-900 dark:text-white truncate">{{ cat.name }}</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {% set cnt = cat.item_count if cat.item_count is defined else 0 %}
+                    {% if cnt == 0 %}
+                        нет товаров
+                    {% elif cnt == 1 %}
+                        1 товар
+                    {% elif cnt < 5 %}
+                        {{ cnt }} товара
+                    {% else %}
+                        {{ cnt }} товаров
+                    {% endif %}
+                </div>
+            </div>
+            <span class="inline-flex items-center justify-center min-w-[2rem] px-2 py-1 rounded-lg text-xs font-semibold bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200 shrink-0">
+                {{ cat.item_count if cat.item_count is defined else 0 }}
+            </span>
+            <button type="button"
+                    class="cat-delete w-10 h-10 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl shrink-0 touch-manipulation"
+                    data-id="{{ cat.id }}"
+                    data-name="{{ cat.name }}"
+                    data-count="{{ cat.item_count if cat.item_count is defined else 0 }}"
+                    title="Удалить категорию"
+                    aria-label="Удалить">
+                <i class="fas fa-times text-base"></i>
+            </button>
         </div>
         {% else %}
         <p class="text-sm text-slate-400 text-center py-6">Категорий пока нет — создайте первую выше</p>
@@ -52,14 +86,73 @@
 <script>
 (function () {
     const list = document.getElementById('category-list');
-    if (list && window.Sortable) {
+    if (!list) return;
+
+    if (window.Sortable) {
         new Sortable(list, {
             animation: 150,
-            handle: '.category-item',
+            handle: '.cat-drag-handle',
+            delay: 180,
+            delayOnTouchOnly: true,
+            touchStartThreshold: 5,
             ghostClass: 'opacity-50',
             chosenClass: 'ring-2 ring-indigo-400',
         });
     }
+
+    list.addEventListener('click', function (e) {
+        const up = e.target.closest('.cat-move-up');
+        const down = e.target.closest('.cat-move-down');
+        const del = e.target.closest('.cat-delete');
+        if (up) {
+            const row = up.closest('.category-item');
+            if (row && row.previousElementSibling) {
+                list.insertBefore(row, row.previousElementSibling);
+            }
+            return;
+        }
+        if (down) {
+            const row = down.closest('.category-item');
+            if (row && row.nextElementSibling) {
+                list.insertBefore(row.nextElementSibling, row);
+            }
+            return;
+        }
+        if (del) {
+            const id = del.dataset.id;
+            const name = del.dataset.name || '';
+            const count = parseInt(del.dataset.count || '0', 10);
+            if (count > 0) {
+                alert('Нельзя удалить «' + name + '»: в ней ' + count + ' товар(ов). Сначала перенесите или удалите товары.');
+                return;
+            }
+            if (!confirm('Удалить категорию «' + name + '»?')) return;
+            fetch('/admin/assortment/categories/' + id, {
+                method: 'DELETE',
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin'
+            }).then(async function (r) {
+                if (!r.ok) {
+                    const t = await r.text();
+                    try {
+                        const j = JSON.parse(t);
+                        alert(j.detail || t.slice(0, 200));
+                    } catch (_) {
+                        alert('Ошибка: ' + t.slice(0, 200));
+                    }
+                    return;
+                }
+                // Перезагрузить модалку
+                if (window.htmx) {
+                    htmx.ajax('GET', '/admin/assortment/categories/manage', { target: '#htmxModalContent', swap: 'innerHTML' });
+                } else {
+                    window.location.reload();
+                }
+            }).catch(function (err) {
+                alert('Ошибка соединения: ' + (err && err.message ? err.message : err));
+            });
+        }
+    });
 
     window.saveCategoryOrder = async function () {
         const items = document.querySelectorAll('#category-list .category-item');
