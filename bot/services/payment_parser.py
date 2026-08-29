@@ -14,11 +14,36 @@ PAYMENT_KEYWORDS = {
 }
 PREPAY_PATTERN = re.compile(r'П[/\\]О|предоплата', re.IGNORECASE)
 NUMBER_PATTERN = re.compile(r'(\d[\d\s]*(?:[.,]\d+)?)')
+# «24 мес», «12 месяцев», «6 мес.» — не сумма платежа
+MONTHS_SPAN_PATTERN = re.compile(
+    r'\b\d{1,2}\s*мес(?:яц(?:а|ев)?|\.)?',
+    re.IGNORECASE,
+)
 
 
 def is_likely_phone_or_serial(num_str: str) -> bool:
     """Проверяет, похоже ли число на телефонный номер или серийный номер."""
     return num_str.isdigit() and len(num_str) >= 10
+
+
+def _extract_amounts_from_line(line: str) -> list[float]:
+    """Достаёт денежные суммы из строки, игнорируя срок рассрочки (N мес)."""
+    cleaned = MONTHS_SPAN_PATTERN.sub(' ', line)
+    numbers: list[float] = []
+    for match in NUMBER_PATTERN.finditer(cleaned):
+        num_str = match.group(1).replace(' ', '').replace(',', '.')
+        try:
+            amount = float(num_str)
+        except ValueError:
+            continue
+        if amount > 10_000_000 or is_likely_phone_or_serial(num_str):
+            continue
+        # Слишком мелкие «голые» числа (1–31) без копеек чаще даты/срок, не деньги.
+        # Реальную оплату < 50 ₽ почти не пишут в топике продаж.
+        if amount < 50 and '.' not in num_str and amount == int(amount):
+            continue
+        numbers.append(amount)
+    return numbers
 
 
 def extract_payment_amounts(text: str, ignore_prepay: bool = False) -> dict[str, float]:
@@ -39,18 +64,13 @@ def extract_payment_amounts(text: str, ignore_prepay: bool = False) -> dict[str,
         if specific_types:
             line_pay_types = specific_types
 
-        numbers = []
-        for match in NUMBER_PATTERN.finditer(line):
-            num_str = match.group(1).replace(' ', '').replace(',', '.')
-            try:
-                amount = float(num_str)
-            except ValueError:
-                continue
-            if amount > 10_000_000 or is_likely_phone_or_serial(num_str):
-                continue
-            numbers.append(amount)
-
+        numbers = _extract_amounts_from_line(line)
         if not numbers:
+            continue
+
+        # Один способ оплаты + несколько чисел → берём максимум (сумма, не «24 мес»).
+        if len(line_pay_types) == 1:
+            results[line_pay_types[0]] += max(numbers)
             continue
 
         for i, pt in enumerate(line_pay_types):
