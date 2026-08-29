@@ -52,6 +52,22 @@ def _htmx_done(redirect_url: str = "/admin/assortment") -> Response:
     )
 
 
+@router.get("/add")
+async def add_item_form(request: Request):
+    """Форма добавления товара для HTMX-модалки."""
+    async_session = get_async_session_factory()
+    async with async_session() as session:
+        categories_result = await session.execute(
+            select(Category.id, Category.name).order_by(Category.sort_order, Category.name)
+        )
+        categories = [{"id": row.id, "name": row.name} for row in categories_result.all()]
+
+    return templates.TemplateResponse(
+        "assortment_add_item.html",
+        {"request": request, "categories": categories},
+    )
+
+
 @router.get("/edit/{item_id}")
 async def edit_item_form(request: Request, item_id: int):
     async_session = get_async_session_factory()
