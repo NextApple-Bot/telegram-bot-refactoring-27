@@ -8,7 +8,67 @@
         <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Проданные товары</h1>
         <p class="text-slate-500 dark:text-slate-400 mt-1">Отмена продажи одной кнопкой · всего: {{ total }}</p>
     </div>
+    {% if total > 0 %}
+    <button type="button"
+            @click="$store.modal.show = true; $store.modal.title = 'Отменить все продажи'; $store.modal.html = document.getElementById('cancelAllModalTpl').innerHTML"
+            class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium shadow-sm">
+        <i class="fas fa-trash-alt text-xs"></i>
+        Отменить все продажи
+    </button>
+    {% endif %}
 </div>
+
+<!-- Шаблон модалки массовой отмены (двухэтапное подтверждение) -->
+<template id="cancelAllModalTpl">
+    <div x-data="{ step: 1, typed: '' }">
+        <div class="space-y-4">
+            <div class="rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 px-4 py-3 text-sm text-rose-800 dark:text-rose-200">
+                <i class="fas fa-exclamation-triangle mr-1"></i>
+                <strong>Внимание!</strong> Будут отменены <strong>все</strong> продажи ({{ total }} шт.):
+                товары вернутся в ассортимент, записи продаж и платежей удалятся, статистика откатится.
+                Это действие необратимо.
+            </div>
+
+            <template x-if="step === 1">
+                <div class="flex justify-end gap-2 pt-1">
+                    <button type="button" @click="$store.modal.show = false"
+                            class="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+                        Отмена
+                    </button>
+                    <button type="button" @click="step = 2"
+                            class="px-4 py-2 rounded-lg text-sm font-medium bg-rose-600 hover:bg-rose-700 text-white">
+                        Продолжить
+                    </button>
+                </div>
+            </template>
+
+            <template x-if="step === 2">
+                <form action="/admin/sold/cancel-all" method="post" class="space-y-3">
+                    <p class="text-sm text-slate-600 dark:text-slate-300">
+                        Для подтверждения введите слово
+                        <span class="font-mono font-bold text-rose-600 dark:text-rose-400">ОТМЕНИТЬ</span>
+                        (заглавными буквами):
+                    </p>
+                    <input type="text" name="confirm" x-model="typed" autocomplete="off"
+                           placeholder="ОТМЕНИТЬ"
+                           class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono tracking-widest focus:ring-2 focus:ring-rose-500 outline-none">
+                    <div class="flex justify-end gap-2 pt-1">
+                        <button type="button" @click="step = 1"
+                                class="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+                            Назад
+                        </button>
+                        <button type="submit"
+                                :disabled="typed.trim().toUpperCase() !== 'ОТМЕНИТЬ'"
+                                :class="typed.trim().toUpperCase() === 'ОТМЕНИТЬ' ? 'bg-rose-600 hover:bg-rose-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed'"
+                                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                            <i class="fas fa-trash-alt mr-1"></i> Отменить все
+                        </button>
+                    </div>
+                </form>
+            </template>
+        </div>
+    </div>
+</template>
 
 {% if flash_msg %}
 <div class="mb-4 rounded-xl px-4 py-3 text-sm border
