@@ -10,7 +10,6 @@ from web_admin.templates import templates
 
 router = APIRouter()
 
-# Разрешённые поля для сортировки (защита от SQL-инъекций)
 ALLOWED_SORT_FIELDS = {
     "id": Item.id,
     "text": Item.text,
@@ -21,21 +20,21 @@ ALLOWED_SORT_FIELDS = {
 }
 
 ALLOWED_SIM_TYPES = {"", "esim", "sim_esim"}
+ALLOWED_MARK_TYPES = {"", "exchange", "service", "both", "normal"}
 
-# (O) / (О) / （O） — обменка (латиница, кириллица, fullwidth-скобки)
-_EXCHANGE_RE = re.compile(
-    r"[\(（]\s*[OoОо0]\s*[\)）]"  # (O) (О) (0) и fullwidth
-)
-# 👨‍🔧 и варианты эмодзи механика
+# (O) / (О) / （O） — обменка
+_EXCHANGE_RE = re.compile(r"[\(（]\s*[OoОо0]\s*[\)）]")
 _SERVICE_MARKERS = (
-    "\U0001f468\u200d\U0001f527",  # 👨‍🔧 ZWJ
-    "\U0001f468\u200d\u2699",       # 👨 + ⚙
-    "\U0001f527",                   # 🔧
+    "\U0001f468\u200d\U0001f527",  # 👨‍🔧
+    "\U0001f468\u200d\u2699",
+    "\U0001f527",  # 🔧
 )
+
+# SQL: обменка по regex PostgreSQL
+_EXCHANGE_SQL = r"[\(（][[:space:]]*[OoОо0][[:space:]]*[\)）]"
 
 
 def _item_flags(text: str | None) -> tuple[bool, bool]:
-    """Возвращает (is_exchange, is_service) по тексту названия."""
     t = text or ""
     is_exchange = bool(_EXCHANGE_RE.search(t)) or ("обменк" in t.lower())
     is_service = any(m in t for m in _SERVICE_MARKERS) or (
@@ -44,8 +43,21 @@ def _item_flags(text: str | None) -> tuple[bool, bool]:
     return is_exchange, is_service
 
 
+def _exchange_sql_cond():
+    return or_(
+        Item.text.op("~")( _EXCHANGE_SQL ),
+        Item.text.ilike("%обменк%"),
+    )
+
+
+def _service_sql_cond():
+    return or_(
+        Item.text.like("%\U0001f468\u200d\U0001f527%"),
+        Item.text.like("%\U0001f527%"),
+    )
+
+
 def _apply_sim_filter(query, sim_type: str | None):
-    """Фильтр по типу SIM в названии товара: eSIM или SIM+eSIM."""
     st = (sim_type or "").strip().lower()
     if st not in ALLOWED_SIM_TYPES or not st:
         return query
@@ -71,6 +83,26 @@ def _apply_sim_filter(query, sim_type: str | None):
     return query
 
 
+def _apply_mark_filter(query, mark_type: str | None):
+    """Фильтр: обменка / сервис / оба / обычные."""
+    mt = (mark_type or "").strip().lower()
+    if mt not in ALLOWED_MARK_TYPES or not mt:
+        return query
+
+    ex = _exchange_sql_cond()
+    svc = _service_sql_cond()
+
+    if mt == "exchange":
+        return query.where(ex)
+    if mt == "service":
+        return query.where(svc)
+    if mt == "both":
+        return query.where(and_(ex, svc))
+    if mt == "normal":
+        return query.where(and_(not_(ex), not_(svc)))
+    return query
+
+
 @router.get("/", response_class=HTMLResponse)
 async def list_assortment(
     request: Request,
@@ -79,6 +111,7 @@ async def list_assortment(
     search: str | None = Query(None),
     category_id: str | None = Query(None),
     sim_type: str | None = Query(None),
+    mark_type: str | None = Query(None),
     sort_by: str = Query("id", pattern="^(id|text|serial|category_name|is_booked|created_at)$"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
 ):
@@ -86,6 +119,9 @@ async def list_assortment(
     sim_type_clean = (sim_type or "").strip().lower()
     if sim_type_clean not in ALLOWED_SIM_TYPES:
         sim_type_clean = ""
+    mark_type_clean = (mark_type or "").strip().lower()
+    if mark_type_clean not in ALLOWED_MARK_TYPES:
+        mark_type_clean = ""
 
     async with async_session() as session:
         offset = (page - 1) * per_page
@@ -113,6 +149,7 @@ async def list_assortment(
             base_query = base_query.where(Item.category_id == int(category_id))
 
         base_query = _apply_sim_filter(base_query, sim_type_clean)
+        base_query = _apply_mark_filter(base_query, mark_type_clean)
 
         sort_column = ALLOWED_SORT_FIELDS.get(sort_by, Item.id)
         order_direction = sort_column.desc() if sort_order == "desc" else sort_column.asc()
@@ -133,6 +170,7 @@ async def list_assortment(
             count_query = count_query.where(Item.category_id == int(category_id))
 
         count_query = _apply_sim_filter(count_query, sim_type_clean)
+        count_query = _apply_mark_filter(count_query, mark_type_clean)
 
         total = (await session.execute(count_query)).scalar_one()
         total_pages = (total + per_page - 1) // per_page if total > 0 else 1
@@ -166,6 +204,7 @@ async def list_assortment(
             "search": search,
             "category_id": category_id,
             "sim_type": sim_type_clean,
+            "mark_type": mark_type_clean,
             "categories": categories,
             "sort_by": sort_by,
             "sort_order": sort_order,
