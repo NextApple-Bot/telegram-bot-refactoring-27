@@ -18,7 +18,6 @@
     {% endif %}
 </div>
 
-<!-- Шаблон модалки массовой отмены (двухэтапное подтверждение) -->
 <template id="cancelAllModalTpl">
     <div x-data="{ step: 1, typed: '' }">
         <div class="space-y-4">
@@ -77,6 +76,33 @@
     {{ flash_msg }}
 </div>
 {% endif %}
+
+<div class="mb-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-card">
+    <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-2">Отменить продажи за период</h2>
+    <p class="text-xs text-slate-500 mb-3">Безопаснее, чем «отменить все». Потребуется слово ОТМЕНИТЬ.</p>
+    <form method="post" action="/admin/sold/cancel-period" class="flex flex-col sm:flex-row flex-wrap gap-3 items-end"
+          onsubmit="return confirm('Отменить все продажи в выбранном периоде?');">
+        <div>
+            <label class="block text-xs text-slate-500 mb-1">С</label>
+            <input type="date" name="date_from" required
+                   class="rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
+        </div>
+        <div>
+            <label class="block text-xs text-slate-500 mb-1">По</label>
+            <input type="date" name="date_to" required
+                   class="rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
+        </div>
+        <div>
+            <label class="block text-xs text-slate-500 mb-1">Подтверждение</label>
+            <input type="text" name="confirm" placeholder="ОТМЕНИТЬ" autocomplete="off"
+                   class="rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-mono tracking-widest">
+        </div>
+        <button type="submit"
+                class="px-4 py-2.5 text-sm font-medium rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
+            Отменить за период
+        </button>
+    </form>
+</div>
 
 <form method="get" action="/admin/sold" class="mb-4 flex flex-col sm:flex-row gap-3">
     <div class="relative flex-1">
