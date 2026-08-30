@@ -28,6 +28,7 @@ from web_admin.services.day_stats import (
     today_local,
 )
 from web_admin.templates import templates
+from web_admin.services.audit import log_admin_action
 
 import logging
 
@@ -379,6 +380,12 @@ async def update_stats(request: Request):
                 written,
             )
 
+        await log_admin_action(
+            "update_stats",
+            request=request,
+            date=str(target_date),
+            reason=reason,
+        )
         return JSONResponse(
             {
                 "success": True,
@@ -483,6 +490,13 @@ async def close_day(request: Request):
                 target_date, written, seller_ids,
             )
 
+        await log_admin_action(
+            "close_day",
+            request=request,
+            date=str(target_date),
+            adjustments=written,
+            sellers=len(seller_ids),
+        )
         return JSONResponse({
             "success": True,
             "target_date": target_date.isoformat(),
