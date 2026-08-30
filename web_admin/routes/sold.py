@@ -3,19 +3,19 @@
 
 Отмена:
   1) товар снова в ассортименте
-  2) Sale и DailyPayment по sale_message_id удаляются (статистика откатывается)
+  2) Sale и DailyPayment по sale_message_id удаляются
   3) DeletedItem помечается / удаляется
   4) в топик продаж уходит «❌ Отмена продажи»
-  5) StatsAdjustment за день продажи сбрасывается (цифры снова = raw)
+  5) StatsAdjustment за день продажи сбрасывается
 
-«Отменить все продажи» — массовая отмена всех проданных позиций
-с двухэтапным подтверждением (ввод слова ОТМЕНИТЬ).
+«Отменить все продажи» — массовая отмена с подтверждением ОТМЕНИТЬ.
+«Отменить за период» — безопаснее, только выбранные даты.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime, time as dtime
 
 from aiogram import Bot
 from fastapi import APIRouter, Form, Query, Request
@@ -105,9 +105,6 @@ async def list_sold(
 @router.post("/cancel/{deleted_id}")
 @router.post("/restore/{deleted_id}")
 async def cancel_sale(deleted_id: int):
-    """
-    Отмена продажи / восстановление в ассортимент (одна кнопка).
-    """
     async_session = get_async_session_factory()
     item_text = ""
     serial = ""
@@ -119,14 +116,11 @@ async def cancel_sale(deleted_id: int):
                 deleted = await session.get(DeletedItem, deleted_id)
                 if not deleted:
                     return RedirectResponse(
-                        url="/admin/sold?err=Запись+не+найдена",
-                        status_code=303,
+                        url="/admin/sold?err=Запись+не+найдена", status_code=303
                     )
-
                 if deleted.restored:
                     return RedirectResponse(
-                        url="/admin/sold?err=Уже+восстановлено",
-                        status_code=303,
+                        url="/admin/sold?err=Уже+восстановлено", status_code=303
                     )
 
                 item_text = deleted.text or ""
@@ -139,14 +133,12 @@ async def cancel_sale(deleted_id: int):
                     exists = await session.scalar(
                         select(Item.id).where(Item.serial == serial).limit(1)
                     )
+                    serial_for_item = None if exists else serial
                     if exists:
-                        serial_for_item = None
                         logger.warning(
-                            "При отмене продажи serial=%s уже в items — восстанавливаем без serial",
+                            "При отмене serial=%s уже в items — без serial",
                             serial,
                         )
-                    else:
-                        serial_for_item = serial
                 else:
                     serial_for_item = None
 
@@ -178,17 +170,12 @@ async def cancel_sale(deleted_id: int):
                 day_for_adj = as_date(deleted.deleted_at)
                 await session.delete(deleted)
 
-                # Сбрасываем ручные корректировки за день продажи,
-                # иначе дашборд продолжит показывать старые цифры.
                 if day_for_adj:
                     await clear_adjustments_for_dates(session, [day_for_adj])
 
                 logger.info(
-                    "Отмена продажи deleted_id=%s item_id=%s sale_message_id=%s serial=%s day=%s",
+                    "Отмена продажи deleted_id=%s day=%s",
                     deleted_id,
-                    original_item_id,
-                    sale_message_id,
-                    serial,
                     day_for_adj,
                 )
 
@@ -209,17 +196,12 @@ async def cancel_sale(deleted_id: int):
     except Exception as e:
         logger.exception("Ошибка отмены продажи deleted_id=%s", deleted_id)
         return RedirectResponse(
-            url=f"/admin/sold?err={str(e)[:80]}",
-            status_code=303,
+            url=f"/admin/sold?err={str(e)[:80]}", status_code=303
         )
 
 
 @router.post("/cancel-all")
 async def cancel_all_sales(confirm: str = Form("...")):
-    """
-    Массовая отмена ВСЕХ продаж.
-    Требует двухэтапного подтверждения: confirm == 'ОТМЕНИТЬ'.
-    """
     if (confirm or "").strip().upper() != "ОТМЕНИТЬ":
         return RedirectResponse(
             url="/admin/sold?err=Для+отмены+всех+продаж+введите+слово+ОТМЕНИТЬ",
@@ -241,7 +223,9 @@ async def cancel_all_sales(confirm: str = Form("...")):
                 )
                 rows = (
                     await session.execute(
-                        select(DeletedItem).where(base_filter, DeletedItem.restored.is_(False))
+                        select(DeletedItem).where(
+                            base_filter, DeletedItem.restored.is_(False)
+                        )
                     )
                 ).scalars().all()
 
@@ -296,7 +280,7 @@ async def cancel_all_sales(confirm: str = Form("...")):
                     await clear_adjustments_for_dates(session, affected_days)
 
                 logger.info(
-                    "Массовая отмена продаж: отменено %s шт., сброшены корректировки за %s дней",
+                    "Массовая отмена: %s шт., adj days=%s",
                     cancelled,
                     len(affected_days),
                 )
@@ -317,8 +301,129 @@ async def cancel_all_sales(confirm: str = Form("...")):
     except Exception as e:
         logger.exception("Ошибка массовой отмены продаж")
         return RedirectResponse(
-            url=f"/admin/sold?err={str(e)[:80]}",
+            url=f"/admin/sold?err={str(e)[:80]}", status_code=303
+        )
+
+
+@router.post("/cancel-period")
+async def cancel_sales_period(
+    date_from: str = Form(...),
+    date_to: str = Form(...),
+    confirm: str = Form(""),
+):
+    """Отмена продаж за период (по deleted_at). Подтверждение: ОТМЕНИТЬ."""
+    if (confirm or "").strip().upper() != "ОТМЕНИТЬ":
+        return RedirectResponse(
+            url="/admin/sold?err=Для+отмены+за+период+введите+слово+ОТМЕНИТЬ",
             status_code=303,
+        )
+    try:
+        start = datetime.strptime(str(date_from)[:10], "%Y-%m-%d").date()
+        end = datetime.strptime(str(date_to)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return RedirectResponse(url="/admin/sold?err=Неверные+даты", status_code=303)
+    if end < start:
+        start, end = end, start
+
+    start_dt = datetime.combine(start, dtime.min)
+    end_dt = datetime.combine(end, dtime.max)
+
+    async_session = get_async_session_factory()
+    cancelled = 0
+    affected_days: set = set()
+    restored_items: list[tuple[str, str | None, int | None]] = []
+
+    try:
+        async with async_session() as session:
+            async with session.begin():
+                base_filter = or_(
+                    DeletedItem.reason.ilike("%sale%"),
+                    DeletedItem.sale_message_id.isnot(None),
+                    DeletedItem.reason.is_(None),
+                )
+                rows = (
+                    await session.execute(
+                        select(DeletedItem).where(
+                            base_filter,
+                            DeletedItem.restored.is_(False),
+                            DeletedItem.deleted_at >= start_dt,
+                            DeletedItem.deleted_at <= end_dt,
+                        )
+                    )
+                ).scalars().all()
+
+                for deleted in rows:
+                    item_text = deleted.text or ""
+                    serial = (deleted.serial or "").strip() or None
+                    sale_message_id = deleted.sale_message_id
+                    original_item_id = deleted.item_id
+                    category_id = deleted.category_id
+
+                    if serial:
+                        exists = await session.scalar(
+                            select(Item.id).where(Item.serial == serial).limit(1)
+                        )
+                        serial_for_item = None if exists else serial
+                    else:
+                        serial_for_item = None
+
+                    session.add(
+                        Item(
+                            text=item_text,
+                            serial=serial_for_item,
+                            category_id=category_id,
+                            is_booked=False,
+                            is_sold=False,
+                        )
+                    )
+
+                    if sale_message_id:
+                        await session.execute(
+                            delete(Sale).where(Sale.message_id == sale_message_id)
+                        )
+                        await session.execute(
+                            delete(DailyPayment).where(
+                                DailyPayment.sale_message_id == sale_message_id
+                            )
+                        )
+                    elif original_item_id:
+                        await session.execute(
+                            delete(Sale).where(Sale.item_id == original_item_id)
+                        )
+
+                    deleted.restored = True
+                    d_adj = as_date(deleted.deleted_at)
+                    if d_adj:
+                        affected_days.add(d_adj)
+                    await session.delete(deleted)
+                    cancelled += 1
+                    restored_items.append((item_text, serial, sale_message_id))
+
+                if affected_days:
+                    await clear_adjustments_for_dates(session, affected_days)
+
+                logger.info(
+                    "Отмена за период %s..%s: %s шт., adj days=%s",
+                    start, end, cancelled, len(affected_days),
+                )
+
+        try:
+            await cache.delete(f"dashboard:summary:{date.today().isoformat()}")
+        except Exception:
+            pass
+        await AssortmentService.invalidate_cache()
+
+        if cancelled:
+            asyncio.create_task(_notify_cancel_all(cancelled, restored_items))
+
+        return RedirectResponse(
+            url=f"/admin/sold?ok=Отменено+за+период:+{cancelled}",
+            status_code=303,
+        )
+    except Exception as e:
+        logger.exception("Ошибка отмены за период")
+        return RedirectResponse(
+            url=f"/admin/sold?err={str(e)[:80]}", status_code=303
         )
 
 
@@ -337,10 +442,9 @@ async def _notify_cancel(
             lines.append(title or "—")
         lines.append("")
         lines.append("Товар возвращён в ассортимент. Статистика продажи откатана.")
-        text = "\n".join(lines)
         await bot.send_message(
             chat_id=config.MAIN_GROUP_ID,
-            text=text,
+            text="\n".join(lines),
             message_thread_id=config.THREAD_SALES,
         )
         await bot.session.close()
