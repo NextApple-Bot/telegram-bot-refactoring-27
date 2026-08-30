@@ -129,21 +129,16 @@ async def send_sale_notification(
     comment: str | None = None,
     trade_in_name: str | None = None,
     trade_in_amount: float | None = None,
+    gnc_store: str | None = None,
+    gnc_amount: float | None = None,
 ):
     """
-    Формат продажи с optional Trade-in:
+    Формат продажи с Trade-in и ГНЦ (Гарантия Низкой Цены).
 
     Товар.
-    Стоимость - N.
-    <пусто>
-    Аксессуар.
-    Стоимость - N.
-    <пусто>
-    Trade-in — iPhone 13, − 15 000.
-    <пусто><пусто>
-    Наличными - N.
+    Стоимость - N (ГНЦ AStore Скидка - 4 000).
     ...
-    Общая - (цена + аксы − скидка − trade-in)
+    Общая - (цена + аксы − скидка − trade-in − ГНЦ)
     """
     try:
         accessories = accessories or []
@@ -167,9 +162,24 @@ async def send_sale_notification(
             title = f"{title}."
         lines.append(title)
 
-        if discount and float(discount) > 0:
+        gnc_amt = float(gnc_amount or 0)
+        gnc_name = (gnc_store or "").strip()
+        disc_amt = float(discount or 0)
+
+        cost_extra: list[str] = []
+        if gnc_amt > 0:
+            if gnc_name:
+                cost_extra.append(
+                    f"ГНЦ {gnc_name} Скидка - {format_number(gnc_amt)}"
+                )
+            else:
+                cost_extra.append(f"ГНЦ Скидка - {format_number(gnc_amt)}")
+        if disc_amt > 0:
+            cost_extra.append(f"Скидка {format_number(disc_amt)}")
+
+        if cost_extra:
             lines.append(
-                f"Стоимость - {format_number(price)} (Скидка {format_number(discount)})."
+                f"Стоимость - {format_number(price)} ({', '.join(cost_extra)})."
             )
         else:
             lines.append(f"Стоимость - {format_number(price)}.")
@@ -242,6 +252,7 @@ async def send_sale_notification(
             + float(accessories_total or 0)
             - float(discount or 0)
             - float(trade_in_amount or 0)
+            - float(gnc_amount or 0)
         )
         if total > 0:
             lines.append(f"Общая - {format_number(total)}")
