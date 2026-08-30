@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import and_, func, not_, or_, select
@@ -20,6 +22,27 @@ ALLOWED_SORT_FIELDS = {
 
 ALLOWED_SIM_TYPES = {"", "esim", "sim_esim"}
 
+# (O) / (О) / （O） — обменка (латиница, кириллица, fullwidth-скобки)
+_EXCHANGE_RE = re.compile(
+    r"[\(（]\s*[OoОо0]\s*[\)）]"  # (O) (О) (0) и fullwidth
+)
+# 👨‍🔧 и варианты эмодзи механика
+_SERVICE_MARKERS = (
+    "\U0001f468\u200d\U0001f527",  # 👨‍🔧 ZWJ
+    "\U0001f468\u200d\u2699",       # 👨 + ⚙
+    "\U0001f527",                   # 🔧
+)
+
+
+def _item_flags(text: str | None) -> tuple[bool, bool]:
+    """Возвращает (is_exchange, is_service) по тексту названия."""
+    t = text or ""
+    is_exchange = bool(_EXCHANGE_RE.search(t)) or ("обменк" in t.lower())
+    is_service = any(m in t for m in _SERVICE_MARKERS) or (
+        "\U0001f468" in t and "\U0001f527" in t
+    )
+    return is_exchange, is_service
+
 
 def _apply_sim_filter(query, sim_type: str | None):
     """Фильтр по типу SIM в названии товара: eSIM или SIM+eSIM."""
@@ -27,7 +50,6 @@ def _apply_sim_filter(query, sim_type: str | None):
     if st not in ALLOWED_SIM_TYPES or not st:
         return query
 
-    # SIM+eSIM / SIM + eSIM / (SIM+eSIM)
     sim_esim_cond = or_(
         Item.text.ilike("%SIM+eSIM%"),
         Item.text.ilike("%SIM + eSIM%"),
@@ -38,7 +60,6 @@ def _apply_sim_filter(query, sim_type: str | None):
     if st == "sim_esim":
         return query.where(sim_esim_cond)
 
-    # Только eSIM: есть eSIM, но нет SIM+
     if st == "esim":
         return query.where(
             and_(
@@ -69,7 +90,6 @@ async def list_assortment(
     async with async_session() as session:
         offset = (page - 1) * per_page
 
-        # Базовый запрос
         base_query = (
             select(
                 Item.id,
@@ -84,7 +104,6 @@ async def list_assortment(
             .where(Category.name != "__SYSTEM__")
         )
 
-        # Фильтры
         if search:
             base_query = base_query.where(
                 (Item.text.ilike(f"%{search}%")) | (Item.serial.ilike(f"%{search}%"))
@@ -95,12 +114,10 @@ async def list_assortment(
 
         base_query = _apply_sim_filter(base_query, sim_type_clean)
 
-        # Сортировка
         sort_column = ALLOWED_SORT_FIELDS.get(sort_by, Item.id)
         order_direction = sort_column.desc() if sort_order == "desc" else sort_column.asc()
         base_query = base_query.order_by(order_direction).limit(per_page).offset(offset)
 
-        # Подсчёт общего количества
         count_query = (
             select(func.count())
             .select_from(Item)
@@ -121,9 +138,14 @@ async def list_assortment(
         total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
         items_result = await session.execute(base_query)
-        items = [dict(row._mapping) for row in items_result.all()]
+        items = []
+        for row in items_result.all():
+            d = dict(row._mapping)
+            is_ex, is_svc = _item_flags(d.get("text"))
+            d["is_exchange"] = is_ex
+            d["is_service"] = is_svc
+            items.append(d)
 
-        # Категории для фильтра
         cats_query = (
             select(Category.id, Category.name)
             .where(Category.name != "__SYSTEM__")
