@@ -1,0 +1,177 @@
+"""
+Единая финализация продажи в БД.
+
+Используется:
+  - топик Sales (после поиска товара по SN/тексту)
+  - админка (после расчёта формы)
+
+Гарантирует:
+  - DeletedItem + удаление Item
+  - Sale с разбивкой оплат и message_id
+  - DailyPayment с sale_message_id
+  - уникальный message_id при нескольких товарах в одном сообщении
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bot.models import DailyPayment, DeletedItem, Item, Sale
+from bot.services.assortment import AssortmentService
+
+logger = logging.getLogger(__name__)
+
+PAYMENT_TYPES = ("cash", "terminal", "qr", "transfer", "invoice", "installment")
+
+
+def normalize_payments(payments: dict[str, float] | None) -> dict[str, float]:
+    out = {k: 0.0 for k in PAYMENT_TYPES}
+    if not payments:
+        return out
+    for k, v in payments.items():
+        key = (k or "").strip().lower()
+        if key in out:
+            try:
+                out[key] = max(0.0, float(v or 0))
+            except (TypeError, ValueError):
+                out[key] = 0.0
+    return out
+
+
+def unique_sale_message_id(base_message_id: int, index: int = 0) -> int:
+    """
+    Sale.message_id UNIQUE.
+    Первому товару — исходный Telegram message_id,
+    остальным — синтетический id, чтобы не конфликтовать.
+    """
+    base = int(base_message_id)
+    if index <= 0:
+        return base
+    # 1e6 * base + index обычно не пересекается с реальными TG message_id
+    return base * 1_000_000 + int(index)
+
+
+async def finalize_item_sale(
+    session: AsyncSession,
+    *,
+    item_id: int,
+    item_text: str,
+    item_serial: str | None,
+    category_id: int | None,
+    message_id: int,
+    payments: dict[str, float] | None = None,
+    reason: str = "sale",
+    is_accessory: bool = False,
+    delete_item: bool = True,
+    write_payments: bool = True,
+) -> dict[str, Any]:
+    """
+    Пишет одну продажу в рамках уже открытой SQLAlchemy-сессии/транзакции.
+
+    write_payments=False — если платежи уже записаны на другой item
+    того же сообщения (мульти-SN: только первый несёт оплаты).
+    """
+    pays = normalize_payments(payments if write_payments else None)
+
+    if delete_item:
+        # Актуальные данные из БД, если item ещё есть
+        item = await session.get(Item, item_id)
+        text = item_text
+        serial = item_serial
+        cat_id = category_id
+        if item is not None:
+            text = item.text or text
+            serial = item.serial if item.serial is not None else serial
+            cat_id = item.category_id if item.category_id is not None else cat_id
+            session.add(
+                DeletedItem(
+                    item_id=item.id,
+                    text=text,
+                    serial=serial,
+                    category_id=cat_id,
+                    reason=reason,
+                    sale_message_id=message_id,
+                )
+            )
+            await session.delete(item)
+        else:
+            # Item уже удалён — всё равно фиксируем DeletedItem для отмены
+            session.add(
+                DeletedItem(
+                    item_id=item_id,
+                    text=text,
+                    serial=serial,
+                    category_id=cat_id,
+                    reason=reason,
+                    sale_message_id=message_id,
+                )
+            )
+
+    # Не дублировать Sale с тем же message_id
+    existing = await session.scalar(
+        select(Sale.id).where(Sale.message_id == message_id).limit(1)
+    )
+    if existing:
+        logger.warning(
+            "Sale с message_id=%s уже есть (id=%s) — пропуск записи Sale",
+            message_id,
+            existing,
+        )
+    else:
+        session.add(
+            Sale(
+                item_id=item_id,
+                count=1,
+                cash=pays["cash"],
+                terminal=pays["terminal"],
+                qr=pays["qr"],
+                transfer=pays["transfer"],
+                invoice=pays["invoice"],
+                installment=pays["installment"],
+                is_accessory=is_accessory,
+                message_id=message_id,
+            )
+        )
+
+    if write_payments:
+        for pt, amount in pays.items():
+            if amount > 0:
+                session.add(
+                    DailyPayment(
+                        type="sale",
+                        payment_type=pt,
+                        amount=amount,
+                        sale_message_id=message_id,
+                    )
+                )
+
+    logger.info(
+        "finalize_item_sale: item_id=%s msg=%s payments=%s reason=%s",
+        item_id,
+        message_id,
+        pays if write_payments else "(deferred)",
+        reason,
+    )
+    return {
+        "item_id": item_id,
+        "message_id": message_id,
+        "payments": pays,
+    }
+
+
+async def invalidate_sale_caches() -> None:
+    try:
+        from datetime import date
+
+        from bot.services.cache import cache
+
+        await cache.delete(f"dashboard:summary:{date.today().isoformat()}")
+    except Exception:
+        logger.debug("cache delete dashboard failed", exc_info=True)
+    try:
+        await AssortmentService.invalidate_cache()
+    except Exception:
+        logger.debug("assortment cache invalidate failed", exc_info=True)
