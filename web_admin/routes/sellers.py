@@ -10,7 +10,15 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from bot.db import get_async_session_factory
-from bot.models import DailyPayment, Sale, Seller, SellerDay, StatsAdjustment
+from bot.models import (
+    Booking,
+    DailyPayment,
+    Preorder,
+    Sale,
+    Seller,
+    SellerDay,
+    StatsAdjustment,
+)
 from web_admin.templates import templates
 
 logger = logging.getLogger(__name__)
@@ -31,6 +39,138 @@ async def ensure_default_sellers(session) -> None:
         if not exists:
             session.add(Seller(name=name))
             logger.info("Создан продавец по умолчанию: %s", name)
+
+
+# ─── Единый снимок дня (как на дашборде) ───────────────────────────────────
+
+async def _load_adjustments(session, day: date) -> dict[str, float]:
+    rows = (
+        await session.execute(
+            select(StatsAdjustment.metric, StatsAdjustment.delta).where(
+                StatsAdjustment.target_date == day
+            )
+        )
+    ).all()
+    return {m: float(d or 0) for m, d in rows}
+
+
+async def _raw_sales_count(session, day: date) -> int:
+    from_sales = (
+        await session.execute(
+            select(func.count(Sale.id)).where(func.date(Sale.sold_at) == day)
+        )
+    ).scalar() or 0
+    from_payments = (
+        await session.execute(
+            select(func.count(DailyPayment.id)).where(
+                func.date(DailyPayment.created_at) == day,
+                DailyPayment.type == "sale",
+            )
+        )
+    ).scalar() or 0
+    return int(max(from_sales, from_payments))
+
+
+async def _raw_preorders_count(session, day: date) -> int:
+    from_payments = (
+        await session.execute(
+            select(func.count(DailyPayment.id)).where(
+                func.date(DailyPayment.created_at) == day,
+                DailyPayment.type == "preorder",
+            )
+        )
+    ).scalar() or 0
+    from_table = (
+        await session.execute(
+            select(func.count(Preorder.id)).where(func.date(Preorder.created_at) == day)
+        )
+    ).scalar() or 0
+    return int(max(from_payments, from_table))
+
+
+async def _raw_bookings_count(session, day: date) -> int:
+    return int(
+        (
+            await session.execute(
+                select(func.count(Booking.id)).where(func.date(Booking.booked_at) == day)
+            )
+        ).scalar()
+        or 0
+    )
+
+
+async def _raw_payments(session, day: date) -> dict[str, float]:
+    payment_rows = (
+        await session.execute(
+            select(
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(
+                        DailyPayment.payment_type == "cash"
+                    ),
+                    0,
+                ).label("cash"),
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(
+                        DailyPayment.payment_type == "terminal"
+                    ),
+                    0,
+                ).label("terminal"),
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(
+                        DailyPayment.payment_type == "qr"
+                    ),
+                    0,
+                ).label("qr"),
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(
+                        DailyPayment.payment_type == "transfer"
+                    ),
+                    0,
+                ).label("transfer"),
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(
+                        DailyPayment.payment_type == "invoice"
+                    ),
+                    0,
+                ).label("invoice"),
+                func.coalesce(
+                    func.sum(DailyPayment.amount).filter(
+                        DailyPayment.payment_type == "installment"
+                    ),
+                    0,
+                ).label("installment"),
+            ).where(func.date(DailyPayment.created_at) == day)
+        )
+    ).one()
+    return {
+        col: float(getattr(payment_rows, col, 0) or 0) for col in PAYMENT_METRICS
+    }
+
+
+async def _day_snapshot(session, day: date) -> dict:
+    """Тот же снимок дня, что и на дашборде: raw + StatsAdjustment."""
+    adj = await _load_adjustments(session, day)
+
+    raw_sales = await _raw_sales_count(session, day)
+    raw_pre = await _raw_preorders_count(session, day)
+    raw_book = await _raw_bookings_count(session, day)
+    raw_pay = await _raw_payments(session, day)
+
+    sales = max(0, int(round(raw_sales + adj.get("sales_count", 0))))
+    preorders = max(0, int(round(raw_pre + adj.get("preorders_count", 0))))
+    bookings = max(0, int(round(raw_book + adj.get("bookings_count", 0))))
+
+    payments = {}
+    for k in PAYMENT_METRICS:
+        payments[k] = max(0.0, float(raw_pay.get(k, 0) + adj.get(k, 0)))
+
+    return {
+        "sales_count": sales,
+        "preorders_count": preorders,
+        "bookings_count": bookings,
+        "payments": payments,
+        "total_revenue": sum(payments.values()),
+    }
 
 
 @router.get("/manage")
@@ -105,7 +245,11 @@ async def seller_stats(
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    """Статистика по продавцам за период: дни работы, продажи и выручка в их смены."""
+    """Статистика по продавцам за период: дни работы, продажи и выручка в их смены.
+
+    Использует тот же снимок дня, что и дашборд (raw + StatsAdjustment),
+    чтобы цифры совпадали.
+    """
     try:
         if date_from and date_to:
             start_date = date.fromisoformat(date_from)
@@ -128,21 +272,13 @@ async def seller_stats(
                 await session.execute(select(Seller).order_by(Seller.name))
             ).scalars().all()
 
-            # Корректировки по дням (выручка и продажи)
-            adj_rows = (
-                await session.execute(
-                    select(
-                        StatsAdjustment.target_date,
-                        StatsAdjustment.metric,
-                        StatsAdjustment.delta,
-                    ).where(StatsAdjustment.target_date.between(start_date, end_date))
-                )
-            ).all()
-            adj_by_day: dict[date, dict[str, float]] = {}
-            for d, metric, delta in adj_rows:
-                if d not in adj_by_day:
-                    adj_by_day[d] = {}
-                adj_by_day[d][metric] = adj_by_day[d].get(metric, 0.0) + float(delta or 0)
+            # Кэш снимков по дням, чтобы не считать дважды
+            snapshot_cache: dict[date, dict] = {}
+
+            async def snap(d: date) -> dict:
+                if d not in snapshot_cache:
+                    snapshot_cache[d] = await _day_snapshot(session, d)
+                return snapshot_cache[d]
 
             results: List[dict] = []
             calendar_rows: List[dict] = []
@@ -163,37 +299,10 @@ async def seller_stats(
                 sales_count = 0
                 revenue = 0.0
 
-                if work_days:
-                    raw_sales = (
-                        await session.execute(
-                            select(func.count(Sale.id)).where(
-                                func.date(Sale.sold_at).in_(work_days)
-                            )
-                        )
-                    ).scalar() or 0
-
-                    raw_rev = float(
-                        (
-                            await session.execute(
-                                select(
-                                    func.coalesce(func.sum(DailyPayment.amount), 0)
-                                ).where(
-                                    func.date(DailyPayment.created_at).in_(work_days)
-                                )
-                            )
-                        ).scalar()
-                        or 0
-                    )
-
-                    adj_sales = 0.0
-                    adj_rev = 0.0
-                    for wd in work_days:
-                        day_adj = adj_by_day.get(wd, {})
-                        adj_sales += float(day_adj.get("sales_count", 0))
-                        adj_rev += sum(float(day_adj.get(k, 0)) for k in PAYMENT_METRICS)
-
-                    sales_count = max(0, int(round(raw_sales + adj_sales)))
-                    revenue = max(0.0, raw_rev + adj_rev)
+                for wd in work_days:
+                    s = await snap(wd)
+                    sales_count += s["sales_count"]
+                    revenue += float(s["total_revenue"])
 
                 results.append(
                     {
@@ -217,39 +326,14 @@ async def seller_stats(
                     )
                 ).scalars().all()
 
-                day_sales_raw = (
-                    await session.execute(
-                        select(func.count(Sale.id)).where(func.date(Sale.sold_at) == day)
-                    )
-                ).scalar() or 0
-
-                day_rev_raw = float(
-                    (
-                        await session.execute(
-                            select(func.coalesce(func.sum(DailyPayment.amount), 0)).where(
-                                func.date(DailyPayment.created_at) == day
-                            )
-                        )
-                    ).scalar()
-                    or 0
-                )
-
-                day_adj = adj_by_day.get(day, {})
-                day_sales = max(
-                    0, int(round(day_sales_raw + float(day_adj.get("sales_count", 0))))
-                )
-                day_rev = max(
-                    0.0,
-                    day_rev_raw + sum(float(day_adj.get(k, 0)) for k in PAYMENT_METRICS),
-                )
-
+                s = await snap(day)
                 calendar_rows.append(
                     {
                         "date": day.isoformat(),
                         "date_display": day.strftime("%d.%m.%Y"),
                         "sellers": list(day_sellers),
-                        "sales": day_sales,
-                        "revenue": day_rev,
+                        "sales": s["sales_count"],
+                        "revenue": float(s["total_revenue"]),
                     }
                 )
                 day += timedelta(days=1)
@@ -331,11 +415,8 @@ async def seller_schedule(
             ).scalars().all()
             worked_dates = {d.isoformat() for d in rows}
 
-        # Календарная сетка: недели (пн–вс)
-        # Python: weekday() 0=Mon ... 6=Sun
         days_grid: list[list[dict | None]] = []
         week: list[dict | None] = []
-        # пустые ячейки до первого дня
         for _ in range(first.weekday()):
             week.append(None)
 
@@ -360,8 +441,6 @@ async def seller_schedule(
                 week.append(None)
             days_grid.append(week)
 
-        month_label = first.strftime("%B %Y")
-        # Русские названия месяцев
         ru_months = {
             1: "Январь",
             2: "Февраль",
