@@ -119,6 +119,9 @@ async def sale_item_submit(
     use_trade_in: str | None = Form(None),
     trade_in_name: str | None = Form(None),
     trade_in_amount: float | None = Form(None),
+    use_gnc: str | None = Form(None),
+    gnc_store: str | None = Form(None),
+    gnc_amount: float | None = Form(None),
     sale_full_name: str | None = Form(None),
     sale_phone: str | None = Form(None),
     sale_birth_date: str | None = Form(None),
@@ -152,6 +155,13 @@ async def sale_item_submit(
     if use_trade_in and trade_amount and not trade_name:
         trade_name = "Trade-in"
 
+    gnc_store_val = _clean(gnc_store) if use_gnc else None
+    gnc_amount_val = float(gnc_amount) if use_gnc and gnc_amount else None
+    if gnc_amount_val is not None and gnc_amount_val < 0:
+        gnc_amount_val = abs(gnc_amount_val)
+    if use_gnc and gnc_amount_val and not gnc_store_val:
+        gnc_store_val = "ГНЦ"
+
     payment_amount = float(paid_amount or 0)
 
     form_data = {
@@ -165,6 +175,8 @@ async def sale_item_submit(
         "sale_discount": discount,
         "trade_in_name": trade_name,
         "trade_in_amount": trade_amount,
+        "gnc_store": gnc_store_val,
+        "gnc_amount": gnc_amount_val,
         "sale_full_name": full_name,
         "sale_phone": phone,
         "sale_birth_date": birth_date,
@@ -217,6 +229,8 @@ async def sale_item_submit(
                 sale_comment=comment,
                 trade_in_name=trade_name,
                 trade_in_amount=trade_amount,
+                gnc_store=gnc_store_val,
+                gnc_amount=gnc_amount_val,
             )
 
             if result.get("error"):
@@ -271,6 +285,8 @@ async def handle_sale_from_form(
     sale_comment: Optional[str] = None,
     trade_in_name: Optional[str] = None,
     trade_in_amount: Optional[float] = None,
+    gnc_store: Optional[str] = None,
+    gnc_amount: Optional[float] = None,
     conn=None,
 ) -> dict[str, Any]:
     accessories = accessories or []
@@ -286,6 +302,8 @@ async def handle_sale_from_form(
         errors.append("Сумма сдачи не может быть отрицательной")
     if trade_in_amount is not None and trade_in_amount < 0:
         errors.append("Сумма trade-in не может быть отрицательной")
+    if gnc_amount is not None and gnc_amount < 0:
+        errors.append("Сумма ГНЦ не может быть отрицательной")
 
     for i, acc in enumerate(accessories):
         if float(acc.get("price", 0) or 0) < 0:
@@ -331,6 +349,8 @@ async def handle_sale_from_form(
             sale_comment=sale_comment,
             trade_in_name=trade_in_name,
             trade_in_amount=trade_in_amount,
+            gnc_store=gnc_store,
+            gnc_amount=gnc_amount,
         )
         if manage_transaction:
             async with session.begin():
@@ -368,10 +388,12 @@ async def _process_sale_logic(
     sale_comment: Optional[str] = None,
     trade_in_name: Optional[str] = None,
     trade_in_amount: Optional[float] = None,
+    gnc_store: Optional[str] = None,
+    gnc_amount: Optional[float] = None,
 ) -> dict[str, Any]:
     """
     Расчёт оплат:
-      товары = цена устройства + сумма аксессуаров − скидка − trade-in
+      товары = цена устройства + сумма аксессуаров − скидка − trade-in − ГНЦ
       UDS   = бонусы (если указаны)
       основной способ = товары − UDS − П/О − оплаты аксессуаров другим способом
       Общая = товары
@@ -402,10 +424,13 @@ async def _process_sale_logic(
     trade_val = float(trade_in_amount or 0)
     if trade_val < 0:
         trade_val = abs(trade_val)
+    gnc_val = float(gnc_amount or 0)
+    if gnc_val < 0:
+        gnc_val = abs(gnc_val)
     prep = float(sale_prepayment or 0)
     other_sum = sum(other_payments.values())
 
-    goods_total = float(sale_price) + accessories_total - discount_val - trade_val
+    goods_total = float(sale_price) + accessories_total - discount_val - trade_val - gnc_val
     if goods_total < 0:
         goods_total = 0.0
 
@@ -449,6 +474,12 @@ async def _process_sale_logic(
             items_list.append({
                 "item_text": f"Trade-in — {(trade_in_name or 'Trade-in').strip()}",
                 "price": -trade_val,
+            })
+        if gnc_val > 0:
+            store = (gnc_store or "ГНЦ").strip()
+            items_list.append({
+                "item_text": f"ГНЦ {store}",
+                "price": -gnc_val,
             })
 
         payment_details = {pt: amt for pt, amt in all_payments.items() if amt > 0}
@@ -521,6 +552,8 @@ async def _process_sale_logic(
         comment=sale_comment,
         trade_in_name=trade_in_name,
         trade_in_amount=trade_val if trade_val > 0 else None,
+        gnc_store=gnc_store,
+        gnc_amount=gnc_val if gnc_val > 0 else None,
     ))
 
     try:
