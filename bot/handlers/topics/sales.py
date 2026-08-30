@@ -24,6 +24,9 @@ TRADE_IN_PATTERNS = [
     r"trade\-in",
 ]
 
+# Допустимое расхождение «Общая» vs Σ оплат (сдача, округление и т.п.)
+PAYMENT_TOTAL_TOLERANCE = 50.0
+
 
 def remove_trade_in_lines(text: str) -> str:
     lines = text.splitlines()
@@ -104,8 +107,10 @@ async def handle_sales_message(message: Message) -> None:
         content = remove_trade_in_lines(content)
         payments = extract_payment_amounts(content, ignore_prepay=True)
 
-        # Сверка Σ оплат с «Общей суммой» (если указана)
-        recon = reconcile_sale_payments(payments, content, tolerance=1.0)
+        # Сверка Σ оплат с «Общей суммой» (если указана); допуск до 50 ₽
+        recon = reconcile_sale_payments(
+            payments, content, tolerance=PAYMENT_TOTAL_TOLERANCE
+        )
         if recon["has_declared"] and not recon["ok"]:
             logger.warning(
                 "⚠️ Расхождение сумм msg=%s: общая=%s оплаты=%s diff=%s payments=%s",
@@ -135,10 +140,11 @@ async def handle_sales_message(message: Message) -> None:
                 logger.exception("Не удалось отправить предупреждение о расхождении сумм")
         elif recon["has_declared"]:
             logger.info(
-                "✓ Суммы совпали msg=%s: общая=%s оплаты=%s",
+                "✓ Суммы совпали msg=%s: общая=%s оплаты=%s (допуск ±%s ₽)",
                 message.message_id,
                 recon["declared"],
                 recon["paid"],
+                PAYMENT_TOTAL_TOLERANCE,
             )
 
         result = await SaleService.process_sale(
