@@ -11,10 +11,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from bot import config
 from bot.db import get_async_session_factory
-from bot.models import DailyPayment, DeletedItem, Item, Sale
+from bot.models import Item
 from bot.repositories.client import ClientRepository
 from bot.services.assortment import AssortmentService
 from bot.services.cache import cache
+from bot.services.finalize_sale import finalize_item_sale
 from web_admin.routes.assortment.notifications import send_sale_notification
 from web_admin.templates import templates
 
@@ -495,39 +496,20 @@ async def _process_sale_logic(
             conn=session,
         )
 
-    main_item = await session.get(Item, item_id)
-    if main_item:
-        session.add(DeletedItem(
-            item_id=main_item.id,
-            text=old_text,
-            serial=old_serial,
-            category_id=old_category_id,
-            reason="sale_from_admin",
-            sale_message_id=sale_message_id,
-        ))
-        await session.delete(main_item)
-
-    session.add(Sale(
+    # Единая запись: DeletedItem + Sale + DailyPayment
+    await finalize_item_sale(
+        session,
         item_id=item_id,
-        count=1,
-        cash=all_payments.get("cash", 0),
-        terminal=all_payments.get("terminal", 0),
-        qr=all_payments.get("qr", 0),
-        transfer=all_payments.get("transfer", 0),
-        invoice=all_payments.get("invoice", 0),
-        installment=all_payments.get("installment", 0),
-        is_accessory=False,
+        item_text=old_text,
+        item_serial=old_serial,
+        category_id=old_category_id,
         message_id=sale_message_id,
-    ))
-
-    for pay_type, amount in all_payments.items():
-        if amount > 0 and pay_type != "uds":
-            session.add(DailyPayment(
-                type="sale",
-                payment_type=pay_type,
-                amount=amount,
-                sale_message_id=sale_message_id,
-            ))
+        payments={k: v for k, v in all_payments.items() if k != "uds"},
+        reason="sale_from_admin",
+        is_accessory=False,
+        delete_item=True,
+        write_payments=True,
+    )
 
     bot = Bot(token=config.BOT_TOKEN)
     asyncio.create_task(send_sale_notification(
