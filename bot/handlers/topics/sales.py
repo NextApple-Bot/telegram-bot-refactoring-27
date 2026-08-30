@@ -9,6 +9,7 @@ from bot.handlers.topics.filters import in_main_group, in_sales
 from bot.repositories import ClientRepository
 from bot.services.message_service import mark_message_processed, safe_react
 from bot.services.payment import PaymentService
+from bot.services.payment_parser import reconcile_sale_payments
 from bot.services.sale import SaleService
 from bot.utils.helpers import send_and_clean
 from bot.utils.parser import extract_payment_amounts, parse_client_data
@@ -62,6 +63,13 @@ def _should_skip_bot_message(message: Message) -> bool:
     return True
 
 
+def _fmt_money(value: float) -> str:
+    n = float(value or 0)
+    if abs(n - round(n)) < 1e-9:
+        return f"{int(round(n)):,}".replace(",", " ")
+    return f"{n:,.2f}".replace(",", " ")
+
+
 @router.message(in_main_group, in_sales, F.text)
 @router.message(in_main_group, in_sales, F.caption)
 async def handle_sales_message(message: Message) -> None:
@@ -95,6 +103,43 @@ async def handle_sales_message(message: Message) -> None:
 
         content = remove_trade_in_lines(content)
         payments = extract_payment_amounts(content, ignore_prepay=True)
+
+        # Сверка Σ оплат с «Общей суммой» (если указана)
+        recon = reconcile_sale_payments(payments, content, tolerance=1.0)
+        if recon["has_declared"] and not recon["ok"]:
+            logger.warning(
+                "⚠️ Расхождение сумм msg=%s: общая=%s оплаты=%s diff=%s payments=%s",
+                message.message_id,
+                recon["declared"],
+                recon["paid"],
+                recon["diff"],
+                payments,
+            )
+            try:
+                await safe_react(message, "⚠️")
+                await send_and_clean(
+                    bot=message.bot,
+                    chat_id=message.chat.id,
+                    text=(
+                        "⚠️ Расхождение сумм в продаже:\n"
+                        f"• Общая сумма: {_fmt_money(recon['declared'])} ₽\n"
+                        f"• Сумма оплат: {_fmt_money(recon['paid'])} ₽\n"
+                        f"• Разница: {_fmt_money(recon['diff'])} ₽\n\n"
+                        "Продажа и платежи всё равно обработаны — проверьте текст."
+                    ),
+                    reply_to_message_id=message.message_id,
+                    message_thread_id=message.message_thread_id or _thread_sales(),
+                    delete_after=90,
+                )
+            except Exception:
+                logger.exception("Не удалось отправить предупреждение о расхождении сумм")
+        elif recon["has_declared"]:
+            logger.info(
+                "✓ Суммы совпали msg=%s: общая=%s оплаты=%s",
+                message.message_id,
+                recon["declared"],
+                recon["paid"],
+            )
 
         result = await SaleService.process_sale(
             content=content,
@@ -134,7 +179,9 @@ async def handle_sales_message(message: Message) -> None:
             await safe_react(message, "⚡️")
             logger.info("Аксессуар msg=%s", message.message_id)
         elif result.get("sold_items"):
-            await safe_react(message, "🔥")
+            # Не затираем ⚠️ при расхождении сумм
+            if not (recon.get("has_declared") and not recon.get("ok")):
+                await safe_react(message, "🔥")
             logger.info(
                 "✅ Продажа: %s товаров msg=%s → %s",
                 len(result["sold_items"]),
@@ -157,7 +204,8 @@ async def handle_sales_message(message: Message) -> None:
             )
             logger.warning("SN не найдены msg=%s: %s", message.message_id, result["not_found"])
         else:
-            await safe_react(message, "👀")
+            if not (recon.get("has_declared") and not recon.get("ok")):
+                await safe_react(message, "👀")
             logger.info(
                 "Обработано без действий msg=%s serials=%s payments=%s",
                 message.message_id,
