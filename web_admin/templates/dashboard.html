@@ -392,18 +392,19 @@ async function toggleSeller(sellerId) {
     } catch (e) { alert('Ошибка при обновлении'); }
 }
 
-/** Извлекает число из строки вида «697 000», «0₽», «1.234,56» */
+/** Извлекает число из строки вида «697 000», «0₽», «1.234,56». Только первая «сумма». */
 function extractNumber(raw) {
     if (raw == null) return null;
-    let s = String(raw).trim()
+    // Берём только до конца строки / до скобки / до эмодзи-мусора
+    let s = String(raw).split(/[\n\r(]/)[0]
         .replace(/\u00a0/g, ' ')
-        .replace(/[₽руб\.]/gi, '')
-        .replace(/\s+/g, '')
-        .replace(/,/g, '.');
-    // убираем всё кроме цифр и точки
+        .replace(/[₽руб]/gi, '')
+        .trim();
+    // Убираем пробелы-разделители тысяч: «697 000» → «697000»
+    s = s.replace(/\s+/g, '').replace(/,/g, '.');
+    // Только цифры и одна точка
     s = s.replace(/[^0-9.]/g, '');
     if (!s) return null;
-    // если несколько точек — оставляем последнюю как десятичную
     const parts = s.split('.');
     if (parts.length > 2) {
         s = parts.slice(0, -1).join('') + '.' + parts[parts.length - 1];
@@ -413,17 +414,8 @@ function extractNumber(raw) {
 }
 
 /**
- * Парсит текст итога дня в стиле магазина.
- * Поддерживает:
- *  • Продаж: 12
- *  • Предзаказов: 0
- *  • Броней: 0
- *  2. Наличные — 697 000
- *  3. QR-код — 0
- *  5. Оплата по счёту — 0₽
- *  6. Терминал — 0
- *  7. Перевод — 0₽
- *  4. Рассрочка — 0
+ * Парсит текст итога дня.
+ * Важно: числа читаются только в пределах одной строки (не перескакивают на следующую).
  */
 function parseDailyReport() {
     const text = (document.getElementById('pasteReportText').value || '').trim();
@@ -446,29 +438,45 @@ function parseDailyReport() {
         installment: null,
     };
 
-    // Счётчики: • Продаж: 12  /  Продаж — 12  /  Продажи: 12
+    // Число: только цифры/пробелы/точки/запятые до конца строки или до скобки
+    // (не захватываем перевод строки — это чинило «697 000» + «3.» → 6970003)
+    const NUM = '([0-9][0-9 \\u00a0.,]*)';
+
+    // Счётчики — ищем явные метки, не «7 продаж» из строки плана
     const countPatterns = [
-        { key: 'sales_count', re: /(?:^|[•\-–—]|\d+[.)])\s*Продаж(?:и|а)?\s*[:\-–—]\s*([\d\s\u00a0]+)/im },
-        { key: 'preorders_count', re: /(?:^|[•\-–—]|\d+[.)])\s*Предзаказ(?:ов|а|ы)?\s*[:\-–—]\s*([\d\s\u00a0]+)/im },
-        { key: 'bookings_count', re: /(?:^|[•\-–—]|\d+[.)])\s*Брон(?:ей|и|ь)\s*[:\-–—]\s*([\d\s\u00a0]+)/im },
+        { key: 'sales_count', re: new RegExp('(?:^|[•\\-–—]|\\d+[.)])\\s*Продаж(?:и|а)?\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'preorders_count', re: new RegExp('(?:^|[•\\-–—]|\\d+[.)])\\s*Предзаказ(?:ов|а|ы)?\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'bookings_count', re: new RegExp('(?:^|[•\\-–—]|\\d+[.)])\\s*Брон(?:ей|и|ь)\\s*[:\\-–—]\\s*' + NUM, 'im') },
     ];
     for (const { key, re } of countPatterns) {
         const m = text.match(re);
         if (m) result[key] = extractNumber(m[1]);
     }
 
-    // Платежи — несколько вариантов написания
+    // Платежи — только в пределах строки
     const paymentPatterns = [
-        { key: 'cash', re: /(?:Наличн(?:ые|ых|ая)|Нал)\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
-        { key: 'terminal', re: /Терминал\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
-        { key: 'qr', re: /QR(?:[\-\s]?код)?\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
-        { key: 'transfer', re: /Перевод\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
-        { key: 'invoice', re: /(?:Оплата\s+по\s+сч[её]ту|По\s+сч[её]ту|Сч[её]т)\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
-        { key: 'installment', re: /Рассрочк[аи]\s*[:\-–—]\s*([\d\s\u00a0.,]+)/im },
+        { key: 'cash', re: new RegExp('(?:Наличн(?:ые|ых|ая)|Нал)\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'terminal', re: new RegExp('Терминал\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'qr', re: new RegExp('QR(?:[\\-\\s]?код)?\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'transfer', re: new RegExp('Перевод\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'invoice', re: new RegExp('(?:Оплата\\s+по\\s+сч[её]ту|По\\s+сч[её]ту)\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'installment', re: new RegExp('Рассрочк[аи]\\s*[:\\-–—]\\s*' + NUM, 'im') },
     ];
+    let foundAnyPayment = false;
     for (const { key, re } of paymentPatterns) {
         const m = text.match(re);
-        if (m) result[key] = extractNumber(m[1]);
+        if (m) {
+            result[key] = extractNumber(m[1]);
+            foundAnyPayment = true;
+        }
+    }
+
+    // Если нашли хотя бы один платёж — остальные незаполненные обнуляем,
+    // чтобы не оставались старые значения от предыдущего дня
+    if (foundAnyPayment) {
+        for (const k of ['cash', 'terminal', 'qr', 'transfer', 'invoice', 'installment']) {
+            if (result[k] === null) result[k] = 0;
+        }
     }
 
     // Заполняем форму
@@ -483,13 +491,11 @@ function parseDailyReport() {
             input.value = Number.isInteger(val) ? val : Math.round(val * 100) / 100;
             filled++;
             found.push(key);
-            // лёгкая подсветка
             input.classList.add('ring-2', 'ring-emerald-400');
             setTimeout(() => input.classList.remove('ring-2', 'ring-emerald-400'), 1800);
         }
     }
 
-    // Комментарий
     const reasonInput = form.querySelector('[name="reason"]');
     if (reasonInput && !reasonInput.value.trim()) {
         reasonInput.value = 'из итога дня (автопарсинг)';
