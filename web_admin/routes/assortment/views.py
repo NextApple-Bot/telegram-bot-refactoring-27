@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, not_, or_, select
 
 from bot.db import get_async_session_factory
 from bot.models import Category, Item
@@ -18,6 +18,37 @@ ALLOWED_SORT_FIELDS = {
     "created_at": Item.created_at,
 }
 
+ALLOWED_SIM_TYPES = {"", "esim", "sim_esim"}
+
+
+def _apply_sim_filter(query, sim_type: str | None):
+    """Фильтр по типу SIM в названии товара: eSIM или SIM+eSIM."""
+    st = (sim_type or "").strip().lower()
+    if st not in ALLOWED_SIM_TYPES or not st:
+        return query
+
+    # SIM+eSIM / SIM + eSIM / (SIM+eSIM)
+    sim_esim_cond = or_(
+        Item.text.ilike("%SIM+eSIM%"),
+        Item.text.ilike("%SIM + eSIM%"),
+        Item.text.ilike("%SIM+ESIM%"),
+        Item.text.ilike("%SIM + ESIM%"),
+    )
+
+    if st == "sim_esim":
+        return query.where(sim_esim_cond)
+
+    # Только eSIM: есть eSIM, но нет SIM+
+    if st == "esim":
+        return query.where(
+            and_(
+                Item.text.ilike("%eSIM%"),
+                not_(sim_esim_cond),
+            )
+        )
+
+    return query
+
 
 @router.get("/", response_class=HTMLResponse)
 async def list_assortment(
@@ -26,10 +57,14 @@ async def list_assortment(
     per_page: int = Query(50, ge=10, le=200),
     search: str | None = Query(None),
     category_id: str | None = Query(None),
+    sim_type: str | None = Query(None),
     sort_by: str = Query("id", pattern="^(id|text|serial|category_name|is_booked|created_at)$"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
 ):
     async_session = get_async_session_factory()
+    sim_type_clean = (sim_type or "").strip().lower()
+    if sim_type_clean not in ALLOWED_SIM_TYPES:
+        sim_type_clean = ""
 
     async with async_session() as session:
         offset = (page - 1) * per_page
@@ -58,6 +93,8 @@ async def list_assortment(
         if category_id and category_id.isdigit():
             base_query = base_query.where(Item.category_id == int(category_id))
 
+        base_query = _apply_sim_filter(base_query, sim_type_clean)
+
         # Сортировка
         sort_column = ALLOWED_SORT_FIELDS.get(sort_by, Item.id)
         order_direction = sort_column.desc() if sort_order == "desc" else sort_column.asc()
@@ -77,6 +114,8 @@ async def list_assortment(
             )
         if category_id and category_id.isdigit():
             count_query = count_query.where(Item.category_id == int(category_id))
+
+        count_query = _apply_sim_filter(count_query, sim_type_clean)
 
         total = (await session.execute(count_query)).scalar_one()
         total_pages = (total + per_page - 1) // per_page if total > 0 else 1
@@ -104,6 +143,7 @@ async def list_assortment(
             "total": total,
             "search": search,
             "category_id": category_id,
+            "sim_type": sim_type_clean,
             "categories": categories,
             "sort_by": sort_by,
             "sort_order": sort_order,
