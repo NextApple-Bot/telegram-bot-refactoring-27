@@ -6,6 +6,7 @@
   2) Sale и DailyPayment по sale_message_id удаляются (статистика откатывается)
   3) DeletedItem помечается / удаляется
   4) в топик продаж уходит «❌ Отмена продажи»
+  5) StatsAdjustment за день продажи сбрасывается (цифры снова = raw)
 
 «Отменить все продажи» — массовая отмена всех проданных позиций
 с двухэтапным подтверждением (ввод слова ОТМЕНИТЬ).
@@ -26,6 +27,7 @@ from bot.db import get_async_session_factory
 from bot.models import DailyPayment, DeletedItem, Item, Sale
 from bot.services.assortment import AssortmentService
 from bot.services.cache import cache
+from web_admin.services.day_stats import as_date, clear_adjustments_for_dates
 from web_admin.templates import templates
 
 logger = logging.getLogger(__name__)
@@ -133,7 +135,6 @@ async def cancel_sale(deleted_id: int):
                 original_item_id = deleted.item_id
                 category_id = deleted.category_id
 
-                # Серийник уже снова в складе?
                 if serial:
                     exists = await session.scalar(
                         select(Item.id).where(Item.serial == serial).limit(1)
@@ -174,14 +175,21 @@ async def cancel_sale(deleted_id: int):
                     )
 
                 deleted.restored = True
+                day_for_adj = as_date(deleted.deleted_at)
                 await session.delete(deleted)
 
+                # Сбрасываем ручные корректировки за день продажи,
+                # иначе дашборд продолжит показывать старые цифры.
+                if day_for_adj:
+                    await clear_adjustments_for_dates(session, [day_for_adj])
+
                 logger.info(
-                    "Отмена продажи deleted_id=%s item_id=%s sale_message_id=%s serial=%s",
+                    "Отмена продажи deleted_id=%s item_id=%s sale_message_id=%s serial=%s day=%s",
                     deleted_id,
                     original_item_id,
                     sale_message_id,
                     serial,
+                    day_for_adj,
                 )
 
         try:
@@ -190,7 +198,6 @@ async def cancel_sale(deleted_id: int):
             pass
         await AssortmentService.invalidate_cache()
 
-        # Уведомление в топик (после коммита)
         asyncio.create_task(
             _notify_cancel(item_text, serial or "", sale_message_id)
         )
@@ -222,6 +229,7 @@ async def cancel_all_sales(confirm: str = Form("...")):
     async_session = get_async_session_factory()
     cancelled = 0
     restored_items: list[tuple[str, str | None, int | None]] = []
+    affected_days: set = set()
 
     try:
         async with async_session() as session:
@@ -277,11 +285,21 @@ async def cancel_all_sales(confirm: str = Form("...")):
                         )
 
                     deleted.restored = True
+                    d_adj = as_date(deleted.deleted_at)
+                    if d_adj:
+                        affected_days.add(d_adj)
                     await session.delete(deleted)
                     cancelled += 1
                     restored_items.append((item_text, serial, sale_message_id))
 
-                logger.info("Массовая отмена продаж: отменено %s шт.", cancelled)
+                if affected_days:
+                    await clear_adjustments_for_dates(session, affected_days)
+
+                logger.info(
+                    "Массовая отмена продаж: отменено %s шт., сброшены корректировки за %s дней",
+                    cancelled,
+                    len(affected_days),
+                )
 
         try:
             await cache.delete(f"dashboard:summary:{date.today().isoformat()}")
@@ -343,7 +361,6 @@ async def _notify_cancel_all(
             "",
             "Товары возвращены в ассортимент. Статистика откатана.",
         ]
-        # Показываем первые 10 позиций, чтобы не раздувать сообщение
         preview = items[:10]
         if preview:
             lines.append("")
