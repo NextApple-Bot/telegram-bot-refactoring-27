@@ -241,3 +241,21 @@ class SellerDay(Base):
     __table_args__ = (
         UniqueConstraint("seller_id", "date", name="uq_seller_date"),
     )
+
+
+# ====================== АУДИТ АДМИНКИ ======================
+
+class AdminAuditLog(Base):
+    """Журнал важных действий в web-admin (login, close_day, cancel...)."""
+
+    __tablename__ = "admin_audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    action = Column(String(64), nullable=False, index=True)
+    detail = Column(Text)
+    ip = Column(String(64))
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("idx_admin_audit_action_created", "action", "created_at"),
+    )
