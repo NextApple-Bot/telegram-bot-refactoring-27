@@ -17,6 +17,22 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+def _thread_preorder() -> int:
+    try:
+        return int(config.THREAD_PREORDER)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _booking_payments_from_block(booking_lines: list[str]) -> dict[str, float]:
+    """П/О из блока брони: сначала строки предоплаты, иначе все оплаты."""
+    text = "\n".join(booking_lines)
+    payments = extract_prepayments(text)
+    if any(float(v or 0) > 0 for v in payments.values()):
+        return payments
+    return extract_payment_amounts(text, ignore_prepay=False)
+
+
 @router.message(in_main_group, in_preorder, F.text)
 @router.message(in_main_group, in_preorder, F.caption)
 async def handle_preorder(message: Message):
@@ -44,7 +60,8 @@ async def handle_preorder(message: Message):
 
     lines = content.strip().splitlines()
     booking_indices = [
-        i for i, line in enumerate(lines)
+        i
+        for i, line in enumerate(lines)
         if re.match(r"^бронь\s*:?$", line.strip().lower())
     ]
 
@@ -74,14 +91,16 @@ async def handle_preorder(message: Message):
 
         for i, start_idx in enumerate(booking_indices):
             start = start_idx + 1
-            end = booking_indices[i + 1] if i + 1 < len(booking_indices) else len(lines)
+            end = (
+                booking_indices[i + 1]
+                if i + 1 < len(booking_indices)
+                else len(lines)
+            )
             booking_lines = lines[start:end]
             if not booking_lines:
                 continue
 
-            booking_payments = extract_payment_amounts(
-                "\n".join(booking_lines), ignore_prepay=False
-            )
+            booking_payments = _booking_payments_from_block(booking_lines)
 
             try:
                 result = await BookingService.process_booking(
@@ -100,11 +119,21 @@ async def handle_preorder(message: Message):
                         chat_id=message.chat.id,
                         text="❌ В блоке брони нет товаров с серийными номерами.",
                         reply_to_message_id=message.message_id,
-                        message_thread_id=config.THREAD_PREORDER,
+                        message_thread_id=message.message_thread_id or _thread_preorder(),
                         delete_after=60,
                     )
                 logger.warning("Блок брони не обработан: %s", result)
                 continue
+
+            # Оплаты брони в структуру дня (DailyPayment)
+            if any(float(v or 0) > 0 for v in (booking_payments or {}).values()):
+                try:
+                    await PaymentService.add_payments_batch(
+                        booking_payments, source_type="booking"
+                    )
+                    logger.info("💰 Платежи брони: %s", booking_payments)
+                except Exception:
+                    logger.exception("Не удалось записать платежи брони")
 
             await safe_react(message, "👍")
             booked_count = len(result.get("results", []))
@@ -113,7 +142,7 @@ async def handle_preorder(message: Message):
                 chat_id=message.chat.id,
                 text=f"✅ Добавлена бронь на {booked_count} товаров.",
                 reply_to_message_id=message.message_id,
-                message_thread_id=config.THREAD_PREORDER,
+                message_thread_id=message.message_thread_id or _thread_preorder(),
                 delete_after=60,
             )
             logger.info("Бронь успешно обработана: %s товаров", booked_count)
