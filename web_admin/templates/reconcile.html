@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Сверка дня{% endblock %}
+{% block content %}
+<div class="flex flex-col gap-4 mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Сверка дня</h1>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">
+                Факт из БД → корректировки → итог на дашборде ·
+                <span class="font-semibold text-slate-700 dark:text-slate-200">{{ target_date }}</span>
+                {% if not is_today %}<span class="text-amber-600 dark:text-amber-400 text-sm">· не сегодня</span>{% endif %}
+            </p>
+        </div>
+        <a href="/admin/dashboard?target_date={{ target_date_iso }}" class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800">
+            <i class="fas fa-arrow-left text-xs"></i> К дашборду
+        </a>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-card">
+        <a href="/admin/dashboard/reconcile?target_date={{ yesterday_iso }}" class="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"><i class="fas fa-chevron-left text-sm"></i></a>
+        <form method="get" action="/admin/dashboard/reconcile" class="flex items-center gap-2 flex-1 min-w-[12rem]">
+            <input type="date" name="target_date" value="{{ target_date_iso }}" class="flex-1 min-w-0 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" onchange="this.form.submit()">
+            <button type="submit" class="px-3 py-2 text-sm font-medium bg-slate-900 dark:bg-indigo-600 text-white rounded-xl">Открыть</button>
+        </form>
+        <a href="/admin/dashboard/reconcile?target_date={{ tomorrow_iso }}" class="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"><i class="fas fa-chevron-right text-sm"></i></a>
+        {% if not is_today %}
+        <a href="/admin/dashboard/reconcile?target_date={{ real_today_iso }}" class="px-3 py-2 text-xs font-medium rounded-xl border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40">Сегодня</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="mb-4 rounded-2xl border {% if reconcile.has_adjustments %}border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/20{% else %}border-emerald-200 dark:border-emerald-800/50 bg-emerald-50/50 dark:bg-emerald-950/20{% endif %} p-4">
+    {% if reconcile.has_adjustments %}
+    <p class="text-sm font-medium text-amber-900 dark:text-amber-200">
+        <i class="fas fa-exclamation-circle mr-1"></i>
+        Есть расхождения: {{ reconcile.changed_count }} метрик с корректировками.
+        Итог на дашборде = факт + Δ.
+    </p>
+    {% else %}
+    <p class="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+        <i class="fas fa-check-circle mr-1"></i>
+        Корректировок нет — цифры дашборда совпадают с фактом из БД.
+    </p>
+    {% endif %}
+    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+        Факт = Sale / DailyPayment / Preorder / Booking за день (Europe/Moscow).
+        Корректировки не удаляют продажи.
+    </p>
+</div>
+
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-card overflow-hidden mb-6">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-slate-100 dark:border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500">
+                    <th class="px-4 py-3 font-medium">Метрика</th>
+                    <th class="px-4 py-3 font-medium text-right">Факт (БД)</th>
+                    <th class="px-4 py-3 font-medium text-right">Δ корр.</th>
+                    <th class="px-4 py-3 font-medium text-right">Итог</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                {% for r in reconcile.rows %}
+                <tr class="{% if r.changed %}bg-amber-50/60 dark:bg-amber-950/20{% endif %}{% if r.is_total %} font-semibold bg-slate-50 dark:bg-slate-800/40{% endif %}">
+                    <td class="px-4 py-2.5 text-slate-800 dark:text-slate-200">{{ r.label }}</td>
+                    <td class="px-4 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                        {% if r.kind == 'money' %}{{ "{:,.0f}".format(r.raw).replace(',', ' ') }}{% else %}{{ r.raw|int }}{% endif %}
+                    </td>
+                    <td class="px-4 py-2.5 text-right tabular-nums {% if r.changed %}text-amber-700 dark:text-amber-300 font-medium{% else %}text-slate-400{% endif %}">
+                        {% if r.changed %}
+                            {% if r.delta > 0 %}+{% endif %}{% if r.kind == 'money' %}{{ "{:,.0f}".format(r.delta).replace(',', ' ') }}{% else %}{{ r.delta|int }}{% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="px-4 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">
+                        {% if r.kind == 'money' %}{{ "{:,.0f}".format(r.final).replace(',', ' ') }}{% else %}{{ r.final|int }}{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if adjustments_detail %}
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-card p-5">
+    <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Записи корректировок</h2>
+    <ul class="space-y-2">
+        {% for a in adjustments_detail %}
+        <li class="text-sm border border-slate-100 dark:border-slate-800 rounded-xl px-3 py-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="font-medium text-slate-800 dark:text-slate-200">{{ a.metric }}</span>
+                <span class="text-xs tabular-nums text-slate-500">база {{ "{:,.0f}".format(a.base_value).replace(',', ' ') }} → цель {{ "{:,.0f}".format(a.target_value).replace(',', ' ') }} (Δ {{ "{:,.0f}".format(a.delta).replace(',', ' ') }})</span>
+            </div>
+            {% if a.reason %}<p class="text-xs text-slate-500 mt-1">{{ a.reason }}</p>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+{% endblock %}
