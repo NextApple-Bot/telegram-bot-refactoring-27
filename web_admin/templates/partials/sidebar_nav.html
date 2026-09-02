@@ -23,9 +23,16 @@
 
 <a href="/admin/assortment"
    class="flex items-center gap-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
-          {% if current_path.startswith('/admin/assortment') %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+          {% if current_path.startswith('/admin/assortment') and '/matrix' not in current_path %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
     <i class="fas fa-boxes w-5 text-center text-base opacity-80"></i>
     <span class="nav-text" x-show="!collapsed" x-cloak>Ассортимент</span>
+</a>
+
+<a href="/admin/assortment/matrix"
+   class="flex items-center gap-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+          {% if '/matrix' in current_path %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+    <i class="fas fa-th w-5 text-center text-base opacity-80"></i>
+    <span class="nav-text" x-show="!collapsed" x-cloak>SKU-матрица</span>
 </a>
 
 <a href="/admin/clients"
