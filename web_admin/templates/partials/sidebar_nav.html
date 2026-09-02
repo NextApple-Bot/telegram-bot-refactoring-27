@@ -2,9 +2,16 @@
 
 <a href="/admin/dashboard"
    class="flex items-center gap-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
-          {% if current_path.startswith('/admin/dashboard') %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+          {% if current_path.startswith('/admin/dashboard') and '/reconcile' not in current_path %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
     <i class="fas fa-chart-line w-5 text-center text-base opacity-80"></i>
     <span class="nav-text" x-show="!collapsed" x-cloak>Дашборд</span>
+</a>
+
+<a href="/admin/dashboard/reconcile"
+   class="flex items-center gap-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+          {% if '/reconcile' in current_path %}bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+    <i class="fas fa-balance-scale w-5 text-center text-base opacity-80"></i>
+    <span class="nav-text" x-show="!collapsed" x-cloak>Сверка дня</span>
 </a>
 
 <a href="/admin/search"
