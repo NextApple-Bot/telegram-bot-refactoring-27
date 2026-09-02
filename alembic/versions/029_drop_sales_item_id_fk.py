@@ -6,6 +6,9 @@ Create Date: 2026-09-02
 
 После продажи товар удаляется из items, но sales.item_id остаётся
 как историческая ссылка. Жёсткий FK на items ломает запись Sale.
+
+Важно: только DROP CONSTRAINT IF EXISTS — иначе PostgreSQL абортит
+транзакцию при отсутствии constraint, и alembic_version не обновляется.
 """
 from alembic import op
 from sqlalchemy import inspect, text
@@ -23,45 +26,25 @@ def upgrade() -> None:
     if not inspector.has_table("sales"):
         return
 
-    # Ищем любые FK с sales.item_id → items
-    fks = inspector.get_foreign_keys("sales")
-    for fk in fks:
+    names: set[str] = set()
+
+    for fk in inspector.get_foreign_keys("sales"):
         constrained = fk.get("constrained_columns") or []
         referred = (fk.get("referred_table") or "").lower()
-        if "item_id" in constrained and referred in ("items", "item"):
-            name = fk.get("name")
-            if name:
-                op.drop_constraint(name, "sales", type_="foreignkey")
+        name = fk.get("name")
+        if name and "item_id" in constrained and referred in ("items", "item"):
+            names.add(name)
 
-    # На всякий случай типичные имена
-    for name in ("sales_item_id_fkey", "fk_sales_item_id_items"):
-        try:
-            op.drop_constraint(name, "sales", type_="foreignkey")
-        except Exception:
-            pass
+    # Типичные имена на случай, если inspector что-то пропустил
+    names.update({"sales_item_id_fkey", "fk_sales_item_id_items"})
 
-    # PostgreSQL: если constraint остался без имени в inspector
-    try:
+    for name in sorted(names):
+        # IF EXISTS — не абортит транзакцию, если constraint уже нет
         conn.execute(
-            text(
-                """
-                DO $$ BEGIN
-                  IF EXISTS (
-                    SELECT 1 FROM information_schema.table_constraints
-                    WHERE table_name = 'sales'
-                      AND constraint_type = 'FOREIGN KEY'
-                      AND constraint_name = 'sales_item_id_fkey'
-                  ) THEN
-                    ALTER TABLE sales DROP CONSTRAINT sales_item_id_fkey;
-                  END IF;
-                END $$;
-                """
-            )
+            text(f'ALTER TABLE sales DROP CONSTRAINT IF EXISTS "{name}"')
         )
-    except Exception:
-        pass
 
 
 def downgrade() -> None:
-    # Не восстанавливаем FK: он конфликтует с удалением items после продажи
+    # Не восстанавливаем FK: конфликтует с удалением items после продажи
     pass
