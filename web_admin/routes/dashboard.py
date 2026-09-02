@@ -42,7 +42,7 @@ DEFAULT_SELLERS = ("Тимофей", "Максим")
 LOW_STOCK_THRESHOLD = max(0, int(os.getenv("LOW_STOCK_THRESHOLD", "3")))
 SKIP_CATEGORY_NAMES = {"б/у", "б/у:", "ns", "ns:", "общее", "общее:"}
 
-# Только эти семейства в блоке «Мало на складе»
+# Только эти семейства в блоке «Закончились на складе»
 LOW_STOCK_FAMILIES = (
     "iphone",
     "ipad",
@@ -121,6 +121,7 @@ def _variant_label(text: str | None, serial: str | None = None) -> str:
 
 
 async def _low_stock_alerts(session, threshold: int) -> list[dict]:
+    """Категории ключевых брендов, где свободно 0 (закончились)."""
     free_q = (
         select(
             Category.id,
@@ -153,31 +154,35 @@ async def _low_stock_alerts(session, threshold: int) -> list[dict]:
             continue
         free = int(free_count or 0)
         booked = booked_map.get(cat_id, 0)
-        if free == 0 and booked == 0:
+        # Только полностью закончившиеся (свободно 0)
+        if free != 0:
             continue
-        if free <= threshold:
-            candidate_ids.append(cat_id)
-            meta[cat_id] = {
-                "name": name_clean,
-                "free": free,
-                "booked": booked,
-                "total": free + booked,
-                "level": "critical" if free == 0 else "warning",
-            }
+        candidate_ids.append(cat_id)
+        meta[cat_id] = {
+            "name": name_clean,
+            "free": free,
+            "booked": booked,
+            "total": free + booked,
+            "level": "critical",
+        }
 
     if not candidate_ids:
         return []
 
+    # Свободных нет — показываем что осталось на броне (если есть)
     items_q = await session.execute(
-        select(Item.category_id, Item.text, Item.serial).where(
+        select(Item.category_id, Item.text, Item.serial, Item.is_booked).where(
             Item.category_id.in_(candidate_ids),
-            Item.is_booked.is_(False),
         )
     )
     variants_map: dict[int, dict[str, int]] = {cid: {} for cid in candidate_ids}
-    for cat_id, text, serial in items_q.all():
+    booked_variants_map: dict[int, dict[str, int]] = {cid: {} for cid in candidate_ids}
+    for cat_id, text, serial, is_booked in items_q.all():
         label = _variant_label(text, serial)
-        variants_map[cat_id][label] = variants_map[cat_id].get(label, 0) + 1
+        if is_booked:
+            booked_variants_map[cat_id][label] = booked_variants_map[cat_id].get(label, 0) + 1
+        else:
+            variants_map[cat_id][label] = variants_map[cat_id].get(label, 0) + 1
 
     alerts = []
     for cat_id in candidate_ids:
@@ -186,6 +191,13 @@ async def _low_stock_alerts(session, threshold: int) -> list[dict]:
             {"name": name, "count": cnt}
             for name, cnt in sorted(
                 variants_map.get(cat_id, {}).items(),
+                key=lambda x: (x[1], x[0].lower()),
+            )
+        ]
+        booked_variants = [
+            {"name": name, "count": cnt}
+            for name, cnt in sorted(
+                booked_variants_map.get(cat_id, {}).items(),
                 key=lambda x: (x[1], x[0].lower()),
             )
         ]
@@ -198,6 +210,7 @@ async def _low_stock_alerts(session, threshold: int) -> list[dict]:
                 "total": m["total"],
                 "level": m["level"],
                 "variants": variants,
+                "booked_variants": booked_variants,
             }
         )
     return alerts
