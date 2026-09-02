@@ -1,7 +1,16 @@
+"""
+Сервис обработки бронирования товаров из топика «Предзаказы».
+
+Использует единый контракт finalize_item_booking:
+  Item.is_booked + метка текста + Booking + DailyPayment(type=booking).
+"""
+from __future__ import annotations
+
 import logging
-from datetime import datetime
 from typing import Any
 
+from bot.db import get_async_session_factory
+from bot.services.finalize_booking import finalize_item_booking
 from bot.utils.validators import extract_serials
 
 logger = logging.getLogger(__name__)
@@ -9,141 +18,140 @@ logger = logging.getLogger(__name__)
 
 class BookingService:
     """
-    Сервис обработки бронирования товаров из топика «Предзаказы».
+    Обработка блока бронирования из топика.
 
-    Отвечает за:
     - Поиск товаров по тексту или серийному номеру
-    - Пометку товаров как забронированных
-    - Сохранение статистики брони
-    - Возврат детального отчёта по каждому товару
+    - Финализация через finalize_item_booking (одна транзакция на блок)
+    - Платежи блока пишутся один раз (на первый успешно забронированный item)
     """
 
     @staticmethod
     async def process_booking(
         booking_lines: list[str],
-        payments: dict[str, float] | None = None
+        payments: dict[str, float] | None = None,
     ) -> dict[str, Any]:
-        """
-        Обрабатывает блок бронирования.
-
-        Args:
-            booking_lines: Список строк из сообщения (включая строки с оплатой)
-            payments: Уже извлечённые суммы платежей (опционально).
-                      Если не переданы — извлекаются автоматически.
-
-        Returns:
-            dict с ключами:
-                - success: True/False
-                - reason: причина неудачи (например "no_items")
-                - results: список результатов по каждому товару
-                - payments: использованные суммы платежей
-        """
-        # Локальные импорты для предотвращения циклических зависимостей
         from bot.repositories.item import ItemRepository
-        from bot.repositories.stats import StatsRepository
 
-        # Фильтруем только строки, содержащие серийные номера
         item_lines = [line for line in booking_lines if extract_serials(line)]
 
         if not item_lines:
             logger.warning("Блок брони не содержит товаров с серийными номерами")
             return {"success": False, "reason": "no_items"}
 
-        # Если платежи не переданы — извлекаем из всех строк блока
         if payments is None:
             from bot.services.payment_parser import extract_payment_amounts
-            payments = extract_payment_amounts('\n'.join(booking_lines), ignore_prepay=False)
 
-        total_paid = sum(payments.values())
+            payments = extract_payment_amounts(
+                "\n".join(booking_lines), ignore_prepay=False
+            )
+
+        total_paid = float(sum(float(v or 0) for v in (payments or {}).values()))
         amount_per_item = total_paid / len(item_lines) if total_paid > 0 else 0.0
 
         results: list[dict[str, Any]] = []
         processed_count = 0
         failed_count = 0
+        payments_written = False
 
-        for item_line in item_lines:
-            try:
-                # Сначала пытаемся найти по полному тексту строки
-                item_info = await ItemRepository.get_item_by_text(item_line)
+        async_session = get_async_session_factory()
+        async with async_session() as session:
+            async with session.begin():
+                for item_line in item_lines:
+                    try:
+                        item_info = await ItemRepository.get_item_by_text(
+                            item_line, conn=session
+                        )
+                        if not item_info:
+                            serials = extract_serials(item_line)
+                            if serials:
+                                item_info = await ItemRepository.get_item_by_serial(
+                                    serials[0], conn=session
+                                )
 
-                # Если не нашли по тексту — ищем по первому серийному номеру
-                if not item_info:
-                    serials = extract_serials(item_line)
-                    if serials:
-                        item_info = await ItemRepository.get_item_by_serial(serials[0])
+                        if not item_info:
+                            results.append(
+                                {
+                                    "line": item_line,
+                                    "status": "not_found",
+                                    "serial": None,
+                                }
+                            )
+                            logger.warning("Товар для брони не найден: %s", item_line)
+                            failed_count += 1
+                            continue
 
-                if not item_info:
-                    results.append({
-                        "line": item_line,
-                        "status": "not_found",
-                        "serial": None
-                    })
-                    logger.warning(f"Товар для брони не найден: {item_line}")
-                    failed_count += 1
-                    continue
+                        if "id" not in item_info:
+                            logger.error("Item info без id: %s", item_info)
+                            results.append(
+                                {
+                                    "line": item_line,
+                                    "status": "error",
+                                    "reason": "no_id",
+                                    "serial": item_info.get("serial"),
+                                }
+                            )
+                            failed_count += 1
+                            continue
 
-                # Проверка наличия id (защита от некорректных данных из репозитория)
-                if "id" not in item_info:
-                    logger.error(f"Item info не содержит 'id': {item_info}")
-                    results.append({
-                        "line": item_line,
-                        "status": "error",
-                        "reason": "no_id",
-                        "serial": item_info.get("serial")
-                    })
-                    failed_count += 1
-                    continue
+                        write_pay = (not payments_written) and total_paid > 0
+                        meta = await finalize_item_booking(
+                            session,
+                            item_id=item_info["id"],
+                            total_amount=amount_per_item,
+                            payments=payments if write_pay else None,
+                            write_payments=write_pay,
+                            mark_text=True,
+                        )
+                        if write_pay:
+                            payments_written = True
 
-                # Формируем новый текст с отметкой о брони
-                today = datetime.now().strftime("%d.%m.%y")
-                new_text = f"{item_info['text']} (Бронь от {today})"
-
-                # Помечаем товар как забронированный
-                await ItemRepository.mark_item_booked(item_info["id"], new_text)
-
-                # Сохраняем статистику брони
-                await StatsRepository.add_booking(
-                    item_id=item_info["id"],
-                    total_amount=amount_per_item
-                )
-
-                results.append({
-                    "line": item_line,
-                    "status": "booked",
-                    "serial": item_info.get("serial"),
-                    "item_id": item_info["id"]
-                })
-
-                processed_count += 1
-                logger.info(
-                    f"✅ Забронирован товар: id={item_info['id']}, "
-                    f"serial={item_info.get('serial')}, amount={amount_per_item:.2f}"
-                )
-
-            except Exception as e:
-                logger.exception(f"Ошибка при бронировании строки: {item_line}")
-                results.append({
-                    "line": item_line,
-                    "status": "error",
-                    "reason": str(e),
-                    "serial": extract_serials(item_line)[0] if extract_serials(item_line) else None
-                })
-                failed_count += 1
+                        results.append(
+                            {
+                                "line": item_line,
+                                "status": "booked",
+                                "serial": meta.get("serial") or item_info.get("serial"),
+                                "item_id": item_info["id"],
+                            }
+                        )
+                        processed_count += 1
+                        logger.info(
+                            "✅ Забронирован: id=%s serial=%s amount=%.2f",
+                            item_info["id"],
+                            item_info.get("serial"),
+                            amount_per_item,
+                        )
+                    except Exception as e:
+                        logger.exception("Ошибка бронирования строки: %s", item_line)
+                        results.append(
+                            {
+                                "line": item_line,
+                                "status": "error",
+                                "reason": str(e),
+                                "serial": (
+                                    extract_serials(item_line)[0]
+                                    if extract_serials(item_line)
+                                    else None
+                                ),
+                            }
+                        )
+                        failed_count += 1
 
         success = processed_count > 0
-
         if success:
             logger.info(
-                f"Бронирование завершено: успешно={processed_count}, "
-                f"ошибок/не найдено={failed_count}"
+                "Бронирование: ok=%s fail=%s payments_written=%s",
+                processed_count,
+                failed_count,
+                payments_written,
             )
         else:
-            logger.warning("Ни один товар из блока брони не был успешно обработан")
+            logger.warning("Ни один товар из блока брони не обработан")
 
         return {
             "success": success,
             "results": results,
             "payments": payments,
             "processed_count": processed_count,
-            "failed_count": failed_count
+            "failed_count": failed_count,
+            "payments_written": payments_written,
         }
