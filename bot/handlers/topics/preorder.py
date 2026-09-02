@@ -125,18 +125,12 @@ async def handle_preorder(message: Message):
                 logger.warning("Блок брони не обработан: %s", result)
                 continue
 
-            # Оплаты брони в структуру дня (DailyPayment)
-            if any(float(v or 0) > 0 for v in (booking_payments or {}).values()):
-                try:
-                    await PaymentService.add_payments_batch(
-                        booking_payments, source_type="booking"
-                    )
-                    logger.info("💰 Платежи брони: %s", booking_payments)
-                except Exception:
-                    logger.exception("Не удалось записать платежи брони")
+            # DailyPayment type=booking пишет finalize_item_booking внутри process_booking
+            if result.get("payments_written"):
+                logger.info("💰 Платежи брони записаны через finalize: %s", booking_payments)
 
             await safe_react(message, "👍")
-            booked_count = len(result.get("results", []))
+            booked_count = int(result.get("processed_count") or 0)
             await send_and_clean(
                 bot=message.bot,
                 chat_id=message.chat.id,
