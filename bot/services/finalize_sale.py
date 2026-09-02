@@ -6,10 +6,13 @@
   - админка (после расчёта формы)
 
 Гарантирует:
-  - DeletedItem + удаление Item
-  - Sale с разбивкой оплат и message_id
+  - Sale с разбивкой оплат и message_id (сначала, пока item ещё в БД / без FK)
   - DailyPayment с sale_message_id
+  - DeletedItem + удаление Item
   - уникальный message_id при нескольких товарах в одном сообщении
+
+Важно: sales.item_id — историческая ссылка, FK на items быть не должно
+(товар после продажи удаляется из витрины).
 """
 from __future__ import annotations
 
@@ -50,7 +53,6 @@ def unique_sale_message_id(base_message_id: int, index: int = 0) -> int:
     base = int(base_message_id)
     if index <= 0:
         return base
-    # 1e6 * base + index обычно не пересекается с реальными TG message_id
     return base * 1_000_000 + int(index)
 
 
@@ -71,46 +73,26 @@ async def finalize_item_sale(
     """
     Пишет одну продажу в рамках уже открытой SQLAlchemy-сессии/транзакции.
 
+    Порядок:
+      1) Sale + DailyPayment
+      2) DeletedItem + DELETE Item
+
     write_payments=False — если платежи уже записаны на другой item
     того же сообщения (мульти-SN: только первый несёт оплаты).
     """
     pays = normalize_payments(payments if write_payments else None)
 
-    if delete_item:
-        # Актуальные данные из БД, если item ещё есть
-        item = await session.get(Item, item_id)
-        text = item_text
-        serial = item_serial
-        cat_id = category_id
-        if item is not None:
-            text = item.text or text
-            serial = item.serial if item.serial is not None else serial
-            cat_id = item.category_id if item.category_id is not None else cat_id
-            session.add(
-                DeletedItem(
-                    item_id=item.id,
-                    text=text,
-                    serial=serial,
-                    category_id=cat_id,
-                    reason=reason,
-                    sale_message_id=message_id,
-                )
-            )
-            await session.delete(item)
-        else:
-            # Item уже удалён — всё равно фиксируем DeletedItem для отмены
-            session.add(
-                DeletedItem(
-                    item_id=item_id,
-                    text=text,
-                    serial=serial,
-                    category_id=cat_id,
-                    reason=reason,
-                    sale_message_id=message_id,
-                )
-            )
+    # Снимок данных товара до удаления
+    item = await session.get(Item, item_id)
+    text = item_text
+    serial = item_serial
+    cat_id = category_id
+    if item is not None:
+        text = item.text or text
+        serial = item.serial if item.serial is not None else serial
+        cat_id = item.category_id if item.category_id is not None else cat_id
 
-    # Не дублировать Sale с тем же message_id
+    # 1) Sale — item_id хранится как история (FK на items снят миграцией 029)
     existing = await session.scalar(
         select(Sale.id).where(Sale.message_id == message_id).limit(1)
     )
@@ -147,6 +129,35 @@ async def finalize_item_sale(
                         sale_message_id=message_id,
                     )
                 )
+
+    # Flush до DELETE, чтобы INSERT sales ушёл раньше удаления item
+    await session.flush()
+
+    # 2) Снять с витрины
+    if delete_item:
+        if item is not None:
+            session.add(
+                DeletedItem(
+                    item_id=item.id,
+                    text=text,
+                    serial=serial,
+                    category_id=cat_id,
+                    reason=reason,
+                    sale_message_id=message_id,
+                )
+            )
+            await session.delete(item)
+        else:
+            session.add(
+                DeletedItem(
+                    item_id=item_id,
+                    text=text,
+                    serial=serial,
+                    category_id=cat_id,
+                    reason=reason,
+                    sale_message_id=message_id,
+                )
+            )
 
     logger.info(
         "finalize_item_sale: item_id=%s msg=%s payments=%s reason=%s",
