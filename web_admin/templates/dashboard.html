@@ -51,8 +51,8 @@
         <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center"><i class="fas fa-exclamation-triangle text-amber-600 dark:text-amber-400"></i></div>
             <div>
-                <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200">Мало на складе</h2>
-                <p class="text-xs text-amber-700/80 dark:text-amber-400/80">iPhone · iPad · Watch · Samsung · AirPods · свободно ≤ {{ low_stock_threshold }} · {{ low_stock|length }} категор. · нажмите категорию</p>
+                <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200">Закончились на складе</h2>
+                <p class="text-xs text-amber-700/80 dark:text-amber-400/80">iPhone · iPad · Watch · Samsung · AirPods · свободно 0 · {{ low_stock|length }} категор. · нажмите категорию</p>
             </div>
         </div>
         <a href="/admin/assortment" class="text-xs font-medium text-amber-800 dark:text-amber-300 hover:underline">Ассортимент →</a>
@@ -71,23 +71,21 @@
                 <span class="shrink-0 inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 rounded-lg text-sm font-bold {% if cat.level == 'critical' %}bg-rose-600 text-white{% else %}bg-amber-500 text-white{% endif %}">{{ cat.free }}</span>
             </summary>
             <div class="px-3 pb-2.5 pt-0 border-t border-black/5 dark:border-white/5">
-                {% if cat.free == 0 %}
-                <p class="text-xs font-medium text-rose-700 dark:text-rose-300 mt-2 mb-1">Закончились (свободно 0)</p>
-                {% if cat.booked %}
-                <p class="text-[11px] text-slate-500 mb-1">На броне ещё {{ cat.booked }} шт.</p>
-                {% endif %}
-                {% endif %}
-                {% if cat.variants %}
-                <ul class="mt-2 space-y-1 max-h-40 overflow-y-auto">
-                    {% for v in cat.variants %}
+                <p class="text-xs font-medium text-rose-700 dark:text-rose-300 mt-2 mb-1">Свободно: 0 — закончились</p>
+                {% if cat.booked_variants %}
+                <p class="text-[11px] text-slate-500 mt-2 mb-1">На броне ({{ cat.booked }}):</p>
+                <ul class="space-y-1 max-h-40 overflow-y-auto">
+                    {% for v in cat.booked_variants %}
                     <li class="flex items-start justify-between gap-2 text-xs">
                         <span class="text-slate-700 dark:text-slate-300 leading-snug">{{ v.name }}</span>
-                        <span class="shrink-0 font-semibold {% if v.count <= 1 %}text-rose-600 dark:text-rose-400{% else %}text-amber-700 dark:text-amber-300{% endif %}">{{ v.count }}</span>
+                        <span class="shrink-0 font-semibold text-violet-600 dark:text-violet-400">{{ v.count }}</span>
                     </li>
                     {% endfor %}
                 </ul>
+                {% elif cat.booked %}
+                <p class="text-[11px] text-slate-500 mt-1">На броне ещё {{ cat.booked }} шт.</p>
                 {% else %}
-                <p class="text-xs text-slate-500 mt-2">Нет свободных позиций в этой категории.</p>
+                <p class="text-xs text-slate-500 mt-2">Нет свободных и нет на броне.</p>
                 {% endif %}
                 <a href="/admin/assortment?q={{ cat.name|urlencode }}" class="inline-block mt-2 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Открыть в ассортименте →</a>
             </div>
