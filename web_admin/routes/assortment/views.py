@@ -6,6 +6,7 @@ from sqlalchemy import and_, func, not_, or_, select
 
 from bot.db import get_async_session_factory
 from bot.models import Category, Item
+from web_admin.services.sku_parser import build_sku_matrix
 from web_admin.templates import templates
 
 router = APIRouter()
@@ -45,7 +46,7 @@ def _item_flags(text: str | None) -> tuple[bool, bool]:
 
 def _exchange_sql_cond():
     return or_(
-        Item.text.op("~")( _EXCHANGE_SQL ),
+        Item.text.op("~")(_EXCHANGE_SQL),
         Item.text.ilike("%обменк%"),
     )
 
@@ -112,7 +113,9 @@ async def list_assortment(
     category_id: str | None = Query(None),
     sim_type: str | None = Query(None),
     mark_type: str | None = Query(None),
-    sort_by: str = Query("id", pattern="^(id|text|serial|category_name|is_booked|created_at)$"),
+    sort_by: str = Query(
+        "id", pattern="^(id|text|serial|category_name|is_booked|created_at)$"
+    ),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
 ):
     async_session = get_async_session_factory()
@@ -152,7 +155,9 @@ async def list_assortment(
         base_query = _apply_mark_filter(base_query, mark_type_clean)
 
         sort_column = ALLOWED_SORT_FIELDS.get(sort_by, Item.id)
-        order_direction = sort_column.desc() if sort_order == "desc" else sort_column.asc()
+        order_direction = (
+            sort_column.desc() if sort_order == "desc" else sort_column.asc()
+        )
         base_query = base_query.order_by(order_direction).limit(per_page).offset(offset)
 
         count_query = (
@@ -208,5 +213,70 @@ async def list_assortment(
             "categories": categories,
             "sort_by": sort_by,
             "sort_order": sort_order,
+        },
+    )
+
+
+@router.get("/matrix", response_class=HTMLResponse)
+async def sku_matrix(
+    request: Request,
+    category_id: str | None = Query(None),
+    only_free: int = Query(0, ge=0, le=1),
+):
+    """
+    Матрица SKU: память × цвет × SIM по выбранной категории.
+    Атрибуты парсятся из текста товара (отдельных колонок нет).
+    """
+    async_session = get_async_session_factory()
+    cat_id: int | None = None
+    if category_id and str(category_id).isdigit():
+        cat_id = int(category_id)
+
+    async with async_session() as session:
+        cats_q = (
+            select(Category.id, Category.name)
+            .where(Category.name != "__SYSTEM__")
+            .order_by(Category.sort_order, Category.name)
+        )
+        categories = [
+            dict(r._mapping) for r in (await session.execute(cats_q)).all()
+        ]
+
+        selected_name = None
+        matrix = {
+            "rows": [],
+            "memories": [],
+            "colors": [],
+            "sims": [],
+            "total_items": 0,
+            "total_free": 0,
+            "total_booked": 0,
+            "variant_count": 0,
+        }
+
+        if cat_id is not None:
+            cat = await session.get(Category, cat_id)
+            if cat and cat.name != "__SYSTEM__":
+                selected_name = cat.name
+                items_q = await session.execute(
+                    select(Item.id, Item.text, Item.serial, Item.is_booked).where(
+                        Item.category_id == cat_id
+                    )
+                )
+                items = [dict(r._mapping) for r in items_q.all()]
+                matrix = build_sku_matrix(items)
+                if only_free:
+                    matrix["rows"] = [r for r in matrix["rows"] if r["free"] > 0]
+                    matrix["variant_count"] = len(matrix["rows"])
+
+    return templates.TemplateResponse(
+        "assortment_matrix.html",
+        {
+            "request": request,
+            "categories": categories,
+            "category_id": str(cat_id) if cat_id is not None else "",
+            "selected_name": selected_name,
+            "matrix": matrix,
+            "only_free": only_free,
         },
     )
