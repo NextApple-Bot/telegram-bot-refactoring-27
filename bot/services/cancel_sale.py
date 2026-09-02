@@ -14,16 +14,28 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models import DailyPayment, DeletedItem, Item, Sale
-from web_admin.services.day_stats import as_date
 
 logger = logging.getLogger(__name__)
+
+
+def _as_date(value) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
 
 
 async def cancel_one_deleted_sale(
@@ -46,7 +58,7 @@ async def cancel_one_deleted_sale(
     sale_message_id = deleted.sale_message_id
     original_item_id = deleted.item_id
     category_id = deleted.category_id
-    day_for_adj: date | None = as_date(deleted.deleted_at)
+    day_for_adj: date | None = _as_date(deleted.deleted_at)
 
     # Serial только если ещё не занят на витрине
     if serial:
