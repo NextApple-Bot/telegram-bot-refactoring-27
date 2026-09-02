@@ -6,12 +6,31 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 PAYMENT_KEYWORDS = {
-    'terminal': re.compile(r'Терминал|Терминалом|терминал|терминалом|Terminal|terminal|Терм\.?', re.IGNORECASE),
-    'qr': re.compile(r'QR[- ]?код|QRCode|QrCode|QR\s*код|Qrкод|QRCODE|Qrcode|Qrcod|Qr-код|Qr-Код|Qr-code|QR-code', re.IGNORECASE),
-    'transfer': re.compile(r'Перевод|перевод|Переводом|переводом|Пер\.?', re.IGNORECASE),
-    'invoice': re.compile(r'Оплата по счету|Оплата По Счету|по счету|По счёту|Счёт|Счет|Инвойс', re.IGNORECASE),
-    'installment': re.compile(r'Рассрочка|рассрочка|Рассрочкой|рассрочкой|Расср\.?', re.IGNORECASE),
-    'cash': re.compile(r'\bНаличными\b|\bНаличные\b|\bналичными\b|\bнал\.?\b|\bнал\b|\bНал\b|\bНаличка\b', re.IGNORECASE),
+    'terminal': re.compile(
+        r'Терминал|Терминалом|терминал|терминалом|Terminal|terminal|Терм\.?',
+        re.IGNORECASE,
+    ),
+    # QR-код / QR - code / QR code / QR-Кодом / QRcode
+    'qr': re.compile(
+        r'QR\s*[-–—]?\s*код\w*|QR\s*[-–—]?\s*code\w*|QRCode|QRкод|Qrкод',
+        re.IGNORECASE,
+    ),
+    'transfer': re.compile(
+        r'Перевод|перевод|Переводом|переводом|Пер\.?',
+        re.IGNORECASE,
+    ),
+    'invoice': re.compile(
+        r'Оплата по счету|Оплата По Счету|по счету|По счёту|Счёт|Счет|Инвойс',
+        re.IGNORECASE,
+    ),
+    'installment': re.compile(
+        r'Рассрочка|рассрочка|Рассрочкой|рассрочкой|Расср\.?',
+        re.IGNORECASE,
+    ),
+    'cash': re.compile(
+        r'\bНаличными\b|\bНаличные\b|\bналичными\b|\bнал\.?\b|\bнал\b|\bНал\b|\bНаличка\b',
+        re.IGNORECASE,
+    ),
 }
 PREPAY_PATTERN = re.compile(r'П[/\\]О|предоплата', re.IGNORECASE)
 NUMBER_PATTERN = re.compile(r'(\d[\d\s]*(?:[.,]\d+)?)')
@@ -112,12 +131,30 @@ def extract_payment_amounts(text: str, ignore_prepay: bool = False) -> dict[str,
 
 
 def extract_prepayments(text: str) -> dict[str, float]:
+    """
+    Только строки с П/О / предоплата.
+    Если способ оплаты не указан (просто «П/О — 5000») — считаем наличными.
+    """
+    results = dict.fromkeys(PAYMENT_KEYWORDS, 0.0)
     lines = [line for line in text.splitlines() if PREPAY_PATTERN.search(line)]
     if not lines:
-        return dict.fromkeys(PAYMENT_KEYWORDS, 0.0)
+        return results
 
-    prepay_text = '\n'.join(lines)
-    return extract_payment_amounts(prepay_text, ignore_prepay=False)
+    # Сначала обычный разбор по ключевым словам
+    parsed = extract_payment_amounts('\n'.join(lines), ignore_prepay=False)
+    for k, v in parsed.items():
+        results[k] = float(v or 0)
+
+    # Строки П/О без способа оплаты → cash
+    for line in lines:
+        has_type = any(kw.search(line) for kw in PAYMENT_KEYWORDS.values())
+        if has_type:
+            continue
+        numbers = _extract_amounts_from_line(line)
+        if numbers:
+            results['cash'] += max(numbers)
+
+    return results
 
 
 def extract_declared_total(text: str) -> float | None:
