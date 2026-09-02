@@ -155,7 +155,9 @@ class DailyPayment(Base):
     sale_message_id = Column(BigInteger)
 
     __table_args__ = (
-        CheckConstraint("type IN ('sale', 'preorder')", name="type_check"),
+        CheckConstraint(
+            "type IN ('sale', 'preorder', 'booking')", name="type_check"
+        ),
         CheckConstraint(
             "payment_type IN ('cash', 'terminal', 'qr', 'transfer', 'invoice', 'installment')",
             name="payment_type_check",
