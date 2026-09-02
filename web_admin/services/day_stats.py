@@ -23,6 +23,19 @@ PAYMENT_METRICS = ("cash", "terminal", "qr", "transfer", "invoice", "installment
 COUNT_METRICS = ("sales_count", "preorders_count", "bookings_count")
 ALL_METRICS = COUNT_METRICS + PAYMENT_METRICS
 
+METRIC_LABELS = {
+    "sales_count": "Продажи, шт.",
+    "preorders_count": "Предзаказы, шт.",
+    "bookings_count": "Брони, шт.",
+    "cash": "Наличные, ₽",
+    "terminal": "Терминал, ₽",
+    "qr": "QR-код, ₽",
+    "transfer": "Перевод, ₽",
+    "invoice": "По счёту, ₽",
+    "installment": "Рассрочка, ₽",
+    "total_revenue": "Выручка (Σ оплат), ₽",
+}
+
 APP_TZ_NAME = os.getenv("APP_TZ", "Europe/Moscow")
 try:
     APP_TZ = ZoneInfo(APP_TZ_NAME)
@@ -231,6 +244,83 @@ async def day_snapshot(session, day: date) -> dict:
             "payments": raw_pay,
         },
         "adjustments": adj,
+    }
+
+
+def build_day_reconciliation(snap: dict) -> dict:
+    """
+    Сверка дня: факт из БД / корректировка / итог на дашборде.
+
+    snap — результат day_snapshot().
+    """
+    rows: list[dict] = []
+    has_adj = False
+
+    for key in COUNT_METRICS:
+        raw = float(snap.get("raw", {}).get(key, 0) or 0)
+        delta = float(snap.get("adjustments", {}).get(key, 0) or 0)
+        final = float(snap.get(key, 0) or 0)
+        if abs(delta) > 1e-9:
+            has_adj = True
+        rows.append(
+            {
+                "key": key,
+                "label": METRIC_LABELS.get(key, key),
+                "kind": "count",
+                "raw": raw,
+                "delta": delta,
+                "final": final,
+                "changed": abs(delta) > 1e-9,
+            }
+        )
+
+    raw_pay = snap.get("raw", {}).get("payments") or {}
+    fin_pay = snap.get("payments") or {}
+    adj = snap.get("adjustments") or {}
+    for key in PAYMENT_METRICS:
+        raw = float(raw_pay.get(key, 0) or 0)
+        delta = float(adj.get(key, 0) or 0)
+        final = float(fin_pay.get(key, 0) or 0)
+        if abs(delta) > 1e-9:
+            has_adj = True
+        rows.append(
+            {
+                "key": key,
+                "label": METRIC_LABELS.get(key, key),
+                "kind": "money",
+                "raw": raw,
+                "delta": delta,
+                "final": final,
+                "changed": abs(delta) > 1e-9,
+            }
+        )
+
+    raw_total = float(sum(float(raw_pay.get(k, 0) or 0) for k in PAYMENT_METRICS))
+    final_total = float(snap.get("total_revenue", 0) or 0)
+    delta_total = final_total - raw_total
+    if abs(delta_total) > 0.01:
+        has_adj = True
+
+    rows.append(
+        {
+            "key": "total_revenue",
+            "label": METRIC_LABELS["total_revenue"],
+            "kind": "money",
+            "raw": raw_total,
+            "delta": delta_total,
+            "final": final_total,
+            "changed": abs(delta_total) > 0.01,
+            "is_total": True,
+        }
+    )
+
+    return {
+        "rows": rows,
+        "has_adjustments": has_adj,
+        "raw_total": raw_total,
+        "final_total": final_total,
+        "delta_total": delta_total,
+        "changed_count": sum(1 for r in rows if r.get("changed")),
     }
 
 
