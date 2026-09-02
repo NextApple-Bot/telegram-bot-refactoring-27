@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import os
+import re
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
@@ -41,6 +42,21 @@ DEFAULT_SELLERS = ("Тимофей", "Максим")
 LOW_STOCK_THRESHOLD = max(0, int(os.getenv("LOW_STOCK_THRESHOLD", "3")))
 SKIP_CATEGORY_NAMES = {"б/у", "б/у:", "ns", "ns:", "общее", "общее:"}
 
+# Только эти семейства в блоке «Мало на складе»
+LOW_STOCK_FAMILIES = (
+    "iphone",
+    "ipad",
+    "samsung",
+    "airpods",
+    "airpod",
+    "apple watch",
+    "watch",
+)
+
+# Серийник в скобках / в конце строки; бронь-пометка
+_SERIAL_PARENS = re.compile(r"\(\s*[A-Z0-9]{8,}\s*\)", re.IGNORECASE)
+_BOOKING_MARK = re.compile(r"\s*\(Бронь от [^)]+\)\s*", re.IGNORECASE)
+
 
 async def _ensure_default_sellers(session) -> None:
     for name in DEFAULT_SELLERS:
@@ -78,6 +94,32 @@ def _parse_number(value) -> float:
         return 0.0
 
 
+def _is_low_stock_family(category_name: str) -> bool:
+    n = (category_name or "").strip().lower().rstrip(":")
+    if not n or n in SKIP_CATEGORY_NAMES:
+        return False
+    for fam in LOW_STOCK_FAMILIES:
+        if n == fam or n.startswith(fam + " ") or n.startswith(fam):
+            return True
+    return False
+
+
+def _variant_label(text: str | None, serial: str | None = None) -> str:
+    """Текст модели без серийника — цвет / память / SIM."""
+    t = (text or "").strip()
+    if not t:
+        return "—"
+    t = _BOOKING_MARK.sub(" ", t)
+    t = _SERIAL_PARENS.sub(" ", t)
+    if serial:
+        t = re.sub(re.escape(serial), " ", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s+", " ", t).strip(" ,.;")
+    t = re.sub(r"\(\s*\)", "", t)
+    t = re.sub(r"[)\]]+$", "", t).strip(" ,.;")
+    t = re.sub(r"\s+", " ", t).strip(" ,.;")
+    return t or (text or "—").strip()
+
+
 async def _low_stock_alerts(session, threshold: int) -> list[dict]:
     free_q = (
         select(
@@ -103,27 +145,61 @@ async def _low_stock_alerts(session, threshold: int) -> list[dict]:
     )
     booked_map = {cid: int(c) for cid, c in (await session.execute(booked_q)).all()}
 
-    alerts = []
+    candidate_ids: list[int] = []
+    meta: dict[int, dict] = {}
     for cat_id, name, free_count in rows:
         name_clean = (name or "").strip()
-        if name_clean.lower().rstrip(":") in SKIP_CATEGORY_NAMES:
+        if not _is_low_stock_family(name_clean):
             continue
         free = int(free_count or 0)
         booked = booked_map.get(cat_id, 0)
         if free == 0 and booked == 0:
             continue
         if free <= threshold:
-            level = "critical" if free == 0 else "warning"
-            alerts.append(
-                {
-                    "id": cat_id,
-                    "name": name_clean,
-                    "free": free,
-                    "booked": booked,
-                    "total": free + booked,
-                    "level": level,
-                }
+            candidate_ids.append(cat_id)
+            meta[cat_id] = {
+                "name": name_clean,
+                "free": free,
+                "booked": booked,
+                "total": free + booked,
+                "level": "critical" if free == 0 else "warning",
+            }
+
+    if not candidate_ids:
+        return []
+
+    items_q = await session.execute(
+        select(Item.category_id, Item.text, Item.serial).where(
+            Item.category_id.in_(candidate_ids),
+            Item.is_booked.is_(False),
+        )
+    )
+    variants_map: dict[int, dict[str, int]] = {cid: {} for cid in candidate_ids}
+    for cat_id, text, serial in items_q.all():
+        label = _variant_label(text, serial)
+        variants_map[cat_id][label] = variants_map[cat_id].get(label, 0) + 1
+
+    alerts = []
+    for cat_id in candidate_ids:
+        m = meta[cat_id]
+        variants = [
+            {"name": name, "count": cnt}
+            for name, cnt in sorted(
+                variants_map.get(cat_id, {}).items(),
+                key=lambda x: (x[1], x[0].lower()),
             )
+        ]
+        alerts.append(
+            {
+                "id": cat_id,
+                "name": m["name"],
+                "free": m["free"],
+                "booked": m["booked"],
+                "total": m["total"],
+                "level": m["level"],
+                "variants": variants,
+            }
+        )
     return alerts
 
 
