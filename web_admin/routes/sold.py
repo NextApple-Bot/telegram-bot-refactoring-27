@@ -1,10 +1,10 @@
 """
 Проданные товары + отмена продажи одной кнопкой.
 
-Отмена:
+Отмена (через bot.services.cancel_sale.cancel_one_deleted_sale):
   1) товар снова в ассортименте
   2) Sale и DailyPayment по sale_message_id удаляются
-  3) DeletedItem помечается / удаляется
+  3) DeletedItem удаляется
   4) в топик продаж уходит «❌ Отмена продажи»
   5) StatsAdjustment за день продажи сбрасывается
 
@@ -20,26 +20,20 @@ from datetime import date, datetime, time as dtime
 from aiogram import Bot
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import func, or_, select
 
 from bot import config
 from bot.db import get_async_session_factory
-from bot.models import DailyPayment, DeletedItem, Item, Sale
+from bot.models import DeletedItem
 from bot.services.assortment import AssortmentService
 from bot.services.cache import cache
-from web_admin.services.day_stats import as_date, clear_adjustments_for_dates
+from bot.services.cancel_sale import cancel_one_deleted_sale
+from web_admin.services.day_stats import clear_adjustments_for_dates
 from web_admin.templates import templates
 from web_admin.services.audit import log_admin_action
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-def _is_sale_reason(reason: str | None) -> bool:
-    r = (reason or "").lower()
-    if not r:
-        return True
-    return "sale" in r or r in ("sold", "продан")
 
 
 @router.get("/")
@@ -124,52 +118,11 @@ async def cancel_sale(request: Request, deleted_id: int):
                         url="/admin/sold?err=Уже+восстановлено", status_code=303
                     )
 
-                item_text = deleted.text or ""
-                serial = (deleted.serial or "").strip() or None
-                sale_message_id = deleted.sale_message_id
-                original_item_id = deleted.item_id
-                category_id = deleted.category_id
-
-                if serial:
-                    exists = await session.scalar(
-                        select(Item.id).where(Item.serial == serial).limit(1)
-                    )
-                    serial_for_item = None if exists else serial
-                    if exists:
-                        logger.warning(
-                            "При отмене serial=%s уже в items — без serial",
-                            serial,
-                        )
-                else:
-                    serial_for_item = None
-
-                session.add(
-                    Item(
-                        text=item_text,
-                        serial=serial_for_item,
-                        category_id=category_id,
-                        is_booked=False,
-                        is_sold=False,
-                    )
-                )
-
-                if sale_message_id:
-                    await session.execute(
-                        delete(Sale).where(Sale.message_id == sale_message_id)
-                    )
-                    await session.execute(
-                        delete(DailyPayment).where(
-                            DailyPayment.sale_message_id == sale_message_id
-                        )
-                    )
-                elif original_item_id:
-                    await session.execute(
-                        delete(Sale).where(Sale.item_id == original_item_id)
-                    )
-
-                deleted.restored = True
-                day_for_adj = as_date(deleted.deleted_at)
-                await session.delete(deleted)
+                meta = await cancel_one_deleted_sale(session, deleted)
+                item_text = meta["item_text"]
+                serial = meta["serial"] or ""
+                sale_message_id = meta["sale_message_id"]
+                day_for_adj = meta["day"]
 
                 if day_for_adj:
                     await clear_adjustments_for_dates(session, [day_for_adj])
@@ -195,6 +148,15 @@ async def cancel_sale(request: Request, deleted_id: int):
         return RedirectResponse(
             url="/admin/sold?ok=Продажа+отменена.+Товар+вернулся+в+ассортимент",
             status_code=303,
+        )
+    except ValueError as e:
+        if str(e) == "already_restored":
+            return RedirectResponse(
+                url="/admin/sold?err=Уже+восстановлено", status_code=303
+            )
+        logger.exception("Ошибка отмены продажи deleted_id=%s", deleted_id)
+        return RedirectResponse(
+            url=f"/admin/sold?err={str(e)[:80]}", status_code=303
         )
     except Exception as e:
         logger.exception("Ошибка отмены продажи deleted_id=%s", deleted_id)
@@ -233,51 +195,13 @@ async def cancel_all_sales(request: Request, confirm: str = Form("")):
                 ).scalars().all()
 
                 for deleted in rows:
-                    item_text = deleted.text or ""
-                    serial = (deleted.serial or "").strip() or None
-                    sale_message_id = deleted.sale_message_id
-                    original_item_id = deleted.item_id
-                    category_id = deleted.category_id
-
-                    if serial:
-                        exists = await session.scalar(
-                            select(Item.id).where(Item.serial == serial).limit(1)
-                        )
-                        serial_for_item = None if exists else serial
-                    else:
-                        serial_for_item = None
-
-                    session.add(
-                        Item(
-                            text=item_text,
-                            serial=serial_for_item,
-                            category_id=category_id,
-                            is_booked=False,
-                            is_sold=False,
-                        )
-                    )
-
-                    if sale_message_id:
-                        await session.execute(
-                            delete(Sale).where(Sale.message_id == sale_message_id)
-                        )
-                        await session.execute(
-                            delete(DailyPayment).where(
-                                DailyPayment.sale_message_id == sale_message_id
-                            )
-                        )
-                    elif original_item_id:
-                        await session.execute(
-                            delete(Sale).where(Sale.item_id == original_item_id)
-                        )
-
-                    deleted.restored = True
-                    d_adj = as_date(deleted.deleted_at)
-                    if d_adj:
-                        affected_days.add(d_adj)
-                    await session.delete(deleted)
+                    meta = await cancel_one_deleted_sale(session, deleted)
                     cancelled += 1
-                    restored_items.append((item_text, serial, sale_message_id))
+                    restored_items.append(
+                        (meta["item_text"], meta["serial"], meta["sale_message_id"])
+                    )
+                    if meta["day"]:
+                        affected_days.add(meta["day"])
 
                 if affected_days:
                     await clear_adjustments_for_dates(session, affected_days)
@@ -359,58 +283,23 @@ async def cancel_sales_period(
                 ).scalars().all()
 
                 for deleted in rows:
-                    item_text = deleted.text or ""
-                    serial = (deleted.serial or "").strip() or None
-                    sale_message_id = deleted.sale_message_id
-                    original_item_id = deleted.item_id
-                    category_id = deleted.category_id
-
-                    if serial:
-                        exists = await session.scalar(
-                            select(Item.id).where(Item.serial == serial).limit(1)
-                        )
-                        serial_for_item = None if exists else serial
-                    else:
-                        serial_for_item = None
-
-                    session.add(
-                        Item(
-                            text=item_text,
-                            serial=serial_for_item,
-                            category_id=category_id,
-                            is_booked=False,
-                            is_sold=False,
-                        )
-                    )
-
-                    if sale_message_id:
-                        await session.execute(
-                            delete(Sale).where(Sale.message_id == sale_message_id)
-                        )
-                        await session.execute(
-                            delete(DailyPayment).where(
-                                DailyPayment.sale_message_id == sale_message_id
-                            )
-                        )
-                    elif original_item_id:
-                        await session.execute(
-                            delete(Sale).where(Sale.item_id == original_item_id)
-                        )
-
-                    deleted.restored = True
-                    d_adj = as_date(deleted.deleted_at)
-                    if d_adj:
-                        affected_days.add(d_adj)
-                    await session.delete(deleted)
+                    meta = await cancel_one_deleted_sale(session, deleted)
                     cancelled += 1
-                    restored_items.append((item_text, serial, sale_message_id))
+                    restored_items.append(
+                        (meta["item_text"], meta["serial"], meta["sale_message_id"])
+                    )
+                    if meta["day"]:
+                        affected_days.add(meta["day"])
 
                 if affected_days:
                     await clear_adjustments_for_dates(session, affected_days)
 
                 logger.info(
                     "Отмена за период %s..%s: %s шт., adj days=%s",
-                    start, end, cancelled, len(affected_days),
+                    start,
+                    end,
+                    cancelled,
+                    len(affected_days),
                 )
 
         try:
