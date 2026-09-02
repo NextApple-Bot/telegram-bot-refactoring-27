@@ -1,7 +1,7 @@
 """expand daily_payments.type check to include booking
 
-Revision ID: 030_expand_daily_payment_type
-Revises: 029_drop_sales_item_id_fk
+Revision ID: 030
+Revises: 029
 Create Date: 2026-09-02
 
 Zero-downtime: DROP CONSTRAINT IF EXISTS + ADD CONSTRAINT.
@@ -11,8 +11,8 @@ from typing import Sequence, Union
 
 from alembic import op
 
-revision: str = "030_expand_daily_payment_type"
-down_revision: Union[str, None] = "029_drop_sales_item_id_fk"
+revision: str = "030"
+down_revision: Union[str, None] = "029"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
