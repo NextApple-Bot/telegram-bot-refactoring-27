@@ -13,6 +13,17 @@ def format_number(value: float | None) -> str:
     return f"{int(value):,}".replace(",", " ")
 
 
+def _item_title(text: str, serial: str | None = None) -> str:
+    """Название товара с SN в скобках, точка в конце."""
+    title = (text or "").strip()
+    serial_clean = (serial or "").strip()
+    if serial_clean and f"({serial_clean})" not in title:
+        title = f"{title} ({serial_clean})"
+    if title and not title.endswith("."):
+        title = f"{title}."
+    return title
+
+
 async def send_booking_notification(
     bot: Bot,
     item_text: str,
@@ -125,23 +136,33 @@ async def send_sale_notification(
     change_type: str | None = None,
     accessories: list[dict] | None = None,
     accessories_total: float = 0.0,
+    extra_items: list[dict] | None = None,
     final_amount: float | None = None,
     comment: str | None = None,
     trade_in_name: str | None = None,
     trade_in_amount: float | None = None,
     gnc_store: str | None = None,
     gnc_amount: float | None = None,
+    item_serial: str | None = None,
 ):
     """
-    Формат продажи с Trade-in и ГНЦ (Гарантия Низкой Цены).
+    Формат продажи с несколькими товарами, Trade-in и ГНЦ.
 
-    Товар.
-    Стоимость - N (ГНЦ AStore Скидка - 4 000).
-    ...
-    Общая - (цена + аксы − скидка − trade-in − ГНЦ)
+    PlayStation …
+    Стоимость - N
+
+    DualSense …
+    Стоимость - N
+
+    Переходник.
+    Стоимость - N
+
+    Наличными - …
+    Общая - …
     """
     try:
         accessories = accessories or []
+        extra_items = extra_items or []
         payments = dict(payments or {})
 
         payment_names = {
@@ -157,10 +178,8 @@ async def send_sale_notification(
 
         lines: list[str] = []
 
-        title = (item_text or "").strip()
-        if title and not title.endswith("."):
-            title = f"{title}."
-        lines.append(title)
+        # 1) Основной товар
+        lines.append(_item_title(item_text, item_serial))
 
         gnc_amt = float(gnc_amount or 0)
         gnc_name = (gnc_store or "").strip()
@@ -183,9 +202,21 @@ async def send_sale_notification(
             )
         else:
             lines.append(f"Стоимость - {format_number(price)}.")
+        lines.append("")
 
-        if accessories:
+        # 2) Доп. товары из ассортимента (джойстик, станция, 2-й телефон…)
+        extra_total = 0.0
+        for ex in extra_items:
+            ex_text = (ex.get("text") or "").strip()
+            ex_serial = (ex.get("serial") or "") or None
+            ex_price = float(ex.get("price") or 0)
+            extra_total += max(ex_price, 0.0)
+            lines.append(_item_title(ex_text, ex_serial))
+            lines.append(f"Стоимость - {format_number(ex_price)}.")
             lines.append("")
+
+        # 3) Аксессуары без SN
+        if accessories:
             for acc in accessories:
                 name = (acc.get("text") or acc.get("name") or "Аксессуар").strip()
                 if name and not name.endswith("."):
@@ -193,11 +224,8 @@ async def send_sale_notification(
                 lines.append(name)
                 lines.append(f"Стоимость - {format_number(acc.get('price', 0))}.")
                 lines.append("")
-            lines.append("")
-        else:
-            lines.append("")
-            lines.append("")
 
+        # 4) Trade-in
         trade_amt = float(trade_in_amount or 0)
         if trade_amt > 0:
             tname = (trade_in_name or "").strip()
@@ -206,13 +234,14 @@ async def send_sale_notification(
             else:
                 lines.append(f"Trade-in, − {format_number(trade_amt)}.")
             lines.append("")
-            lines.append("")
 
+        # 5) П/О
         prep = float(prepayment or 0)
         if prep > 0:
             lines.append(f"П/О - {format_number(prep)}.")
             lines.append("")
 
+        # 6) Оплаты
         bonus_val = float(bonus or 0)
 
         if payments:
@@ -247,13 +276,18 @@ async def send_sale_notification(
             lines.append(f"UDS - {format_number(bonus_val)}.")
             lines.append("")
 
-        total = (
-            float(price)
-            + float(accessories_total or 0)
-            - float(discount or 0)
-            - float(trade_in_amount or 0)
-            - float(gnc_amount or 0)
-        )
+        # 7) Общая — приоритет final_amount (уже с учётом extra + acc − скидки)
+        if final_amount is not None and float(final_amount) >= 0:
+            total = float(final_amount)
+        else:
+            total = (
+                float(price)
+                + float(accessories_total or 0)
+                + float(extra_total)
+                - float(discount or 0)
+                - float(trade_in_amount or 0)
+                - float(gnc_amount or 0)
+            )
         if total > 0:
             lines.append(f"Общая - {format_number(total)}")
             lines.append("")
