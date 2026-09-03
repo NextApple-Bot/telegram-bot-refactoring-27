@@ -497,7 +497,6 @@ async def _process_sale_logic(
     prep = float(sale_prepayment or 0)
     other_sum = sum(other_payments.values())
 
-    # доп. товары из витрины (телефоны, PS, джойстик…)
     extra_total = 0.0
     resolved_extras: list[dict[str, Any]] = []
     for ex in extra_items:
@@ -591,7 +590,6 @@ async def _process_sale_logic(
             conn=session,
         )
 
-    # Основной товар: Sale + платежи + снятие с витрины
     await finalize_item_sale(
         session,
         item_id=item_id,
@@ -606,7 +604,6 @@ async def _process_sale_logic(
         write_payments=True,
     )
 
-    # Остальные позиции той же продажи (без повторной записи платежей)
     for idx, ex in enumerate(resolved_extras, start=1):
         await finalize_item_sale(
             session,
@@ -626,6 +623,7 @@ async def _process_sale_logic(
     asyncio.create_task(send_sale_notification(
         bot=bot,
         item_text=text,
+        item_serial=serial,
         price=sale_price,
         payment_type=main_pt,
         prepayment=prep if prep > 0 else None,
@@ -641,6 +639,7 @@ async def _process_sale_logic(
         change_type=sale_change_type,
         accessories=processed_accessories,
         accessories_total=accessories_total,
+        extra_items=resolved_extras,
         final_amount=final_amount,
         comment=sale_comment,
         trade_in_name=trade_in_name,
