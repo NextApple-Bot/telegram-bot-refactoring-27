@@ -7,13 +7,36 @@
     class="space-y-5 pb-2"
     x-data="{
         accessories: [{ name: '', price: '', payment: 'cash' }],
+        extraItems: [],
+        searchQ: '',
+        searchResults: [],
+        searchLoading: false,
         useDiscount: false,
         useBonus: false,
         useChange: false,
         useTradeIn: false,
         useGnc: false,
         addAcc() { this.accessories.push({ name: '', price: '', payment: 'cash' }); },
-        removeAcc(i) { if (this.accessories.length > 1) this.accessories.splice(i, 1); }
+        removeAcc(i) { if (this.accessories.length > 1) this.accessories.splice(i, 1); },
+        removeExtra(i) { this.extraItems.splice(i, 1); },
+        async searchItems() {
+            const q = (this.searchQ || '').trim();
+            if (q.length < 2) { this.searchResults = []; return; }
+            this.searchLoading = true;
+            try {
+                const res = await fetch('/admin/assortment/sale-search?q=' + encodeURIComponent(q) + '&exclude_id={{ item.id }}');
+                const data = await res.json();
+                const taken = new Set(this.extraItems.map(e => e.id));
+                this.searchResults = (data.items || []).filter(it => !taken.has(it.id));
+            } catch (e) { this.searchResults = []; }
+            this.searchLoading = false;
+        },
+        addExtra(it) {
+            if (this.extraItems.some(e => e.id === it.id)) return;
+            this.extraItems.push({ id: it.id, text: it.text, serial: it.serial || '', price: '' });
+            this.searchQ = '';
+            this.searchResults = [];
+        }
     }">
 
     {% if error %}
@@ -93,6 +116,52 @@
         </div>
     </div>
 
+    <!-- Доп. товары из ассортимента -->
+    <div class="rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 p-4 space-y-3">
+        <div>
+            <label class="text-sm font-medium text-slate-800 dark:text-slate-100">
+                <i class="fas fa-boxes text-indigo-500 mr-1"></i> Ещё товары из ассортимента
+            </label>
+            <p class="text-xs text-slate-500 mt-0.5">Одна продажа: 2 телефона, PlayStation, дисковод, джойстик — спишутся со склада</p>
+        </div>
+        <div class="relative">
+            <input type="text" x-model="searchQ" @input.debounce.300ms="searchItems()"
+                   placeholder="Поиск по названию или SN…"
+                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+            <div x-show="searchLoading" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                <i class="fas fa-spinner fa-spin"></i>
+            </div>
+            <div x-show="searchResults.length > 0" x-cloak
+                 class="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg">
+                <template x-for="it in searchResults" :key="it.id">
+                    <button type="button" @click="addExtra(it)"
+                            class="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                        <span class="font-medium text-slate-800 dark:text-slate-100" x-text="it.text"></span>
+                        <span class="block text-xs text-slate-500 font-mono" x-text="it.serial || ('#' + it.id)"></span>
+                    </button>
+                </template>
+            </div>
+        </div>
+        <template x-for="(ex, index) in extraItems" :key="ex.id">
+            <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-2.5">
+                <input type="hidden" name="extra_item_id" :value="ex.id">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-slate-800 dark:text-slate-100 truncate" x-text="ex.text"></p>
+                    <p class="text-xs text-slate-500 font-mono" x-text="ex.serial || ('#' + ex.id)"></p>
+                </div>
+                <div class="relative w-full sm:w-32 shrink-0">
+                    <input type="number" step="0.01" name="extra_item_price" x-model="ex.price" placeholder="Цена"
+                           class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-8 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <span class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">₽</span>
+                </div>
+                <button type="button" @click="removeExtra(index)"
+                        class="p-2 text-red-400 hover:text-red-600 rounded-lg" title="Убрать">
+                    <i class="fas fa-times text-xs"></i>
+                </button>
+            </div>
+        </template>
+    </div>
+
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
             <label class="flex items-center gap-2 cursor-pointer select-none">
@@ -148,7 +217,6 @@
         </div>
     </div>
 
-    <!-- Trade-in -->
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
         <label class="flex items-center gap-2 cursor-pointer select-none">
             <input type="checkbox" name="use_trade_in" value="on" x-model="useTradeIn"
@@ -174,13 +242,9 @@
                     <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
                 </div>
             </div>
-            <p class="sm:col-span-2 text-xs text-slate-500 dark:text-slate-400">
-                Сумма вычитается из «Общая» и из оплаты. В топике: <code>Trade-in — устройство, − сумма.</code>
-            </p>
         </div>
     </div>
 
-    <!-- ГНЦ — Гарантия Низкой Цены -->
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
         <label class="flex items-center gap-2 cursor-pointer select-none">
             <input type="checkbox" name="use_gnc" value="on" x-model="useGnc"
@@ -193,7 +257,7 @@
         <div x-show="useGnc" x-cloak class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
                 <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">Магазин</label>
-                <input type="text" name="gnc_store" placeholder="AStore, DNS, М.Видео…"
+                <input type="text" name="gnc_store" placeholder="AStore, DNS…"
                        value="{% if form_data %}{{ form_data.gnc_store or '' }}{% endif %}"
                        class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
             </div>
@@ -207,9 +271,6 @@
                     <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
                 </div>
             </div>
-            <p class="sm:col-span-2 text-xs text-slate-400">
-                В топике: <code>Стоимость - N (ГНЦ Магазин Скидка - сумма).</code>
-            </p>
         </div>
     </div>
 
@@ -236,7 +297,7 @@
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
         <div class="flex items-center justify-between">
             <label class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                <i class="fas fa-puzzle-piece text-slate-400 mr-1"></i> Аксессуары
+                <i class="fas fa-puzzle-piece text-slate-400 mr-1"></i> Аксессуары (без SN)
             </label>
             <button type="button" @click="addAcc()"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 rounded-lg transition-colors">
@@ -262,7 +323,7 @@
                     <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1" x-show="index === 0">Оплата</label>
                     <select name="acc_payment" x-model="acc.payment"
                             class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-                        <option value="cash">Наличные</option>
+                        <option value="cash">Нал</option>
                         <option value="terminal">Терминал</option>
                         <option value="qr">QR</option>
                         <option value="transfer">Перевод</option>
@@ -282,7 +343,7 @@
 
     <div>
         <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Комментарий</label>
-        <textarea name="sale_comment" rows="3" placeholder="Примечание к продаже (будет в конце сообщения)..."
+        <textarea name="sale_comment" rows="3" placeholder="Примечание к продаже..."
                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-none">{% if form_data %}{{ form_data.sale_comment or '' }}{% endif %}</textarea>
     </div>
 
@@ -301,7 +362,7 @@
         <button type="submit"
                 class="btn-sale-submit inline-flex items-center justify-center gap-2 px-8 py-3 text-base font-semibold rounded-xl shadow-md transition-colors">
             <i class="fas fa-check"></i>
-            Продать товар
+            Продать
             <span id="sale-spinner" class="htmx-indicator"><i class="fas fa-spinner fa-spin"></i></span>
         </button>
     </div>
