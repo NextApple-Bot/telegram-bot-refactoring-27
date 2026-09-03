@@ -4,6 +4,9 @@ import re
 
 logger = logging.getLogger(__name__)
 
+# Серийник в скобках (как в validators), чтобы не тянуть bot.validators → циклы
+_SERIAL_IN_PARENS = re.compile(r"[\(\[]([A-Za-z0-9\-]{6,})[\)\]]")
+
 
 def normalize_name(name):
     return " ".join(str(name).split())
@@ -56,6 +59,38 @@ def is_marker_line(text: str) -> bool:
     if re.match(r"^(eSIM|SIM\+eSIM|SIM)\s*-\s*$", s, re.IGNORECASE):
         return True
     return False
+
+
+def _has_product_serial(text: str) -> bool:
+    return bool(_SERIAL_IN_PARENS.search(text or ""))
+
+
+def _looks_like_category_header(text: str) -> bool:
+    """
+    Настоящий заголовок категории: короткое имя с ':' в конце.
+
+    НЕ заголовок:
+      - строка товара с Size: / Gen / длинным описанием
+      - строка с серийником в скобках
+      - просто наличие ':' где-то в середине (Size: L)
+    """
+    s = (text or "").strip()
+    if not s or len(s) > 60:
+        return False
+    if not s.endswith(":"):
+        return False
+    if _has_product_serial(s):
+        return False
+    # «Size: L)» / «Color: Black» в середине строки товара
+    body = s[:-1].strip()
+    if not body or len(body) < 2:
+        return False
+    # Слишком «товарно»: запятые, слэши модели, размеры
+    if "," in body or " / " in body or re.search(r"\bSize\s*:", body, re.I):
+        return False
+    if re.search(r"\b(Gen\s*\d+|mm)\b", body, re.I):
+        return False
+    return True
 
 
 def extract_memory(text):
@@ -209,6 +244,61 @@ def match_existing_category(item_text: str, categories: list) -> str | None:
     return None
 
 
+def _merge_multiline_items(lines: list[str]) -> list[str]:
+    """
+    Склеивает многострочные товары:
+      название без SN
+      продолжение (Size: L)
+      (SERIAL)
+    → одна строка.
+    """
+    out: list[str] = []
+    buf: list[str] = []
+
+    def flush_buf():
+        nonlocal buf
+        if not buf:
+            return
+        out.append(" ".join(buf))
+        buf = []
+
+    for raw in lines:
+        line = raw.rstrip("\n")
+        stripped = line.strip()
+
+        if stripped == "" or is_marker_line(stripped) or re.match(r"^-{3,}$", stripped):
+            flush_buf()
+            out.append(line)
+            continue
+
+        if _looks_like_category_header(stripped):
+            flush_buf()
+            out.append(line)
+            continue
+
+        # Продолжение буфера, пока не встретили SN; строка только с SN — финал
+        only_serial = bool(
+            re.match(r"^[\(\[][A-Za-z0-9\-]{6,}[\)\]]$", stripped)
+        )
+        has_serial = _has_product_serial(stripped)
+
+        if buf:
+            buf.append(stripped)
+            if has_serial or only_serial:
+                flush_buf()
+            continue
+
+        if has_serial or only_serial:
+            out.append(stripped)
+            continue
+
+        # Строка без SN — возможное начало многострочного товара
+        buf = [stripped]
+
+    flush_buf()
+    return out
+
+
 def parse_categories(lines):
     categories = []
     current_header = None
@@ -230,8 +320,9 @@ def parse_categories(lines):
             i += 1
             continue
 
+        # --- / ------------ затем ТОЛЬКО настоящий заголовок (оканчивается на :)
         if re.match(r"^-{3,}$", stripped):
-            if i + 1 < n and ":" in lines[i + 1]:
+            if i + 1 < n and _looks_like_category_header(lines[i + 1].strip()):
                 flush()
                 header_line = lines[i + 1].strip()
                 header_text = header_line.rstrip(":").strip()
@@ -240,10 +331,13 @@ def parse_categories(lines):
                 if i < n and re.match(r"^-{3,}$", lines[i].strip()):
                     i += 1
                 continue
+            # одиночные --- без заголовка — маркер, пропускаем
             i += 1
             continue
 
-        if stripped.startswith("-") and stripped.endswith("-") and ":" in stripped:
+        if stripped.startswith("-") and stripped.endswith("-") and _looks_like_category_header(
+            stripped.strip("- ").strip() + (":" if not stripped.strip("- ").endswith(":") else "")
+        ):
             flush()
             header_text = stripped.strip("- ").strip()
             if header_text.endswith(":"):
@@ -255,7 +349,7 @@ def parse_categories(lines):
         if (
             re.match(r"^\s*-+\s*$", stripped)
             and i + 1 < n
-            and ":" in lines[i + 1]
+            and _looks_like_category_header(lines[i + 1].strip())
             and i + 2 < n
             and re.match(r"^\s*-+\s*$", lines[i + 2])
         ):
@@ -272,15 +366,12 @@ def parse_categories(lines):
             i += 1
             continue
 
-        if stripped.endswith(":") and len(stripped) < 80:
-            if re.search(r"\([A-Z0-9]{6,}\)", stripped):
-                pass
-            else:
-                flush()
-                header_text = stripped.rstrip(":").strip()
-                current_header = normalize_name(header_text)
-                i += 1
-                continue
+        if _looks_like_category_header(stripped):
+            flush()
+            header_text = stripped.rstrip(":").strip()
+            current_header = normalize_name(header_text)
+            i += 1
+            continue
 
         if current_header is None:
             current_header = "Общее"
@@ -295,7 +386,9 @@ def parse_categories(lines):
 
 
 def sort_assortment_to_categories(input_text):
-    return parse_categories(input_text.splitlines())
+    raw_lines = input_text.splitlines()
+    merged = _merge_multiline_items(raw_lines)
+    return parse_categories(merged)
 
 
 def _filter_real_items(item_strings):
