@@ -1,4 +1,4 @@
-<!-- Форма продажи товара -->
+<!-- Форма продажи -->
 <form
     hx-post="/admin/assortment/sale/{{ item.id }}"
     hx-target="#htmxModalContent"
@@ -7,17 +7,19 @@
     class="space-y-5 pb-2"
     x-data="{
         accessories: [{ name: '', price: '', payment: 'cash' }],
+        discounts: [{ amount: '', reason: '' }],
         extraItems: [],
         searchQ: '',
         searchResults: [],
         searchLoading: false,
-        useDiscount: false,
         useBonus: false,
         useChange: false,
         useTradeIn: false,
         useGnc: false,
         addAcc() { this.accessories.push({ name: '', price: '', payment: 'cash' }); },
         removeAcc(i) { if (this.accessories.length > 1) this.accessories.splice(i, 1); },
+        addDisc() { this.discounts.push({ amount: '', reason: '' }); },
+        removeDisc(i) { if (this.discounts.length > 1) this.discounts.splice(i, 1); },
         removeExtra(i) { this.extraItems.splice(i, 1); },
         async searchItems() {
             const q = (this.searchQ || '').trim();
@@ -48,20 +50,16 @@
     <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-4 py-3">
         <p class="text-sm font-medium text-slate-900 dark:text-white">{{ item.text }}</p>
         {% if item.serial %}
-        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Серийный номер: <code class="font-mono text-indigo-600 dark:text-indigo-400">{{ item.serial }}</code>
-        </p>
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">SN: <code class="font-mono text-indigo-600 dark:text-indigo-400">{{ item.serial }}</code></p>
         {% endif %}
         {% if item.is_booked %}
-        <p class="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">Товар в брони — данные подставлены из брони</p>
+        <p class="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">В брони — данные подставлены</p>
         {% endif %}
     </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
-                Цена продажи <span class="text-red-500">*</span>
-            </label>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Цена продажи <span class="text-red-500">*</span></label>
             <div class="relative">
                 <input type="number" step="0.01" name="sale_price" required
                        value="{% if form_data %}{{ form_data.sale_price or '' }}{% else %}{{ item.booking_price or item.sale_price or '' }}{% endif %}"
@@ -69,14 +67,10 @@
                 <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
             </div>
         </div>
-
         <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
-                Способ оплаты (товар) <span class="text-red-500">*</span>
-            </label>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Способ оплаты <span class="text-red-500">*</span></label>
             {% set pt = form_data.payment_type if form_data else (item.booking_payment_type or item.sale_payment_type or '') %}
-            <select name="payment_type" required
-                    class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            <select name="payment_type" required class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                 <option value="">— Выберите —</option>
                 <option value="cash" {% if pt == 'cash' %}selected{% endif %}>💵 Наличные</option>
                 <option value="terminal" {% if pt == 'terminal' %}selected{% endif %}>💳 Терминал</option>
@@ -87,27 +81,22 @@
                 <option value="paid" {% if pt == 'paid' %}selected{% endif %}>✅ Оплачен</option>
             </select>
         </div>
-
         <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Предоплата</label>
             <div class="relative">
-                <input type="number" step="0.01" name="sale_prepayment"
-                       value="{% if form_data %}{{ form_data.sale_prepayment or '' }}{% else %}{{ item.booking_prepayment or item.sale_prepayment or '' }}{% endif %}"
+                <input type="number" step="0.01" name="sale_prepayment" value="{% if form_data %}{{ form_data.sale_prepayment or '' }}{% else %}{{ item.booking_prepayment or item.sale_prepayment or '' }}{% endif %}"
                        class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                 <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
             </div>
         </div>
-
         <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Сумма оплаты (товар)</label>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Сумма оплаты</label>
             <div class="relative">
-                <input type="number" step="0.01" name="paid_amount"
-                       value="{% if form_data %}{{ form_data.paid_amount or '' }}{% endif %}"
+                <input type="number" step="0.01" name="paid_amount" value="{% if form_data %}{{ form_data.paid_amount or '' }}{% endif %}"
                        class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                 <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
             </div>
         </div>
-
         <div class="sm:col-span-2">
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Площадка</label>
             <input type="text" name="sale_platform" placeholder="Авито, Telegram..."
@@ -116,99 +105,76 @@
         </div>
     </div>
 
-    <!-- Доп. товары из ассортимента -->
     <div class="rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 p-4 space-y-3">
-        <div>
-            <label class="text-sm font-medium text-slate-800 dark:text-slate-100">
-                <i class="fas fa-boxes text-indigo-500 mr-1"></i> Ещё товары из ассортимента
-            </label>
-            <p class="text-xs text-slate-500 mt-0.5">Одна продажа: 2 телефона, PlayStation, дисковод, джойстик — спишутся со склада</p>
-        </div>
+        <label class="text-sm font-medium text-slate-800 dark:text-slate-100"><i class="fas fa-boxes text-indigo-500 mr-1"></i> Ещё товары из ассортимента</label>
         <div class="relative">
-            <input type="text" x-model="searchQ" @input.debounce.300ms="searchItems()"
-                   placeholder="Поиск по названию или SN…"
+            <input type="text" x-model="searchQ" @input.debounce.300ms="searchItems()" placeholder="Поиск по названию или SN…"
                    class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-            <div x-show="searchLoading" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
-                <i class="fas fa-spinner fa-spin"></i>
-            </div>
-            <div x-show="searchResults.length > 0" x-cloak
-                 class="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg">
+            <div x-show="searchResults.length > 0" x-cloak class="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg">
                 <template x-for="it in searchResults" :key="it.id">
-                    <button type="button" @click="addExtra(it)"
-                            class="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border-b border-slate-100 dark:border-slate-800 last:border-0">
-                        <span class="font-medium text-slate-800 dark:text-slate-100" x-text="it.text"></span>
+                    <button type="button" @click="addExtra(it)" class="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                        <span class="font-medium" x-text="it.text"></span>
                         <span class="block text-xs text-slate-500 font-mono" x-text="it.serial || ('#' + it.id)"></span>
                     </button>
                 </template>
             </div>
         </div>
         <template x-for="(ex, index) in extraItems" :key="ex.id">
-            <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-2.5">
+            <div class="flex flex-col sm:flex-row gap-2 items-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-2.5">
                 <input type="hidden" name="extra_item_id" :value="ex.id">
                 <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-slate-800 dark:text-slate-100 truncate" x-text="ex.text"></p>
+                    <p class="text-sm font-medium truncate" x-text="ex.text"></p>
                     <p class="text-xs text-slate-500 font-mono" x-text="ex.serial || ('#' + ex.id)"></p>
                 </div>
-                <div class="relative w-full sm:w-32 shrink-0">
-                    <input type="number" step="0.01" name="extra_item_price" x-model="ex.price" placeholder="Цена"
-                           class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-8 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                <div class="relative w-full sm:w-32">
+                    <input type="number" step="0.01" name="extra_item_price" x-model="ex.price" placeholder="Цена" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-8 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                     <span class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">₽</span>
                 </div>
-                <button type="button" @click="removeExtra(index)"
-                        class="p-2 text-red-400 hover:text-red-600 rounded-lg" title="Убрать">
-                    <i class="fas fa-times text-xs"></i>
-                </button>
+                <button type="button" @click="removeExtra(index)" class="p-2 text-red-400"><i class="fas fa-times text-xs"></i></button>
             </div>
         </template>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
-            <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" name="use_discount" value="on" x-model="useDiscount"
-                       class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
-                <span class="text-sm font-medium text-slate-700 dark:text-slate-200">Скидка</span>
-            </label>
-            <div x-show="useDiscount" x-cloak class="relative">
-                <input type="number" step="0.01" name="sale_discount"
-                       value="{% if form_data %}{{ form_data.sale_discount or '' }}{% endif %}"
-                       placeholder="Сумма"
-                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
-            </div>
+    <div class="rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/20 p-4 space-y-3">
+        <div class="flex items-center justify-between">
+            <label class="text-sm font-medium"><i class="fas fa-percent text-amber-500 mr-1"></i> Скидки</label>
+            <button type="button" @click="addDisc()" class="px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/40 rounded-lg"><i class="fas fa-plus text-[10px]"></i> Ещё скидку</button>
         </div>
+        <p class="text-xs text-slate-500">Несколько скидок с причинами (по Trade-in, ДР, акция…)</p>
+        <template x-for="(d, index) in discounts" :key="index">
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                <div class="sm:col-span-4 relative">
+                    <label class="block text-xs text-slate-500 mb-1" x-show="index === 0">Сумма</label>
+                    <input type="number" step="0.01" name="discount_amount" x-model="d.amount" placeholder="3000" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-8 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    <span class="absolute right-2 bottom-2 text-slate-400 text-xs">₽</span>
+                </div>
+                <div class="sm:col-span-7">
+                    <label class="block text-xs text-slate-500 mb-1" x-show="index === 0">Причина</label>
+                    <input type="text" name="discount_reason" x-model="d.reason" placeholder="по Trade-in / в ДР / акция" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                </div>
+                <div class="sm:col-span-1 flex justify-end">
+                    <button type="button" @click="removeDisc(index)" x-show="discounts.length > 1" class="p-2 text-red-400"><i class="fas fa-times text-xs"></i></button>
+                </div>
+            </div>
+        </template>
+    </div>
 
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
-            <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" name="use_bonus" value="on" x-model="useBonus"
-                       class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
-                <span class="text-sm font-medium text-slate-700 dark:text-slate-200">Бонусы</span>
-            </label>
+            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" name="use_bonus" value="on" x-model="useBonus" class="w-4 h-4 rounded border-slate-300 text-emerald-600"><span class="text-sm font-medium">Бонусы</span></label>
             <div x-show="useBonus" x-cloak class="relative">
-                <input type="number" step="0.01" name="sale_bonus"
-                       value="{% if form_data %}{{ form_data.sale_bonus or '' }}{% endif %}"
-                       placeholder="Сумма"
-                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <input type="number" step="0.01" name="sale_bonus" value="{% if form_data %}{{ form_data.sale_bonus or '' }}{% endif %}" placeholder="Сумма" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                 <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
             </div>
         </div>
-
         <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
-            <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" name="use_change" value="on" x-model="useChange"
-                       class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
-                <span class="text-sm font-medium text-slate-700 dark:text-slate-200">Сдача</span>
-            </label>
+            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" name="use_change" value="on" x-model="useChange" class="w-4 h-4 rounded border-slate-300 text-emerald-600"><span class="text-sm font-medium">Сдача</span></label>
             <div x-show="useChange" x-cloak class="space-y-2">
                 <div class="relative">
-                    <input type="number" step="0.01" name="change_amount"
-                           value="{% if form_data %}{{ form_data.change_amount or '' }}{% endif %}"
-                           placeholder="Сумма сдачи"
-                           class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    <input type="number" step="0.01" name="change_amount" value="{% if form_data %}{{ form_data.change_amount or '' }}{% endif %}" placeholder="Сумма" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                     <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
                 </div>
-                <select name="change_type"
-                        class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <select name="change_type" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
                     {% set ct = form_data.change_type if form_data else 'cash' %}
                     <option value="cash" {% if ct == 'cash' %}selected{% endif %}>💵 Наличными</option>
                     <option value="transfer" {% if ct == 'transfer' %}selected{% endif %}>↗️ Переводом</option>
@@ -218,27 +184,27 @@
     </div>
 
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
-        <label class="flex items-center gap-2 cursor-pointer select-none">
-            <input type="checkbox" name="use_trade_in" value="on" x-model="useTradeIn"
-                   class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
-            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                <i class="fas fa-exchange-alt text-slate-400 mr-1"></i> Trade-in
-            </span>
+        <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="use_trade_in" value="on" x-model="useTradeIn" class="w-4 h-4 rounded border-slate-300 text-emerald-600">
+            <span class="text-sm font-medium"><i class="fas fa-exchange-alt text-slate-400 mr-1"></i> Trade-in</span>
         </label>
         <div x-show="useTradeIn" x-cloak class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">Устройство (сдача)</label>
-                <input type="text" name="trade_in_name" placeholder="iPhone 13 128GB"
-                       value="{% if form_data %}{{ form_data.trade_in_name or '' }}{% endif %}"
-                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            <div class="sm:col-span-2">
+                <label class="block text-xs text-slate-500 mb-1">Устройство (сдача)</label>
+                <input type="text" name="trade_in_name" placeholder="iPhone 15 128GB Pink" value="{% if form_data %}{{ form_data.trade_in_name or '' }}{% endif %}" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
             </div>
             <div>
-                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">Сумма trade-in</label>
+                <label class="block text-xs text-slate-500 mb-1">Серийный номер</label>
+                <input type="text" name="trade_in_serial" placeholder="SN / IMEI" value="{% if form_data %}{{ form_data.trade_in_serial or '' }}{% endif %}" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-xs text-slate-500 mb-1">АКБ %</label>
+                <input type="text" name="trade_in_battery" placeholder="86" value="{% if form_data %}{{ form_data.trade_in_battery or '' }}{% endif %}" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+            <div class="sm:col-span-2">
+                <label class="block text-xs text-slate-500 mb-1">Сумма trade-in (оплата, не уменьшает «Общую»)</label>
                 <div class="relative">
-                    <input type="number" step="0.01" name="trade_in_amount"
-                           value="{% if form_data %}{{ form_data.trade_in_amount or '' }}{% endif %}"
-                           placeholder="0"
-                           class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    <input type="number" step="0.01" name="trade_in_amount" value="{% if form_data %}{{ form_data.trade_in_amount or '' }}{% endif %}" placeholder="20000" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                     <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
                 </div>
             </div>
@@ -246,28 +212,19 @@
     </div>
 
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
-        <label class="flex items-center gap-2 cursor-pointer select-none">
-            <input type="checkbox" name="use_gnc" value="on" x-model="useGnc"
-                   class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
-            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                <i class="fas fa-tag text-slate-400 mr-1"></i> ГНЦ
-            </span>
-            <span class="text-xs text-slate-400">(Гарантия Низкой Цены)</span>
+        <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="use_gnc" value="on" x-model="useGnc" class="w-4 h-4 rounded border-slate-300 text-emerald-600">
+            <span class="text-sm font-medium"><i class="fas fa-tag text-slate-400 mr-1"></i> ГНЦ</span>
         </label>
         <div x-show="useGnc" x-cloak class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">Магазин</label>
-                <input type="text" name="gnc_store" placeholder="AStore, DNS…"
-                       value="{% if form_data %}{{ form_data.gnc_store or '' }}{% endif %}"
-                       class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <label class="block text-xs text-slate-500 mb-1">Магазин</label>
+                <input type="text" name="gnc_store" placeholder="AStore, DNS…" value="{% if form_data %}{{ form_data.gnc_store or '' }}{% endif %}" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
             </div>
             <div>
-                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">Сумма скидки ГНЦ</label>
+                <label class="block text-xs text-slate-500 mb-1">Сумма ГНЦ</label>
                 <div class="relative">
-                    <input type="number" step="0.01" name="gnc_amount"
-                           value="{% if form_data %}{{ form_data.gnc_amount or '' }}{% endif %}"
-                           placeholder="Сумма"
-                           class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    <input type="number" step="0.01" name="gnc_amount" value="{% if form_data %}{{ form_data.gnc_amount or '' }}{% endif %}" placeholder="Сумма" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
                     <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
                 </div>
             </div>
@@ -276,93 +233,48 @@
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">ФИО клиента</label>
-            <input type="text" name="sale_full_name" placeholder="Иванов Иван Иванович"
-                   value="{% if form_data %}{{ form_data.sale_full_name or '' }}{% else %}{{ item.booking_full_name or item.sale_full_name or '' }}{% endif %}"
-                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">ФИО</label>
+            <input type="text" name="sale_full_name" placeholder="Иванов Иван" value="{% if form_data %}{{ form_data.sale_full_name or '' }}{% else %}{{ item.booking_full_name or item.sale_full_name or '' }}{% endif %}" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
         </div>
         <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Телефон</label>
-            <input type="tel" name="sale_phone" placeholder="+79991234567"
-                   value="{% if form_data %}{{ form_data.sale_phone or '' }}{% else %}{{ item.booking_phone or item.sale_phone or '' }}{% endif %}"
-                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            <input type="tel" name="sale_phone" placeholder="+79991234567" value="{% if form_data %}{{ form_data.sale_phone or '' }}{% else %}{{ item.booking_phone or item.sale_phone or '' }}{% endif %}" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
         </div>
         <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Дата рождения</label>
-            <input type="date" name="sale_birth_date" value="{{ birth_date_iso or '' }}" max="2015-12-31"
-                   class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            <input type="date" name="sale_birth_date" value="{{ birth_date_iso or '' }}" max="2015-12-31" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
         </div>
     </div>
 
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
         <div class="flex items-center justify-between">
-            <label class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                <i class="fas fa-puzzle-piece text-slate-400 mr-1"></i> Аксессуары (без SN)
-            </label>
-            <button type="button" @click="addAcc()"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 rounded-lg transition-colors">
-                <i class="fas fa-plus text-[10px]"></i> Добавить
-            </button>
+            <label class="text-sm font-medium"><i class="fas fa-puzzle-piece text-slate-400 mr-1"></i> Аксессуары</label>
+            <button type="button" @click="addAcc()" class="px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg"><i class="fas fa-plus text-[10px]"></i> Добавить</button>
         </div>
         <template x-for="(acc, index) in accessories" :key="index">
             <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-                <div class="sm:col-span-5">
-                    <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1" x-show="index === 0">Название</label>
-                    <input type="text" name="acc_name" x-model="acc.name" placeholder="Чехол, плёнка..."
-                           class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-                </div>
-                <div class="sm:col-span-3">
-                    <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1" x-show="index === 0">Стоимость</label>
-                    <div class="relative">
-                        <input type="number" step="0.01" name="acc_price" x-model="acc.price" placeholder="0"
-                               class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-8 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-                        <span class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">₽</span>
-                    </div>
-                </div>
-                <div class="sm:col-span-3">
-                    <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1" x-show="index === 0">Оплата</label>
-                    <select name="acc_payment" x-model="acc.payment"
-                            class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-                        <option value="cash">Нал</option>
-                        <option value="terminal">Терминал</option>
-                        <option value="qr">QR</option>
-                        <option value="transfer">Перевод</option>
-                        <option value="invoice">Счёт</option>
-                        <option value="paid">Оплачен</option>
-                    </select>
-                </div>
-                <div class="sm:col-span-1 flex justify-end pb-0.5">
-                    <button type="button" @click="removeAcc(index)" x-show="accessories.length > 1"
-                            class="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors" title="Удалить">
-                        <i class="fas fa-trash-alt text-xs"></i>
-                    </button>
-                </div>
+                <div class="sm:col-span-5"><input type="text" name="acc_name" x-model="acc.name" placeholder="Чехол…" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"></div>
+                <div class="sm:col-span-3 relative"><input type="number" step="0.01" name="acc_price" x-model="acc.price" placeholder="0" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-3 pr-8 py-2 text-sm"><span class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">₽</span></div>
+                <div class="sm:col-span-3"><select name="acc_payment" x-model="acc.payment" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-2 text-sm"><option value="cash">Нал</option><option value="terminal">Терминал</option><option value="qr">QR</option><option value="transfer">Перевод</option></select></div>
+                <div class="sm:col-span-1"><button type="button" @click="removeAcc(index)" x-show="accessories.length > 1" class="p-2 text-red-400"><i class="fas fa-trash-alt text-xs"></i></button></div>
             </div>
         </template>
     </div>
 
     <div>
         <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">Комментарий</label>
-        <textarea name="sale_comment" rows="3" placeholder="Примечание к продаже..."
-                  class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-none">{% if form_data %}{{ form_data.sale_comment or '' }}{% endif %}</textarea>
+        <textarea name="sale_comment" rows="3" placeholder="Подарки, примечания…" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm resize-none">{% if form_data %}{{ form_data.sale_comment or '' }}{% endif %}</textarea>
     </div>
 
-    <label class="flex items-center gap-3 cursor-pointer select-none">
-        <input type="checkbox" name="create_client" value="on"
-               class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-               {% if not form_data or form_data.create_client %}checked{% endif %}>
-        <span class="text-sm text-slate-700 dark:text-slate-300">Создать / обновить данные клиента</span>
+    <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" name="create_client" value="on" class="w-4 h-4 rounded border-slate-300 text-emerald-600" {% if not form_data or form_data.create_client %}checked{% endif %}>
+        <span class="text-sm">Создать / обновить клиента</span>
     </label>
 
-    <div class="pt-4 mt-2 border-t border-slate-200 dark:border-slate-700 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
-        <button type="button" @click="$store.modal.show = false"
-                class="px-5 py-3 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors">
-            Отмена
-        </button>
-        <button type="submit"
-                class="btn-sale-submit inline-flex items-center justify-center gap-2 px-8 py-3 text-base font-semibold rounded-xl shadow-md transition-colors">
-            <i class="fas fa-check"></i>
-            Продать
+    <div class="pt-4 mt-2 border-t border-slate-200 dark:border-slate-700 flex flex-col-reverse sm:flex-row justify-end gap-3">
+        <button type="button" @click="$store.modal.show = false" class="px-5 py-3 text-sm font-medium bg-slate-100 dark:bg-slate-800 rounded-xl">Отмена</button>
+        <button type="submit" class="btn-sale-submit inline-flex items-center justify-center gap-2 px-8 py-3 text-base font-semibold rounded-xl shadow-md">
+            <i class="fas fa-check"></i> Продать
             <span id="sale-spinner" class="htmx-indicator"><i class="fas fa-spinner fa-spin"></i></span>
         </button>
     </div>
