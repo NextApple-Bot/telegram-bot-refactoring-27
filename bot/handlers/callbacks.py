@@ -132,7 +132,11 @@ async def process_promo_tradein(callback: CallbackQuery):
         "✅ Защитное стекло Remax\n"
         "✅ Чехол с MagSafe (цвет на ваш выбор)\n"
         "✅ Оригинальный блок питания Apple 20 Вт\n"
-        "✅ Ультра-тонкий повербанк Xiaomi"
+        "✅ Ультра-тонкий повербанк Xiaomi\n\n"
+        "<b>Дополнительная скидка на новое устройство:</b>\n"
+        "• до 50 000 ₽ — скидка 1 000 ₽\n"
+        "• до 100 000 ₽ — скидка 2 000 ₽\n"
+        "• выше 100 000 ₽ — скидка 3 000 ₽"
     )
     await safe_delete(callback.message)
     await send_and_clean(
@@ -158,7 +162,11 @@ async def process_promo_tradein_installment(callback: CallbackQuery):
         "✅ Чехол с MagSafe (цвет на ваш выбор)\n"
         "✅ Оригинальный блок питания Apple 20 Вт\n"
         "✅ Ультра-тонкий повербанк Xiaomi\n\n"
-        "🎁 колонку Яндекс Алиса дополнительно"
+        "🎁 колонку Яндекс Алиса\n\n"
+        "<b>Дополнительная скидка на новое устройство:</b>\n"
+        "• до 50 000 ₽ — скидка 1 000 ₽\n"
+        "• до 100 000 ₽ — скидка 2 000 ₽\n"
+        "• выше 100 000 ₽ — скидка 3 000 ₽"
     )
     await safe_delete(callback.message)
     await send_and_clean(
@@ -177,7 +185,7 @@ async def process_promo_birthday(callback: CallbackQuery):
     await callback.answer()
     text = (
         "🎂 <b>В день рождения</b>\n\n"
-        "Скидка — до <b>5000 ₽</b>, в зависимости от выбора устройства."
+        "Скидка — до <b>5 000 ₽</b>, в зависимости от выбора устройства."
     )
     await safe_delete(callback.message)
     await send_and_clean(
