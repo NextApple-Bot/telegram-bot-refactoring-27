@@ -17,7 +17,7 @@ from bot.repositories import ClientRepository, StatsRepository
 from bot.utils.helpers import send_and_clean
 from bot.utils.sort import detect_sim_type, get_full_model_name
 
-from .base import get_main_menu_keyboard, show_help, show_inventory
+from .base import get_main_menu_keyboard, get_promo_keyboard, show_help, show_inventory
 from .service_commands import delete_category_by_id, merge_categories_action, reset_assortment_action
 from .templates_cmd import templates_keyboard
 from .topics.common import export_assortment_to_topic
@@ -78,6 +78,116 @@ async def process_templates_menu(callback: CallbackQuery):
     await callback.message.answer(
         "Выберите шаблон для копирования или отправки в топик:",
         reply_markup=templates_keyboard(),
+    )
+
+
+@router.callback_query(F.data == "menu:promo")
+async def process_promo_menu(callback: CallbackQuery):
+    await callback.answer()
+    await safe_delete(callback.message)
+    await send_and_clean(
+        bot=callback.bot,
+        chat_id=callback.message.chat.id,
+        text="🎁 <b>Акции</b>\n\nВыберите интересующую акцию:",
+        reply_markup=get_promo_keyboard(),
+        parse_mode="HTML",
+        message_thread_id=callback.message.message_thread_id,
+        delete_after=120,
+    )
+
+
+@router.callback_query(F.data == "promo:installment")
+async def process_promo_installment(callback: CallbackQuery):
+    await callback.answer()
+    text = (
+        "💳 <b>Рассрочка 36 или 24 месяцев</b>\n\n"
+        "<b>36 Месяцев</b>\n"
+        "— полный комплект аксессуаров:\n"
+        "• Чехол\n"
+        "• Стекло\n"
+        "• Блок Питания\n"
+        "+ повербанк Xiaomi или колонка Яндекс Алиса.\n\n"
+        "<b>24 Месяца</b>\n"
+        "повербанк Xiaomi в подарок.\n\n"
+        "<i>Чем больше срок – тем больше подарок.</i>"
+    )
+    await safe_delete(callback.message)
+    await send_and_clean(
+        bot=callback.bot,
+        chat_id=callback.message.chat.id,
+        text=text,
+        parse_mode="HTML",
+        reply_markup=get_promo_keyboard(),
+        message_thread_id=callback.message.message_thread_id,
+        delete_after=180,
+    )
+
+
+@router.callback_query(F.data == "promo:tradein")
+async def process_promo_tradein(callback: CallbackQuery):
+    await callback.answer()
+    text = (
+        "♻️ <b>Trade-IN</b>\n\n"
+        "В подарок вы получаете:\n"
+        "✅ Защитное стекло Remax\n"
+        "✅ Чехол с MagSafe (цвет на ваш выбор)\n"
+        "✅ Оригинальный блок питания Apple 20 Вт\n"
+        "✅ Ультра-тонкий повербанк Xiaomi"
+    )
+    await safe_delete(callback.message)
+    await send_and_clean(
+        bot=callback.bot,
+        chat_id=callback.message.chat.id,
+        text=text,
+        parse_mode="HTML",
+        reply_markup=get_promo_keyboard(),
+        message_thread_id=callback.message.message_thread_id,
+        delete_after=180,
+    )
+
+
+@router.callback_query(F.data == "promo:tradein_installment")
+async def process_promo_tradein_installment(callback: CallbackQuery):
+    await callback.answer()
+    text = (
+        "♻️💳 <b>Trade-IN + Рассрочка 36 Месяцев</b>\n\n"
+        "Сдаёте старый iPhone по Trade-in и оформляете новый в рассрочку на Халву 36 месяцев?\n\n"
+        "Получаете:\n"
+        "♻️ скидку за старый iPhone по Trade-IN\n"
+        "✅ Защитное стекло Remax\n"
+        "✅ Чехол с MagSafe (цвет на ваш выбор)\n"
+        "✅ Оригинальный блок питания Apple 20 Вт\n"
+        "✅ Ультра-тонкий повербанк Xiaomi\n\n"
+        "🎁 колонку Яндекс Алиса дополнительно"
+    )
+    await safe_delete(callback.message)
+    await send_and_clean(
+        bot=callback.bot,
+        chat_id=callback.message.chat.id,
+        text=text,
+        parse_mode="HTML",
+        reply_markup=get_promo_keyboard(),
+        message_thread_id=callback.message.message_thread_id,
+        delete_after=180,
+    )
+
+
+@router.callback_query(F.data == "promo:birthday")
+async def process_promo_birthday(callback: CallbackQuery):
+    await callback.answer()
+    text = (
+        "🎂 <b>В день рождения</b>\n\n"
+        "Скидка — до <b>5000 ₽</b>, в зависимости от выбора устройства."
+    )
+    await safe_delete(callback.message)
+    await send_and_clean(
+        bot=callback.bot,
+        chat_id=callback.message.chat.id,
+        text=text,
+        parse_mode="HTML",
+        reply_markup=get_promo_keyboard(),
+        message_thread_id=callback.message.message_thread_id,
+        delete_after=180,
     )
 
 

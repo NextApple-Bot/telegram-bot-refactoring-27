@@ -32,9 +32,24 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="📦 Ассортимент", callback_data="menu:inventory")],
             [InlineKeyboardButton(text="📋 Шаблоны продажи/брони", callback_data="menu:templates")],
+            [InlineKeyboardButton(text="🎁 Акция", callback_data="menu:promo")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="👥 Клиенты", callback_data="menu:clients")],
             [InlineKeyboardButton(text="❓ Помощь", callback_data="menu:help")],
+        ]
+    )
+    return keyboard
+
+
+def get_promo_keyboard() -> InlineKeyboardMarkup:
+    """Подменю акций."""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Рассрочка 36 / 24 месяцев", callback_data="promo:installment")],
+            [InlineKeyboardButton(text="♻️ Trade-IN", callback_data="promo:tradein")],
+            [InlineKeyboardButton(text="♻️💳 Trade-IN + Рассрочка 36", callback_data="promo:tradein_installment")],
+            [InlineKeyboardButton(text="🎂 В день рождения", callback_data="promo:birthday")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:cancel")],
         ]
     )
     return keyboard
