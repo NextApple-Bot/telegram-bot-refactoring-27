@@ -1,1 +1,295 @@
-RESTORE_FROM_FILE
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+{% block content %}
+<div class="flex flex-col gap-4 mb-8">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Дашборд</h1>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">
+                Данные за <span class="font-semibold text-slate-700 dark:text-slate-200">{{ target_date }}</span>
+                {% if not is_today %}<span class="text-amber-600 dark:text-amber-400 text-sm">· не сегодня</span>{% endif %}
+                {% if has_adjustments %}<span class="text-indigo-600 dark:text-indigo-400 text-sm">· есть корректировки</span>{% endif %}
+            </p>
+        </div>
+        <button class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl shadow-sm transition-colors"
+            onclick="document.getElementById('editStatsModal').classList.remove('hidden')">
+            <i class="fas fa-pen text-xs"></i> Редактировать {{ target_date }}
+        </button>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-card">
+        <a href="/admin/dashboard?target_date={{ yesterday_iso }}" class="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800" title="Предыдущий день"><i class="fas fa-chevron-left text-sm"></i></a>
+        <form method="get" action="/admin/dashboard" class="flex items-center gap-2 flex-1 min-w-[12rem]">
+            <input type="date" name="target_date" value="{{ target_date_iso }}" class="flex-1 min-w-0 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" onchange="this.form.submit()">
+            <button type="submit" class="px-3 py-2 text-sm font-medium bg-slate-900 dark:bg-indigo-600 text-white rounded-xl">Открыть</button>
+        </form>
+        <a href="/admin/dashboard?target_date={{ tomorrow_iso }}" class="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800" title="Следующий день"><i class="fas fa-chevron-right text-sm"></i></a>
+        {% if not is_today %}
+        <a href="/admin/dashboard?target_date={{ real_today_iso }}" class="px-3 py-2 text-xs font-medium rounded-xl border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40">Сегодня</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="mb-8 rounded-2xl border border-indigo-200 dark:border-indigo-800/50 bg-gradient-to-br from-indigo-50/80 to-white dark:from-indigo-950/30 dark:to-slate-900 p-5 shadow-card">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+        <div>
+            <h2 class="text-sm font-semibold text-indigo-900 dark:text-indigo-200">Итоги месяца · {{ month.month_label }}</h2>
+            <p class="text-xs text-indigo-700/70 dark:text-indigo-400/70">с учётом корректировок · дней с данными: {{ month.days_with_data }}</p>
+        </div>
+        <a href="/admin/stats?period=range&date_from={{ month.first }}&date_to={{ month.last }}" class="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Подробная статистика →</a>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="rounded-xl bg-white/80 dark:bg-slate-900/50 border border-indigo-100 dark:border-indigo-900/40 p-3"><p class="text-[11px] uppercase tracking-wider text-slate-500">Продажи</p><p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ month.sales_count }}</p><p class="text-[10px] text-slate-400 mt-0.5">устр. {{ month.devices_count|default(month.sales_count) }} · акс. {{ month.accessories_count|default(0) }}</p></div>
+        <div class="rounded-xl bg-white/80 dark:bg-slate-900/50 border border-indigo-100 dark:border-indigo-900/40 p-3"><p class="text-[11px] uppercase tracking-wider text-slate-500">Выручка</p><p class="text-xl font-bold text-slate-900 dark:text-white mt-1">{{ "{:,.0f}".format(month.revenue).replace(',', ' ') }} <span class="text-sm text-slate-400">₽</span></p></div>
+        <div class="rounded-xl bg-white/80 dark:bg-slate-900/50 border border-indigo-100 dark:border-indigo-900/40 p-3"><p class="text-[11px] uppercase tracking-wider text-slate-500">Предзаказы</p><p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ month.preorders_count }}</p></div>
+        <div class="rounded-xl bg-white/80 dark:bg-slate-900/50 border border-indigo-100 dark:border-indigo-900/40 p-3"><p class="text-[11px] uppercase tracking-wider text-slate-500">Брони</p><p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ month.bookings_count }}</p></div>
+    </div>
+</div>
+
+{% if low_stock %}
+<div class="mb-8 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/80 dark:bg-amber-950/30 p-5 shadow-card">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center"><i class="fas fa-exclamation-triangle text-amber-600 dark:text-amber-400"></i></div>
+            <div>
+                <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200">Закончились на складе</h2>
+                <p class="text-xs text-amber-700/80 dark:text-amber-400/80">iPhone · iPad · Watch · Samsung · AirPods · свободно 0 · {{ low_stock|length }} категор. · нажмите категорию</p>
+            </div>
+        </div>
+        <a href="/admin/assortment" class="text-xs font-medium text-amber-800 dark:text-amber-300 hover:underline">Ассортимент →</a>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {% for cat in low_stock %}
+        <details class="group rounded-xl {% if cat.level == 'critical' %}bg-rose-100/80 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800{% else %}bg-white/70 dark:bg-slate-900/40 border border-amber-200/80 dark:border-amber-800/50{% endif %}">
+            <summary class="flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                <div class="min-w-0 flex items-center gap-2">
+                    <i class="fas fa-chevron-right text-[10px] text-slate-400 transition-transform group-open:rotate-90"></i>
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ cat.name }}</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400">{% if cat.booked %}бронь: {{ cat.booked }} · {% endif %}всего: {{ cat.total }}{% if cat.variants %} · {{ cat.variants|length }} вариант.{% endif %}</p>
+                    </div>
+                </div>
+                <span class="shrink-0 inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 rounded-lg text-sm font-bold {% if cat.level == 'critical' %}bg-rose-600 text-white{% else %}bg-amber-500 text-white{% endif %}">{{ cat.free }}</span>
+            </summary>
+            <div class="px-3 pb-2.5 pt-0 border-t border-black/5 dark:border-white/5">
+                <p class="text-xs font-medium text-rose-700 dark:text-rose-300 mt-2 mb-1">Свободно: 0 — закончились</p>
+                {% if cat.booked_variants %}
+                <p class="text-[11px] text-slate-500 mt-2 mb-1">На броне ({{ cat.booked }}):</p>
+                <ul class="space-y-1 max-h-40 overflow-y-auto">
+                    {% for v in cat.booked_variants %}
+                    <li class="flex items-start justify-between gap-2 text-xs">
+                        <span class="text-slate-700 dark:text-slate-300 leading-snug">{{ v.name }}</span>
+                        <span class="shrink-0 font-semibold text-violet-600 dark:text-violet-400">{{ v.count }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% elif cat.booked %}
+                <p class="text-[11px] text-slate-500 mt-1">На броне ещё {{ cat.booked }} шт.</p>
+                {% else %}
+                <p class="text-xs text-slate-500 mt-2">Нет свободных и нет на броне.</p>
+                {% endif %}
+                <a href="/admin/assortment?q={{ cat.name|urlencode }}" class="inline-block mt-2 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Открыть в ассортименте →</a>
+            </div>
+        </details>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-start justify-between"><div><p class="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Продажи за день</p><p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ sales_today }}</p><p class="text-[11px] text-slate-400 mt-1">устр. {{ stats.devices_count|default(sales_today) }} · акс. {{ stats.accessories_count|default(0) }}</p></div><div class="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center"><i class="fas fa-shopping-bag text-indigo-600 dark:text-indigo-400"></i></div></div>
+        {% if sales_change_yesterday is not none %}<p class="mt-3 text-sm {% if sales_change_yesterday > 0 %}text-emerald-600{% elif sales_change_yesterday < 0 %}text-red-500{% else %}text-slate-400{% endif %}">{% if sales_change_yesterday > 0 %}+{% endif %}{{ sales_change_yesterday }}% <span class="text-slate-400">к предыдущему дню</span></p>{% endif %}
+    </div>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-start justify-between"><div><p class="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Выручка за день</p><p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ "{:,.0f}".format(revenue_today).replace(',', ' ') }} <span class="text-lg font-semibold text-slate-400">₽</span></p></div><div class="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center"><i class="fas fa-ruble-sign text-emerald-600 dark:text-emerald-400"></i></div></div>
+        {% if revenue_change_yesterday is not none %}<p class="mt-3 text-sm {% if revenue_change_yesterday > 0 %}text-emerald-600{% elif revenue_change_yesterday < 0 %}text-red-500{% else %}text-slate-400{% endif %}">{% if revenue_change_yesterday > 0 %}+{% endif %}{{ revenue_change_yesterday }}% <span class="text-slate-400">к предыдущему дню</span></p>{% endif %}
+    </div>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-start justify-between"><div><p class="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Предзаказы</p><p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ stats.preorders_count if stats else 0 }}</p></div><div class="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center"><i class="fas fa-clock text-amber-600 dark:text-amber-400"></i></div></div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-start justify-between"><div><p class="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Брони</p><p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ stats.bookings_count if stats else 0 }}</p></div><div class="w-11 h-11 rounded-xl bg-violet-50 dark:bg-violet-950/50 flex items-center justify-center"><i class="fas fa-bookmark text-violet-600 dark:text-violet-400"></i></div></div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-8">
+    <div class="lg:col-span-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Структура оплат · {{ target_date }}</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {% for key, label, icon, color in [('cash','Наличные','fa-money-bill-wave','emerald'),('terminal','Терминал','fa-credit-card','blue'),('qr','QR-код','fa-qrcode','violet'),('transfer','Перевод','fa-exchange-alt','sky'),('invoice','По счёту','fa-file-invoice','slate'),('installment','Рассрочка','fa-calendar-alt','amber')] %}
+            <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <div class="w-9 h-9 rounded-lg bg-{{ color }}-100 dark:bg-{{ color }}-950/40 flex items-center justify-center flex-shrink-0"><i class="fas {{ icon }} text-{{ color }}-600 dark:text-{{ color }}-400 text-sm"></i></div>
+                <div class="min-w-0"><p class="text-xs text-slate-500 dark:text-slate-400">{{ label }}</p><p class="text-sm font-semibold text-slate-900 dark:text-white">{{ "{:,.0f}".format(payments[key]).replace(',', ' ') }} ₽</p></div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between"><span class="text-sm font-medium text-slate-500">Итого</span><span class="text-xl font-bold text-indigo-600 dark:text-indigo-400">{{ "{:,.0f}".format(total_revenue).replace(',', ' ') }} ₽</span></div>
+    </div>
+    <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-center justify-between mb-2"><h2 class="text-sm font-semibold text-slate-900 dark:text-white">Кто работал · {{ target_date }}</h2><a href="/admin/sellers/manage" class="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Управление</a></div>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Нажмите имя, чтобы отметить смену в этот день</p>
+        {% if sellers %}<div class="flex flex-wrap gap-2">{% for seller in sellers %}<button type="button" onclick="toggleSeller({{ seller.id }})" id="seller-btn-{{ seller.id }}" class="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors {% if seller.present %}bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300{% else %}bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300{% endif %}">{{ seller.name }}</button>{% endfor %}</div>{% else %}<p class="text-sm text-slate-400">Продавцы не добавлены</p>{% endif %}
+        <a href="/admin/sellers/stats" class="inline-block mt-4 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Статистика смен →</a>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card"><h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Динамика продаж (7 дней до {{ target_date }})</h2><canvas id="salesChart" height="120"></canvas></div>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card"><h2 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Динамика выручки (7 дней)</h2><canvas id="revenueChart" height="120"></canvas></div>
+</div>
+
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+    <div class="flex items-center justify-between mb-4"><h2 class="text-sm font-semibold text-slate-900 dark:text-white">Топ-5 моделей (7 дней)</h2><a href="/admin/sellers/stats" class="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Статистика продавцов →</a></div>
+    {% if top_labels %}<div class="space-y-3">{% for i in range(top_labels|length) %}<div class="flex items-center gap-3"><span class="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-semibold flex items-center justify-center text-slate-500">{{ i + 1 }}</span><span class="flex-1 text-sm text-slate-700 dark:text-slate-300 truncate">{{ top_labels[i] }}</span><span class="text-sm font-semibold text-slate-900 dark:text-white">{{ top_counts[i] }}</span></div>{% endfor %}</div>{% else %}<p class="text-sm text-slate-400">Нет данных за выбранный период</p>{% endif %}
+</div>
+
+<div id="editStatsModal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-xl border border-slate-200 dark:border-slate-700 overflow-hidden max-h-[92vh] flex flex-col">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <div><h3 class="text-lg font-semibold">Закрыть день · {{ target_date }}</h3><p class="text-xs text-slate-500 mt-0.5">Цифры + кто работал · продажи в БД не удаляются</p></div>
+            <button type="button" onclick="document.getElementById('editStatsModal').classList.add('hidden')" class="p-2 text-slate-400 hover:text-slate-600 rounded-lg"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-5 overflow-y-auto flex-1">
+            <div class="mb-5 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-4">
+                <label class="block text-sm font-semibold text-indigo-900 dark:text-indigo-200 mb-1.5"><i class="fas fa-paste text-xs mr-1"></i> Вставить итог дня</label>
+                <p class="text-xs text-indigo-700/80 dark:text-indigo-400/80 mb-2">Скопируйте текст итога и нажмите «Распарсить».</p>
+                <textarea id="pasteReportText" rows="5" placeholder="📊 Статистика за ..." class="w-full rounded-xl border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-y"></textarea>
+                <div class="flex flex-wrap items-center gap-2 mt-2">
+                    <button type="button" onclick="parseDailyReport()" class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl"><i class="fas fa-magic text-xs"></i> Распарсить</button>
+                    <button type="button" onclick="document.getElementById('pasteReportText').value=''" class="px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl">Очистить</button>
+                    <span id="parseStatus" class="text-xs text-slate-500"></span>
+                </div>
+            </div>
+            <form id="editStatsForm" class="space-y-4">
+                <input type="hidden" name="target_date" value="{{ target_date_iso }}">
+                <div class="grid grid-cols-2 gap-3">
+                    {% for key, label in [('cash','Наличные'),('terminal','Терминал'),('qr','QR-код'),('transfer','Перевод'),('invoice','По счёту'),('installment','Рассрочка')] %}
+                    <div><label class="block text-xs font-medium text-slate-500 mb-1">{{ label }} (₽)</label><input type="number" step="0.01" name="{{ key }}" value="{{ payments[key] }}" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"></div>
+                    {% endfor %}
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div><label class="block text-xs font-medium text-slate-500 mb-1">Продажи (шт.)</label><input type="number" name="sales_count" value="{{ stats.sales_count }}" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"></div>
+                    <div><label class="block text-xs font-medium text-slate-500 mb-1">Предзаказы</label><input type="number" name="preorders_count" value="{{ stats.preorders_count }}" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"></div>
+                    <div><label class="block text-xs font-medium text-slate-500 mb-1">Брони</label><input type="number" name="bookings_count" value="{{ stats.bookings_count }}" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"></div>
+                </div>
+                <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                    <p class="text-xs font-medium text-slate-500 mb-2">Кто работал в этот день</p>
+                    <div class="flex flex-wrap gap-2" id="closeDaySellers">
+                        {% for seller in sellers %}
+                        <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+                            <input type="checkbox" name="seller_id" value="{{ seller.id }}" class="rounded border-slate-300" {% if seller.present %}checked{% endif %}> {{ seller.name }}
+                        </label>
+                        {% else %}<span class="text-xs text-slate-400">Продавцы не добавлены</span>{% endfor %}
+                    </div>
+                </div>
+                <div><label class="block text-xs font-medium text-slate-500 mb-1">Комментарий</label><input type="text" name="reason" placeholder="из итога дня / закрытие дня" class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"></div>
+            </form>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 shrink-0">
+            <button type="button" onclick="document.getElementById('editStatsModal').classList.add('hidden')" class="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl">Отмена</button>
+            <button type="button" onclick="saveStats()" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl">Сохранить день</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const isDark = document.documentElement.classList.contains('dark');
+const gridColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(148,163,184,0.25)';
+const tickColor = isDark ? '#94a3b8' : '#64748b';
+const chartDefaults = { responsive: true, plugins: { legend: { display: false } }, scales: { x: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } } }, y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } }, beginAtZero: true } } };
+new Chart(document.getElementById('salesChart'), { type: 'line', data: { labels: {{ chart_dates | tojson }}, datasets: [{ data: {{ chart_sales | tojson }}, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.12)', tension: 0.35, fill: true, pointRadius: 3, pointBackgroundColor: '#6366f1' }] }, options: chartDefaults });
+new Chart(document.getElementById('revenueChart'), { type: 'line', data: { labels: {{ chart_dates | tojson }}, datasets: [{ data: {{ chart_revenue | tojson }}, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.12)', tension: 0.35, fill: true, pointRadius: 3, pointBackgroundColor: '#10b981' }] }, options: chartDefaults });
+
+async function toggleSeller(sellerId) {
+    const btn = document.getElementById('seller-btn-' + sellerId);
+    try {
+        const res = await fetch('/admin/dashboard/toggle_seller_day', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `seller_id=${sellerId}&target_date={{ target_date_iso }}` });
+        const data = await res.json();
+        if (data.success) {
+            btn.className = data.status === 'added'
+                ? 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                : 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300';
+        }
+    } catch (e) { alert('Ошибка при обновлении'); }
+}
+
+function extractNumber(raw) {
+    if (raw == null) return null;
+    let s = String(raw).split(/[\n\r(]/)[0].replace(/\u00a0/g, ' ').replace(/[₽руб]/gi, '').trim();
+    s = s.replace(/\s+/g, '').replace(/,/g, '.');
+    s = s.replace(/[^0-9.]/g, '');
+    if (!s) return null;
+    const parts = s.split('.');
+    if (parts.length > 2) s = parts.slice(0, -1).join('') + '.' + parts[parts.length - 1];
+    const n = parseFloat(s);
+    return isNaN(n) ? null : n;
+}
+
+function parseDailyReport() {
+    const text = (document.getElementById('pasteReportText').value || '').trim();
+    const statusEl = document.getElementById('parseStatus');
+    if (!text) { statusEl.textContent = 'Вставьте текст итога'; statusEl.className = 'text-xs text-amber-600'; return; }
+    const result = { sales_count: null, preorders_count: null, bookings_count: null, cash: null, terminal: null, qr: null, transfer: null, invoice: null, installment: null };
+    const NUM = '([0-9][0-9 \\u00a0.,]*)';
+    const countPatterns = [
+        { key: 'sales_count', re: new RegExp('(?:^|[•\\-–—]|\\d+[.)])\\s*Продаж(?:и|а)?\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'preorders_count', re: new RegExp('(?:^|[•\\-–—]|\\d+[.)])\\s*Предзаказ(?:ов|а|ы)?\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'bookings_count', re: new RegExp('(?:^|[•\\-–—]|\\d+[.)])\\s*Брон(?:ей|и|ь)\\s*[:\\-–—]\\s*' + NUM, 'im') },
+    ];
+    for (const { key, re } of countPatterns) { const m = text.match(re); if (m) result[key] = extractNumber(m[1]); }
+    const paymentPatterns = [
+        { key: 'cash', re: new RegExp('(?:Наличн(?:ые|ых|ая)|Нал)\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'terminal', re: new RegExp('Терминал\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'qr', re: new RegExp('QR(?:[\\-\\s]?код)?\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'transfer', re: new RegExp('Перевод\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'invoice', re: new RegExp('(?:Оплата\\s+по\\s+сч[её]ту|По\\s+сч[её]ту)\\s*[:\\-–—]\\s*' + NUM, 'im') },
+        { key: 'installment', re: new RegExp('Рассрочк[аи]\\s*[:\\-–—]\\s*' + NUM, 'im') },
+    ];
+    let foundAnyPayment = false;
+    for (const { key, re } of paymentPatterns) { const m = text.match(re); if (m) { result[key] = extractNumber(m[1]); foundAnyPayment = true; } }
+    if (foundAnyPayment) { for (const k of ['cash','terminal','qr','transfer','invoice','installment']) { if (result[k] === null) result[k] = 0; } }
+    const form = document.getElementById('editStatsForm');
+    let filled = 0; const found = [];
+    for (const [key, val] of Object.entries(result)) {
+        if (val === null || val === undefined) continue;
+        const input = form.querySelector(`[name="${key}"]`);
+        if (input) { input.value = Number.isInteger(val) ? val : Math.round(val * 100) / 100; filled++; found.push(key); input.classList.add('ring-2','ring-emerald-400'); setTimeout(() => input.classList.remove('ring-2','ring-emerald-400'), 1800); }
+    }
+    const reasonInput = form.querySelector('[name="reason"]');
+    if (reasonInput && !reasonInput.value.trim()) reasonInput.value = 'из итога дня (автопарсинг)';
+    let reportedTotal = null;
+    const totalRe = /(?:Общая\s+сумма|Итого(?:вая)?\s+сумма|Всего)\s*[:\-–—]?\s*([0-9][0-9 \u00a0.,]*)/im;
+    const tm = text.match(totalRe);
+    if (tm) reportedTotal = extractNumber(tm[1]);
+    const paySum = ['cash','terminal','qr','transfer','invoice','installment'].reduce((a,k) => a + (result[k] != null ? Number(result[k]) : 0), 0);
+    if (filled === 0) { statusEl.textContent = 'Не удалось найти цифры. Проверьте формат текста.'; statusEl.className = 'text-xs text-red-600'; }
+    else {
+        let msg = `Заполнено: ${filled} (${found.join(', ')})`;
+        if (reportedTotal != null) {
+            const diff = Math.abs(reportedTotal - paySum);
+            if (diff < 1) { msg += ` · сумма полей ${Math.round(paySum)} = общая ${Math.round(reportedTotal)} ✓`; statusEl.className = 'text-xs text-emerald-600'; }
+            else { msg += ` · сумма полей ${Math.round(paySum)} ≠ общая ${Math.round(reportedTotal)} (Δ ${Math.round(diff)})`; statusEl.className = 'text-xs text-amber-600'; }
+        } else { statusEl.className = 'text-xs text-emerald-600'; }
+        statusEl.textContent = msg;
+    }
+}
+
+async function saveStats() {
+    const form = document.getElementById('editStatsForm');
+    const data = Object.fromEntries(new FormData(form).entries());
+    const sellerIds = Array.from(document.querySelectorAll('#closeDaySellers input[type=checkbox]:checked')).map(el => parseInt(el.value, 10)).filter(n => !isNaN(n));
+    data.seller_ids = sellerIds;
+    try {
+        const res = await fetch('/admin/dashboard/close_day', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(data) });
+        let result = null; const text = await res.text();
+        try { result = JSON.parse(text); } catch (_) {}
+        if (!res.ok) { alert('Ошибка сохранения: ' + ((result && result.error) ? result.error : ('HTTP ' + res.status))); return; }
+        if (result && result.success) { window.location.href = '/admin/dashboard?target_date={{ target_date_iso }}'; return; }
+        alert('Ошибка: ' + ((result && result.error) || text.slice(0, 200) || 'Неизвестная ошибка'));
+    } catch (e) { alert('Ошибка соединения: ' + (e && e.message ? e.message : e)); }
+}
+</script>
+{% endblock %}
