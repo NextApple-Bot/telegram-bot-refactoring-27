@@ -101,7 +101,6 @@ async def process_promo_menu(callback: CallbackQuery):
             parse_mode="HTML",
         )
     except Exception:
-        # Если не удалось отредактировать (сообщение слишком старое и т.п.) — отправляем новое
         await safe_delete(callback.message)
         await callback.message.answer(
             "🎁 <b>Акции</b>\n\nВыберите интересующую акцию:",
@@ -113,7 +112,7 @@ async def process_promo_menu(callback: CallbackQuery):
 @router.callback_query(F.data.in_({"promo:installment", "promo:tradein", "promo:tradein_installment", "promo:birthday"}))
 async def process_promo_detail(callback: CallbackQuery):
     await callback.answer()
-    promo_key = callback.data.split(":")[1]  # installment / tradein / ...
+    promo_key = callback.data.split(":")[1]
 
     text = PROMO_TEXTS_HTML.get(promo_key, "Условия акции временно недоступны.")
     keyboard = get_promo_detail_keyboard(promo_key)
@@ -140,7 +139,6 @@ async def process_promo_copy(callback: CallbackQuery):
 
     plain_text = PROMO_TEXTS_PLAIN.get(promo_key, "Условия акции временно недоступны.")
 
-    # Отправляем чистый текст, который удобно копировать
     await callback.message.answer(
         f"📋 <b>Условия акции (можно скопировать):</b>\n\n<code>{plain_text}</code>",
         parse_mode="HTML",
@@ -162,9 +160,14 @@ async def process_stats(callback: CallbackQuery):
 
     stats = await StatsRepository.get_today_stats()
 
+    devices = stats.get("devices_count", stats["sales_count"])
+    accessories = stats.get("accessories_count", 0)
+
     stats_text = (
         f"📊 Статистика на {stats['date']}\n\n"
-        f"Продажи: {stats['sales_count']}\n"
+        f"Продажи всего: {stats['sales_count']}\n"
+        f"  • Устройства: {devices}\n"
+        f"  • Аксессуары: {accessories}\n"
         f"Предзаказы: {stats['preorders_count']}\n"
         f"Брони: {stats['bookings_count']}\n\n"
         f"💰 Суммы продаж:\n"
