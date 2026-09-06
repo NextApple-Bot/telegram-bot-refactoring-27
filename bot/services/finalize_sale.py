@@ -66,7 +66,7 @@ async def finalize_item_sale(
     message_id: int,
     payments: dict[str, float] | None = None,
     reason: str = "sale",
-    is_accessory: bool = False,
+    is_accessory: bool | None = None,
     delete_item: bool = True,
     write_payments: bool = True,
 ) -> dict[str, Any]:
@@ -79,6 +79,10 @@ async def finalize_item_sale(
 
     write_payments=False — если платежи уже записаны на другой item
     того же сообщения (мульти-SN: только первый несёт оплаты).
+
+    is_accessory:
+      - True/False — явное значение
+      - None — авто: True, если у товара нет серийного номера
     """
     pays = normalize_payments(payments if write_payments else None)
 
@@ -91,6 +95,10 @@ async def finalize_item_sale(
         text = item.text or text
         serial = item.serial if item.serial is not None else serial
         cat_id = item.category_id if item.category_id is not None else cat_id
+
+    # Аксессуар = товар без серийного номера
+    if is_accessory is None:
+        is_accessory = not bool((serial or "").strip())
 
     # 1) Sale — item_id хранится как история (FK на items снят миграцией 029)
     existing = await session.scalar(
@@ -113,7 +121,7 @@ async def finalize_item_sale(
                 transfer=pays["transfer"],
                 invoice=pays["invoice"],
                 installment=pays["installment"],
-                is_accessory=is_accessory,
+                is_accessory=bool(is_accessory),
                 message_id=message_id,
             )
         )
@@ -160,9 +168,10 @@ async def finalize_item_sale(
             )
 
     logger.info(
-        "finalize_item_sale: item_id=%s msg=%s payments=%s reason=%s",
+        "finalize_item_sale: item_id=%s msg=%s accessory=%s payments=%s reason=%s",
         item_id,
         message_id,
+        is_accessory,
         pays if write_payments else "(deferred)",
         reason,
     )
@@ -170,6 +179,7 @@ async def finalize_item_sale(
         "item_id": item_id,
         "message_id": message_id,
         "payments": pays,
+        "is_accessory": bool(is_accessory),
     }
 
 

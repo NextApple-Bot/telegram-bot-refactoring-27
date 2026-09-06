@@ -82,7 +82,7 @@ class StatsRepository:
         today = date.today()
         async_session = get_async_session_factory()
         async with async_session() as session:
-            # Продажи
+            # Продажи (устройства + аксессуары)
             sale_sums = await session.execute(
                 select(
                     func.coalesce(func.sum(Sale.cash), 0).label("cash"),
@@ -91,7 +91,16 @@ class StatsRepository:
                     func.coalesce(func.sum(Sale.transfer), 0).label("transfer"),
                     func.coalesce(func.sum(Sale.invoice), 0).label("invoice"),
                     func.coalesce(func.sum(Sale.installment), 0).label("installment"),
-                    func.count(Sale.id).label("sales_count")
+                    func.count(Sale.id).label("sales_count"),
+                    func.coalesce(
+                        func.sum(Sale.count).filter(Sale.is_accessory.is_(True)), 0
+                    ).label("accessories_count"),
+                    func.coalesce(
+                        func.sum(Sale.count).filter(
+                            (Sale.is_accessory.is_(False)) | (Sale.is_accessory.is_(None))
+                        ),
+                        0,
+                    ).label("devices_count"),
                 ).where(func.date(Sale.sold_at) == today)
             )
             sale_row = sale_sums.mappings().one()
@@ -119,11 +128,20 @@ class StatsRepository:
             )
             book_row = book_sums.mappings().one()
 
+            accessories_count = int(sale_row["accessories_count"] or 0)
+            devices_count = int(sale_row["devices_count"] or 0)
+            # если старые записи без флага — devices ≈ total - accessories
+            total_sales = int(sale_row["sales_count"] or 0)
+            if devices_count == 0 and accessories_count == 0 and total_sales > 0:
+                devices_count = total_sales
+
             return {
                 'date': today.strftime('%d.%m.%y'),
                 'preorders_count': pre_row['preorders_count'],
                 'bookings_count': book_row['bookings_count'],
-                'sales_count': sale_row['sales_count'],
+                'sales_count': total_sales,
+                'devices_count': devices_count,
+                'accessories_count': accessories_count,
                 'preorders': {
                     'cash': pre_row['cash'],
                     'terminal': pre_row['terminal'],
