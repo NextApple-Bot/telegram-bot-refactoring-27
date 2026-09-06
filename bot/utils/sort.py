@@ -7,6 +7,12 @@ logger = logging.getLogger(__name__)
 # Серийник в скобках (как в validators), чтобы не тянуть bot.validators → циклы
 _SERIAL_IN_PARENS = re.compile(r"[\(\[]([A-Za-z0-9\-]{6,})[\)\]]")
 
+# Маркеры памяти / SIM / размера, которые НЕ должны становиться категориями
+_MEMORY_OR_SIM_MARKER_RE = re.compile(
+    r"^\s*-?\s*(\d+\s*(GB|TB|mm)|eSIM|SIM\+eSIM|SIM)\s*-?\s*$",
+    re.IGNORECASE,
+)
+
 
 def normalize_name(name):
     return " ".join(str(name).split())
@@ -50,11 +56,7 @@ def is_marker_line(text: str) -> bool:
         return True
     if re.match(r"^-+$", s):
         return True
-    if re.match(
-        r"^-?\s*(\d+\s*(GB|TB|mm)|eSIM|SIM\+eSIM|SIM)\s*-?$",
-        s,
-        re.IGNORECASE,
-    ):
+    if _MEMORY_OR_SIM_MARKER_RE.match(s):
         return True
     if re.match(r"^(eSIM|SIM\+eSIM|SIM)\s*-\s*$", s, re.IGNORECASE):
         return True
@@ -72,6 +74,7 @@ def _looks_like_category_header(text: str) -> bool:
     НЕ заголовок:
       - строка товара с Size: / Gen / длинным описанием
       - строка с серийником в скобках
+      - маркеры памяти/SIM (-256GB-, -1TB-, -eSIM- и т.п.)
       - просто наличие ':' где-то в середине (Size: L)
     """
     s = (text or "").strip()
@@ -81,10 +84,19 @@ def _looks_like_category_header(text: str) -> bool:
         return False
     if _has_product_serial(s):
         return False
-    # «Size: L)» / «Color: Black» в середине строки товара
+
     body = s[:-1].strip()
     if not body or len(body) < 2:
         return False
+
+    # Явно запрещаем маркеры памяти / SIM / размера
+    if _MEMORY_OR_SIM_MARKER_RE.match(body) or _MEMORY_OR_SIM_MARKER_RE.match(f"-{body}-"):
+        return False
+    if re.match(r"^\d+\s*(GB|TB|mm)$", body, re.IGNORECASE):
+        return False
+    if body.upper() in ("ESIM", "SIM", "SIM+ESIM", "SIM + ESIM"):
+        return False
+
     # Слишком «товарно»: запятые, слэши модели, размеры
     if "," in body or " / " in body or re.search(r"\bSize\s*:", body, re.I):
         return False
@@ -335,6 +347,12 @@ def parse_categories(lines):
             i += 1
             continue
 
+        # ВАЖНО: строки вида -256GB- / -512GB- / -1TB- / -eSIM- — это маркеры, НЕ категории
+        if is_marker_line(stripped):
+            i += 1
+            continue
+
+        # Старый спец-случай для заголовков в виде -Название-  (оставляем, но уже после проверки маркеров)
         if stripped.startswith("-") and stripped.endswith("-") and _looks_like_category_header(
             stripped.strip("- ").strip() + (":" if not stripped.strip("- ").endswith(":") else "")
         ):
@@ -360,10 +378,6 @@ def parse_categories(lines):
                 header_text = header_text[:-1].strip()
             current_header = normalize_name(header_text)
             i += 3
-            continue
-
-        if is_marker_line(stripped):
-            i += 1
             continue
 
         if _looks_like_category_header(stripped):
