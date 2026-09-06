@@ -20,13 +20,14 @@ from bot.models import Booking, DailyPayment, Preorder, Sale, StatsAdjustment
 logger = logging.getLogger(__name__)
 
 PAYMENT_METRICS = ("cash", "terminal", "qr", "transfer", "invoice", "installment")
-COUNT_METRICS = ("sales_count", "preorders_count", "bookings_count")
+COUNT_METRICS = ("sales_count", "preorders_count", "bookings_count", "accessories_count")
 ALL_METRICS = COUNT_METRICS + PAYMENT_METRICS
 
 METRIC_LABELS = {
     "sales_count": "Продажи, шт.",
     "preorders_count": "Предзаказы, шт.",
     "bookings_count": "Брони, шт.",
+    "accessories_count": "Аксессуары, шт.",
     "cash": "Наличные, ₽",
     "terminal": "Терминал, ₽",
     "qr": "QR-код, ₽",
@@ -141,6 +142,19 @@ async def raw_sales_count(session, day: date) -> int:
     return int(max(from_sales, from_payments))
 
 
+async def raw_accessories_count(session, day: date) -> int:
+    """Продажи, помеченные как аксессуары (без серийника)."""
+    cnt = (
+        await session.execute(
+            select(func.coalesce(func.sum(Sale.count), 0)).where(
+                func.date(Sale.sold_at) == day,
+                Sale.is_accessory.is_(True),
+            )
+        )
+    ).scalar() or 0
+    return int(cnt)
+
+
 async def raw_preorders_count(session, day: date) -> int:
     from_payments = (
         await session.execute(
@@ -219,11 +233,15 @@ async def day_snapshot(session, day: date) -> dict:
     adj = await load_adjustments(session, day)
 
     raw_sales = await raw_sales_count(session, day)
+    raw_acc = await raw_accessories_count(session, day)
     raw_pre = await raw_preorders_count(session, day)
     raw_book = await raw_bookings_count(session, day)
     raw_pay = await raw_payments(session, day)
 
     sales = max(0, int(round(raw_sales + adj.get("sales_count", 0))))
+    accessories = max(0, int(round(raw_acc + adj.get("accessories_count", 0))))
+    # устройства = все продажи минус аксессуары (не уходим в минус)
+    devices = max(0, sales - accessories)
     preorders = max(0, int(round(raw_pre + adj.get("preorders_count", 0))))
     bookings = max(0, int(round(raw_book + adj.get("bookings_count", 0))))
 
@@ -233,12 +251,15 @@ async def day_snapshot(session, day: date) -> dict:
 
     return {
         "sales_count": sales,
+        "devices_count": devices,
+        "accessories_count": accessories,
         "preorders_count": preorders,
         "bookings_count": bookings,
         "payments": payments,
         "total_revenue": sum(payments.values()),
         "raw": {
             "sales_count": raw_sales,
+            "accessories_count": raw_acc,
             "preorders_count": raw_pre,
             "bookings_count": raw_book,
             "payments": raw_pay,
@@ -330,6 +351,8 @@ async def month_totals(session, day: date) -> dict:
     last = day.replace(day=last_day)
 
     sales = 0
+    accessories = 0
+    devices = 0
     revenue = 0.0
     preorders = 0
     bookings = 0
@@ -340,6 +363,8 @@ async def month_totals(session, day: date) -> dict:
     while d <= last:
         s = await day_snapshot(session, d)
         sales += s["sales_count"]
+        accessories += s.get("accessories_count", 0)
+        devices += s.get("devices_count", 0)
         preorders += s["preorders_count"]
         bookings += s["bookings_count"]
         revenue += float(s["total_revenue"])
@@ -357,6 +382,8 @@ async def month_totals(session, day: date) -> dict:
 
     return {
         "sales_count": sales,
+        "devices_count": devices,
+        "accessories_count": accessories,
         "preorders_count": preorders,
         "bookings_count": bookings,
         "revenue": revenue,
