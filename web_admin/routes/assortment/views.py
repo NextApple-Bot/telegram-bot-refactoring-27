@@ -22,6 +22,7 @@ ALLOWED_SORT_FIELDS = {
 
 ALLOWED_SIM_TYPES = {"", "esim", "sim_esim"}
 ALLOWED_MARK_TYPES = {"", "exchange", "service", "both", "normal"}
+ALLOWED_MEMORY = {"", "64gb", "128gb", "256gb", "512gb", "1tb", "2tb"}
 
 # (O) / (О) / （O） — обменка
 _EXCHANGE_RE = re.compile(r"[\(（]\s*[OoОо0]\s*[\)）]")
@@ -104,6 +105,28 @@ def _apply_mark_filter(query, mark_type: str | None):
     return query
 
 
+def _apply_memory_filter(query, memory: str | None):
+    """Фильтр по объёму памяти (256GB, 512GB, 1TB и т.д.)."""
+    mem = (memory or "").strip().lower()
+    if mem not in ALLOWED_MEMORY or not mem:
+        return query
+
+    # Паттерны, которые хорошо ловят и "8/256GB", и "256 GB", и "256ГБ"
+    patterns = {
+        "64gb": ["%64GB%", "%64 GB%", "%64ГБ%", "%64 ГБ%"],
+        "128gb": ["%128GB%", "%128 GB%", "%128ГБ%", "%128 ГБ%"],
+        "256gb": ["%256GB%", "%256 GB%", "%256ГБ%", "%256 ГБ%"],
+        "512gb": ["%512GB%", "%512 GB%", "%512ГБ%", "%512 ГБ%"],
+        "1tb": ["%1TB%", "%1 TB%", "%1ТБ%", "%1 ТБ%", "%1024GB%"],
+        "2tb": ["%2TB%", "%2 TB%", "%2ТБ%", "%2 ТБ%", "%2048GB%"],
+    }
+
+    conds = [Item.text.ilike(p) for p in patterns.get(mem, [])]
+    if not conds:
+        return query
+    return query.where(or_(*conds))
+
+
 @router.get("/", response_class=HTMLResponse)
 async def list_assortment(
     request: Request,
@@ -113,6 +136,7 @@ async def list_assortment(
     category_id: str | None = Query(None),
     sim_type: str | None = Query(None),
     mark_type: str | None = Query(None),
+    memory: str | None = Query(None),
     sort_by: str = Query(
         "id", pattern="^(id|text|serial|category_name|is_booked|created_at)$"
     ),
@@ -125,6 +149,9 @@ async def list_assortment(
     mark_type_clean = (mark_type or "").strip().lower()
     if mark_type_clean not in ALLOWED_MARK_TYPES:
         mark_type_clean = ""
+    memory_clean = (memory or "").strip().lower()
+    if memory_clean not in ALLOWED_MEMORY:
+        memory_clean = ""
 
     async with async_session() as session:
         offset = (page - 1) * per_page
@@ -153,6 +180,7 @@ async def list_assortment(
 
         base_query = _apply_sim_filter(base_query, sim_type_clean)
         base_query = _apply_mark_filter(base_query, mark_type_clean)
+        base_query = _apply_memory_filter(base_query, memory_clean)
 
         sort_column = ALLOWED_SORT_FIELDS.get(sort_by, Item.id)
         order_direction = (
@@ -176,6 +204,7 @@ async def list_assortment(
 
         count_query = _apply_sim_filter(count_query, sim_type_clean)
         count_query = _apply_mark_filter(count_query, mark_type_clean)
+        count_query = _apply_memory_filter(count_query, memory_clean)
 
         total = (await session.execute(count_query)).scalar_one()
         total_pages = (total + per_page - 1) // per_page if total > 0 else 1
@@ -210,6 +239,7 @@ async def list_assortment(
             "category_id": category_id,
             "sim_type": sim_type_clean,
             "mark_type": mark_type_clean,
+            "memory": memory_clean,
             "categories": categories,
             "sort_by": sort_by,
             "sort_order": sort_order,

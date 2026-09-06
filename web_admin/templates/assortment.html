@@ -54,6 +54,18 @@
                 </select>
             </div>
             <div class="xl:col-span-2">
+                <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Память</label>
+                <select name="memory" class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="" {% if not memory %}selected{% endif %}>Все</option>
+                    <option value="64gb" {% if memory == '64gb' %}selected{% endif %}>64 GB</option>
+                    <option value="128gb" {% if memory == '128gb' %}selected{% endif %}>128 GB</option>
+                    <option value="256gb" {% if memory == '256gb' %}selected{% endif %}>256 GB</option>
+                    <option value="512gb" {% if memory == '512gb' %}selected{% endif %}>512 GB</option>
+                    <option value="1tb" {% if memory == '1tb' %}selected{% endif %}>1 TB</option>
+                    <option value="2tb" {% if memory == '2tb' %}selected{% endif %}>2 TB</option>
+                </select>
+            </div>
+            <div class="xl:col-span-2">
                 <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Тип SIM</label>
                 <select name="sim_type" class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     <option value="" {% if not sim_type %}selected{% endif %}>Все</option>
@@ -61,7 +73,7 @@
                     <option value="sim_esim" {% if sim_type == 'sim_esim' %}selected{% endif %}>SIM+eSIM</option>
                 </select>
             </div>
-            <div class="xl:col-span-3">
+            <div class="xl:col-span-2">
                 <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Метка</label>
                 <select name="mark_type" class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     <option value="" {% if not mark_type %}selected{% endif %}>Все</option>
@@ -71,7 +83,7 @@
                     <option value="normal" {% if mark_type == 'normal' %}selected{% endif %}>Без меток</option>
                 </select>
             </div>
-            <div class="xl:col-span-2">
+            <div class="xl:col-span-1">
                 <button type="submit" class="w-full bg-slate-900 dark:bg-indigo-600 hover:bg-black dark:hover:bg-indigo-500 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors">
                     Применить
                 </button>
