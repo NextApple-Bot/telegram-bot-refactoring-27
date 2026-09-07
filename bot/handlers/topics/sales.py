@@ -10,6 +10,8 @@ from bot.repositories import ClientRepository
 from bot.services.message_service import mark_message_processed, safe_react
 from bot.services.payment import PaymentService
 from bot.services.sale import SaleService
+from bot.db import get_async_session_factory
+from bot.models import DeletedItem
 from bot.utils.helpers import send_and_clean
 from bot.utils.parser import extract_payment_amounts, parse_client_data
 from bot.utils.validators import extract_serials
@@ -66,12 +68,41 @@ def _should_skip_bot_message(message: Message) -> bool:
 @router.message(in_main_group, in_sales, F.caption)
 async def handle_sales_message(message: Message) -> None:
     """Обработчик топика «Продажи». Фильтры на декораторе — событие не перехватывается ассортиментом."""
-    # Временный режим: массовый слив истории без списания со склада и без платежей
+    # Режим слива истории: без склада и платежей, но пишем модель в deleted_items
+    # для статистики «топ моделей» на дашборде
     if not getattr(config, "SALES_TOPIC_PROCESSING", True):
-        logger.info(
-            "⏸ sales: обработка отключена (SALES_TOPIC_PROCESSING=false) msg=%s",
-            message.message_id,
-        )
+        content = message.text or message.caption or ""
+        first = next((ln.strip() for ln in content.splitlines() if ln.strip()), "")
+        if first and not first.startswith("/"):
+            try:
+                is_first = await mark_message_processed(message.chat.id, message.message_id)
+                if is_first:
+                    async_session = get_async_session_factory()
+                    async with async_session() as session:
+                        session.add(
+                            DeletedItem(
+                                item_id=None,
+                                text=first[:500],
+                                serial=None,
+                                category_id=None,
+                                reason="sale_history",
+                                restored=False,
+                                sale_message_id=message.message_id,
+                            )
+                        )
+                        await session.commit()
+                    logger.info(
+                        "📊 sale_history msg=%s: %s",
+                        message.message_id,
+                        first[:100],
+                    )
+            except Exception:
+                logger.exception("sale_history write failed msg=%s", message.message_id)
+        else:
+            logger.info(
+                "⏸ sales: обработка отключена msg=%s (пустой текст)",
+                message.message_id,
+            )
         return
 
     content = message.text or message.caption
