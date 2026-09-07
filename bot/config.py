@@ -39,6 +39,9 @@ class Settings(BaseSettings):
 
     REDIS_URL: str = ""
 
+    # False = топик «Продажи» только принимает сообщения, без списания/платежей
+    SALES_TOPIC_PROCESSING: bool = True
+
     @model_validator(mode="after")
     def validate_secrets(self):
         if not self.SECRET_KEY or len(self.SECRET_KEY) < 32:

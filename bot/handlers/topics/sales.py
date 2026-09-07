@@ -66,6 +66,14 @@ def _should_skip_bot_message(message: Message) -> bool:
 @router.message(in_main_group, in_sales, F.caption)
 async def handle_sales_message(message: Message) -> None:
     """Обработчик топика «Продажи». Фильтры на декораторе — событие не перехватывается ассортиментом."""
+    # Временный режим: массовый слив истории без списания со склада и без платежей
+    if not getattr(config, "SALES_TOPIC_PROCESSING", True):
+        logger.info(
+            "⏸ sales: обработка отключена (SALES_TOPIC_PROCESSING=false) msg=%s",
+            message.message_id,
+        )
+        return
+
     content = message.text or message.caption
     if not content or not content.strip():
         return
