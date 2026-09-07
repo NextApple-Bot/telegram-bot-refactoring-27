@@ -39,8 +39,9 @@ class Settings(BaseSettings):
 
     REDIS_URL: str = ""
 
-    # False = топик «Продажи» только принимает сообщения, без списания/платежей
-    SALES_TOPIC_PROCESSING: bool = True
+    # False = топик «Продажи» без склада/платежей; пишет sale_history для топа моделей
+    # После слива истории верните True (или SALES_TOPIC_PROCESSING=true в env)
+    SALES_TOPIC_PROCESSING: bool = False
 
     @model_validator(mode="after")
     def validate_secrets(self):
