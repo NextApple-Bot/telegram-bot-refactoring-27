@@ -4,13 +4,16 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# Серийник в скобках (как в validators), чтобы не тянуть bot.validators → циклы
-# Длинный alphanumeric И короткие внутренние коды: (№5), (S№10), (№ 3)
+# Маркер «товар завершён» в скобках (SN / № / количество).
+# Без этого строки без длинного SN склеиваются:
+#   Яндекс Станция … (4ШТ) Яндекс Станция … (1ШТ)
 _SERIAL_IN_PARENS = re.compile(
     r"[\(\[]("
     r"[A-Za-z0-9\-]{6,}"          # обычный SN
     r"|S?№\s*\d+"                # (№5) / (S№10)
-    r"|№\s*\d+"                  # на всякий случай без S
+    r"|№\s*\d+"
+    r"|\d+\s*ШТ"                 # (4ШТ) / (4 ШТ)
+    r"|\d+\s*шт"
     r")[\)\]]",
     re.IGNORECASE,
 )
@@ -18,9 +21,14 @@ _ONLY_SERIAL_LINE = re.compile(
     r"^[\(\[]("
     r"[A-Za-z0-9\-]{6,}"
     r"|S?№\s*\d+"
+    r"|\d+\s*ШТ"
+    r"|\d+\s*шт"
     r")[\)\]]$",
     re.IGNORECASE,
 )
+# Любые скобки в конце строки — почти всегда законченный товар
+# (не трогаем «Size: L» и прочие продолжения без скобок)
+_TRAILING_PARENS = re.compile(r"[\(\[][^\)\]]{1,40}[\)\]]\s*$")
 
 # Маркеры памяти / SIM / размера, которые НЕ должны становиться категориями
 _MEMORY_OR_SIM_MARKER_RE = re.compile(
@@ -79,8 +87,18 @@ def is_marker_line(text: str) -> bool:
 
 
 def _has_product_serial(text: str) -> bool:
-    """Есть ли в строке SN: длинный alphanumeric или внутренний код (№5)/(S№10)."""
-    return bool(_SERIAL_IN_PARENS.search(text or ""))
+    """
+    Строка уже «закрыта» маркером товара:
+      - длинный SN, (№5)/(S№10)
+      - количество (4ШТ)
+      - любые скобки в конце строки
+    """
+    s = text or ""
+    if _SERIAL_IN_PARENS.search(s):
+        return True
+    if _TRAILING_PARENS.search(s.strip()):
+        return True
+    return False
 
 
 def _looks_like_category_header(text: str) -> bool:
