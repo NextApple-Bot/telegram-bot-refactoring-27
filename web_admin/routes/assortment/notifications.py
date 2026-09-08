@@ -23,6 +23,25 @@ def _item_title(text: str, serial: str | None = None) -> str:
     return title
 
 
+def _collapse_blank_lines(lines: list[str]) -> list[str]:
+    """Не больше одной пустой строки подряд, без пустых в начале/конце."""
+    out: list[str] = []
+    prev_blank = False
+    for line in lines:
+        is_blank = not (line or "").strip()
+        if is_blank:
+            if prev_blank or not out:
+                continue
+            out.append("")
+            prev_blank = True
+        else:
+            out.append(line)
+            prev_blank = False
+    while out and not out[-1].strip():
+        out.pop()
+    return out
+
+
 async def send_booking_notification(
     bot: Bot,
     item_text: str,
@@ -50,10 +69,10 @@ async def send_booking_notification(
                 lines.append(f"{item_text} ({serial_clean})")
             else:
                 lines.append(item_text)
+            lines.append("")
 
             if price is not None and price > 0:
-                lines.append(f"Стоимость – {format_number(price)}")
-                lines.append("")
+                lines.append(f"Стоимость - {format_number(price)}")
                 lines.append("")
 
             prep = float(prepayment or 0)
@@ -65,7 +84,7 @@ async def send_booking_notification(
                     "transfer": "Переводом",
                 }
                 pt_name = pt_map.get(payment_type or "", payment_type or "")
-                prep_line = f"П/О – {format_number(prep)}"
+                prep_line = f"П/О - {format_number(prep)}"
                 if pt_name:
                     prep_line += f" ({pt_name})"
                 lines.append(prep_line)
@@ -75,8 +94,7 @@ async def send_booking_notification(
                 remaining = max(float(price) - prep, 0)
                 lines.append(f"Остаток - {format_number(remaining)}")
                 lines.append("")
-                lines.append(f"Общая – {format_number(price)}.")
-                lines.append("")
+                lines.append(f"Общая - {format_number(price)}")
                 lines.append("")
 
             if full_name:
@@ -84,29 +102,27 @@ async def send_booking_notification(
             if phone:
                 lines.append(phone.strip())
             if birth_date:
-                bd = str(birth_date).strip()
-                if bd and not bd.endswith("г."):
-                    bd = f"{bd}г."
+                bd = str(birth_date).strip().replace("г.", "").strip()
                 lines.append(bd)
 
             if telegram_username:
                 uname = telegram_username.strip()
                 if uname and not uname.startswith("@"):
                     uname = f"@{uname}"
-                lines.append(f"ТГ – {uname}")
+                lines.append(f"ТГ - {uname}")
 
             if full_name or birth_date or phone or telegram_username:
                 lines.append("")
 
             if platform:
-                lines.append(f"Площадка – {platform.strip()}.")
+                lines.append(f"Площадка - {platform.strip()}")
 
             if comment and comment.strip():
                 if platform:
                     lines.append("")
                 lines.append(comment.strip())
 
-            text = "\n".join(lines)
+            text = "\n".join(_collapse_blank_lines(lines))
 
         await bot.send_message(
             chat_id=config.MAIN_GROUP_ID,
@@ -147,10 +163,7 @@ async def send_sale_notification(
     gnc_amount: float | None = None,
     item_serial: str | None = None,
 ):
-    """
-    Trade-in — способ оплаты (не уменьшает Общую).
-    Несколько скидок с причинами в строке Стоимость.
-    """
+    """Формат продажи без двойных пустых строк."""
     try:
         accessories = accessories or []
         extra_items = extra_items or []
@@ -288,7 +301,6 @@ async def send_sale_notification(
         if total > 0:
             lines.append(f"Общая - {format_number(total)}")
             lines.append("")
-            lines.append("")
 
         if full_name:
             lines.append(full_name.strip())
@@ -306,9 +318,10 @@ async def send_sale_notification(
 
         if comment and comment.strip():
             lines.append("")
-            lines.append(comment.strip())
+            for cl in comment.strip().splitlines():
+                lines.append(cl.rstrip())
 
-        text = "\n".join(lines)
+        text = "\n".join(_collapse_blank_lines(lines))
 
         await bot.send_message(
             chat_id=config.MAIN_GROUP_ID,
