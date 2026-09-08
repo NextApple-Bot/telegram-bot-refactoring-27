@@ -6,6 +6,7 @@ from sqlalchemy import and_, func, not_, or_, select
 
 from bot.db import get_async_session_factory
 from bot.models import Category, Item
+from bot.utils.sort import detect_sim_type
 from web_admin.services.sku_parser import build_sku_matrix
 from web_admin.templates import templates
 
@@ -20,7 +21,7 @@ ALLOWED_SORT_FIELDS = {
     "created_at": Item.created_at,
 }
 
-ALLOWED_SIM_TYPES = {"", "esim", "sim_esim"}
+ALLOWED_SIM_TYPES = {"", "esim", "sim_esim", "sim"}
 ALLOWED_MARK_TYPES = {"", "exchange", "service", "both", "normal"}
 ALLOWED_MEMORY = {"", "64gb", "128gb", "256gb", "512gb", "1tb", "2tb"}
 
@@ -82,6 +83,17 @@ def _apply_sim_filter(query, sim_type: str | None):
             )
         )
 
+    if st == "sim":
+        # только SIM (не eSIM и не SIM+eSIM)
+        return query.where(
+            and_(
+                Item.text.ilike("%SIM%"),
+                not_(Item.text.ilike("%eSIM%")),
+                not_(Item.text.ilike("%ESIM%")),
+                not_(sim_esim_cond),
+            )
+        )
+
     return query
 
 
@@ -106,12 +118,10 @@ def _apply_mark_filter(query, mark_type: str | None):
 
 
 def _apply_memory_filter(query, memory: str | None):
-    """Фильтр по объёму памяти (256GB, 512GB, 1TB и т.д.)."""
     mem = (memory or "").strip().lower()
     if mem not in ALLOWED_MEMORY or not mem:
         return query
 
-    # Паттерны, которые хорошо ловят и "8/256GB", и "256 GB", и "256ГБ"
     patterns = {
         "64gb": ["%64GB%", "%64 GB%", "%64ГБ%", "%64 ГБ%"],
         "128gb": ["%128GB%", "%128 GB%", "%128ГБ%", "%128 ГБ%"],
@@ -162,6 +172,7 @@ async def list_assortment(
                 Item.text,
                 Item.serial,
                 Item.is_booked,
+                Item.is_sold,
                 Item.created_at,
                 Category.id.label("category_id"),
                 Category.name.label("category_name"),
@@ -216,6 +227,8 @@ async def list_assortment(
             is_ex, is_svc = _item_flags(d.get("text"))
             d["is_exchange"] = is_ex
             d["is_service"] = is_svc
+            sim = detect_sim_type(d.get("text") or "")
+            d["sim_label"] = "" if sim == "other" else sim
             items.append(d)
 
         cats_query = (
@@ -279,34 +292,37 @@ async def sku_matrix(
             "colors": [],
             "sims": [],
             "total_items": 0,
-            "total_free": 0,
-            "total_booked": 0,
-            "variant_count": 0,
+            "free_items": 0,
         }
 
         if cat_id is not None:
-            cat = await session.get(Category, cat_id)
-            if cat and cat.name != "__SYSTEM__":
-                selected_name = cat.name
-                items_q = await session.execute(
-                    select(Item.id, Item.text, Item.serial, Item.is_booked).where(
-                        Item.category_id == cat_id
-                    )
+            name_row = await session.execute(
+                select(Category.name).where(Category.id == cat_id)
+            )
+            selected_name = name_row.scalar_one_or_none()
+
+            items_q = (
+                select(Item.id, Item.text, Item.serial, Item.is_booked, Item.is_sold)
+                .where(Item.category_id == cat_id)
+                .order_by(Item.id.desc())
+            )
+            if only_free:
+                items_q = items_q.where(
+                    Item.is_booked.is_(False), Item.is_sold.is_(False)
                 )
-                items = [dict(r._mapping) for r in items_q.all()]
-                matrix = build_sku_matrix(items)
-                if only_free:
-                    matrix["rows"] = [r for r in matrix["rows"] if r["free"] > 0]
-                    matrix["variant_count"] = len(matrix["rows"])
+
+            rows = (await session.execute(items_q)).all()
+            raw_items = [dict(r._mapping) for r in rows]
+            matrix = build_sku_matrix(raw_items)
 
     return templates.TemplateResponse(
         "assortment_matrix.html",
         {
             "request": request,
             "categories": categories,
-            "category_id": str(cat_id) if cat_id is not None else "",
+            "category_id": cat_id,
             "selected_name": selected_name,
-            "matrix": matrix,
             "only_free": only_free,
+            "matrix": matrix,
         },
     )
