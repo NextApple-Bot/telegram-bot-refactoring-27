@@ -38,6 +38,69 @@ def normalize_model(name):
     return re.sub(r"S\s+(\d+)", r"S\1", name, flags=re.IGNORECASE)
 
 
+def normalize_item_text(text: str) -> str:
+    """
+    Единый «красивый» вид названия товара (MacBook / Watch / iPad / общее).
+    Серийник в скобках сохраняется.
+    """
+    if not text:
+        return text
+    s = str(text).strip()
+    s = re.sub(r"\s+", " ", s)
+
+    # Wi-Fi
+    s = re.sub(r"\bWi[\s\-]?Fi\b", "Wi-Fi", s, flags=re.IGNORECASE)
+
+    # Apple Watch Series 11 → Apple Watch S11
+    s = re.sub(
+        r"\bApple Watch\s+Series\s+(\d+)\b",
+        r"Apple Watch S\1",
+        s,
+        flags=re.IGNORECASE,
+    )
+    # Apple Watch S11 42mm Color → Apple Watch S11, 42mm, Color
+    s = re.sub(
+        r"\b(Apple Watch S\d+),?\s*(\d+\s*mm),?\s+",
+        r"\1, \2, ",
+        s,
+        flags=re.IGNORECASE,
+    )
+
+    # MacBook Air/Pro 13|15|16 → с дюймами
+    s = re.sub(
+        r'\b(MacBook (?:Air|Pro))\s+(13|15|16)(?![\"”])\b',
+        r'\1 \2"',
+        s,
+        flags=re.IGNORECASE,
+    )
+
+    # iPad Pro 11|13 → с дюймами
+    s = re.sub(
+        r'\b(iPad Pro)\s+(11|13)(?![\"”])\b',
+        r'\1 \2"',
+        s,
+        flags=re.IGNORECASE,
+    )
+
+    # (M5) / (M4) как чип → M5
+    s = re.sub(r"\(M(\d+)\)", r"M\1", s)
+
+    # Пробелы в серийных скобках: ( JQ620 ) → (JQ620)
+    s = re.sub(r"[\(\[]\s*([A-Za-z0-9\-]{4,})\s*[\)\]]", r"(\1)", s)
+
+    # Пробел перед серийником, если его нет
+    s = re.sub(r"([A-Za-z0-9])(\([A-Za-z0-9\-]{4,}\))", r"\1 \2", s)
+
+    # Запятые: единый вид «, »
+    s = re.sub(r"\s*,\s*", ", ", s)
+
+    # StarLight → Starlight
+    s = re.sub(r"\bStarLight\b", "Starlight", s)
+    s = re.sub(r"\bSTARLIGHT\b", "Starlight", s)
+
+    return s.strip()
+
+
 def normalize_category_key(name: str) -> str:
     """RayBan / Ray-Ban / Ray Ban → rayban; Series → S."""
     s = normalize_name(name or "").lower().rstrip(":").strip()
@@ -422,6 +485,7 @@ def sort_items_in_category(items, header, preserve_order: bool = False):
         item_strings = [item.get("text", "") for item in items if item.get("text")]
     else:
         item_strings = [str(x) for x in items if str(x).strip()]
+    item_strings = [normalize_item_text(s) for s in item_strings]
     item_strings = _filter_real_items(item_strings)
     if not item_strings:
         return []
