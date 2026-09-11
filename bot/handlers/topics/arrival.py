@@ -17,7 +17,7 @@ from bot.handlers.topics.filters import in_arrival, in_main_group
 from bot.models import Category, Item
 from bot.services.assortment import AssortmentService
 from bot.handlers.states import ArrivalConfirmState
-from bot.utils.message import send_and_clean
+from bot.utils.helpers import send_and_clean
 from bot.utils.sort import match_existing_category, normalize_item_text
 from bot.utils.validators import extract_serials
 
