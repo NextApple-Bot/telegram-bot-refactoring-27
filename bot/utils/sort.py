@@ -246,9 +246,33 @@ def normalize_item_text(text: str) -> str:
         s,
         flags=re.IGNORECASE,
     )
+    # MacBook Neo → единый вид: MacBook Neo, 13", 8/256GB, Color (...)
+    # "MacBook 13 Neo" / "MacBook Neo 13" / "MacBook Neo, 13" → "MacBook Neo, 13\""
     s = re.sub(
         r'\bMacBook\s+13\s*Neo\b',
-        "MacBook 13 Neo",
+        "MacBook Neo 13",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r'\bMacBook\s+Neo\s*,?\s*13[\"”]?',
+        'MacBook Neo, 13"',
+        s,
+        flags=re.IGNORECASE,
+    )
+    # убрать случайные 13"" → 13"
+    s = re.sub(r'(MacBook Neo,\s*13)"+', r'\1"', s, flags=re.IGNORECASE)
+    # после 13" сразу память без запятой
+    s = re.sub(
+        r'(MacBook Neo,\s*13")\s+(\d+\s*/\s*\d+(?:GB|TB))',
+        r'\1, \2',
+        s,
+        flags=re.IGNORECASE,
+    )
+    # память → цвет без запятой (только MacBook Neo)
+    s = re.sub(
+        r'(MacBook Neo,\s*13",\s*\d+/\d+(?:GB|TB))\s+([A-Za-zА-Яа-яЁё])',
+        r'\1, \2',
         s,
         flags=re.IGNORECASE,
     )
@@ -544,273 +568,4 @@ def match_existing_category(item_text: str, categories: list) -> str | None:
         if score > best_score:
             best_score = score
             best = header
-    if best_score >= 150:
-        return best
-    for cat in categories:
-        h = normalize_name(cat.get("header") or "").lower().rstrip(":")
-        if h in ("общее", "общий", "other", "misc"):
-            return cat.get("header") or cat.get("name")
-    return None
-
-
-def _merge_multiline_items(lines: list[str]) -> list[str]:
-    out: list[str] = []
-    buf: list[str] = []
-
-    def flush_buf():
-        nonlocal buf
-        if not buf:
-            return
-        out.append(" ".join(buf))
-        buf = []
-
-    for raw in lines:
-        line = raw.rstrip("\n")
-        stripped = line.strip()
-        if stripped == "" or is_marker_line(stripped) or re.match(r"^-{3,}$", stripped):
-            flush_buf()
-            out.append(line)
-            continue
-        if _looks_like_category_header(stripped):
-            flush_buf()
-            out.append(line)
-            continue
-        only_serial = bool(_ONLY_SERIAL_LINE.match(stripped))
-        has_serial = _has_product_serial(stripped)
-        if buf:
-            buf.append(stripped)
-            if has_serial or only_serial:
-                flush_buf()
-            continue
-        if has_serial or only_serial:
-            out.append(stripped)
-            continue
-        buf = [stripped]
-    flush_buf()
-    return out
-
-
-def parse_categories(lines):
-    categories = []
-    current_header = None
-    current_items = []
-    i = 0
-    n = len(lines)
-
-    def flush():
-        nonlocal current_header, current_items
-        if current_header is not None:
-            categories.append({"header": current_header, "items": list(current_items)})
-            current_items = []
-
-    while i < n:
-        line = lines[i].rstrip("\n")
-        stripped = line.strip()
-        if stripped == "":
-            i += 1
-            continue
-        if re.match(r"^-{3,}$", stripped):
-            if i + 1 < n and _looks_like_category_header(lines[i + 1].strip()):
-                flush()
-                header_line = lines[i + 1].strip()
-                header_text = header_line.rstrip(":").strip()
-                current_header = normalize_name(header_text)
-                i += 2
-                if i < n and re.match(r"^-{3,}$", lines[i].strip()):
-                    i += 1
-                continue
-            i += 1
-            continue
-        if is_marker_line(stripped):
-            i += 1
-            continue
-        if stripped.startswith("-") and stripped.endswith("-") and _looks_like_category_header(
-            stripped.strip("- ").strip() + (":" if not stripped.strip("- ").endswith(":") else "")
-        ):
-            flush()
-            header_text = stripped.strip("- ").strip()
-            if header_text.endswith(":"):
-                header_text = header_text[:-1].strip()
-            current_header = normalize_name(header_text)
-            i += 1
-            continue
-        if (
-            re.match(r"^\s*-+\s*$", stripped)
-            and i + 1 < n
-            and _looks_like_category_header(lines[i + 1].strip())
-            and i + 2 < n
-            and re.match(r"^\s*-+\s*$", lines[i + 2])
-        ):
-            flush()
-            header_line = lines[i + 1].strip()
-            header_text = header_line.strip("- ").strip()
-            if header_text.endswith(":"):
-                header_text = header_text[:-1].strip()
-            current_header = normalize_name(header_text)
-            i += 3
-            continue
-        if _looks_like_category_header(stripped):
-            flush()
-            header_text = stripped.rstrip(":").strip()
-            current_header = normalize_name(header_text)
-            i += 1
-            continue
-        if current_header is None:
-            current_header = "Общее"
-        item_text = stripped.lstrip("- ").strip()
-        if item_text and not is_marker_line(item_text):
-            current_items.append(item_text)
-        i += 1
-    flush()
-    return categories
-
-
-def sort_assortment_to_categories(input_text):
-    return parse_categories(_merge_multiline_items(input_text.splitlines()))
-
-
-def _filter_real_items(item_strings):
-    return [s for s in item_strings if s and not is_marker_line(s)]
-
-
-def _sort_by_memory_and_sim(item_strings):
-    item_strings = _filter_real_items(item_strings)
-    groups: dict = {}
-    for item_str in item_strings:
-        sim = detect_sim_type(item_str)
-        vol_gb = extract_memory_gb(item_str)
-        vol_str = extract_memory(item_str)
-        key = (vol_gb if vol_gb is not None else -1, vol_str or "")
-        if key not in groups:
-            groups[key] = {"eSIM": [], "SIM+eSIM": [], "Dual SIM": [], "SIM": [], "other": []}
-        groups[key][sim].append(item_str)
-    sorted_keys = sorted(groups.keys(), key=lambda k: (k[0] < 0, k[0] if k[0] >= 0 else 10**9))
-    output = []
-    for key in sorted_keys:
-        vol_gb, vol_str = key
-        bucket = groups[key]
-        if sum(len(bucket[s]) for s in bucket) == 0:
-            continue
-        if output:
-            output.append("-")
-        if vol_str:
-            output.append(f"-{vol_str}-")
-        first_sim = True
-        for sim_type in ["eSIM", "SIM+eSIM", "Dual SIM", "SIM", "other"]:
-            items_list = bucket[sim_type]
-            if not items_list:
-                continue
-            items_list = sorted(items_list, key=lambda x: x.lower())
-            if not first_sim:
-                output.append("-")
-            if sim_type != "other":
-                output.append(f"-{sim_type}-")
-            output.append("-")
-            output.extend(items_list)
-            first_sim = False
-    return output
-
-
-def _sort_by_watch_size(item_strings):
-    item_strings = _filter_real_items(item_strings)
-    size_groups: dict = {}
-    for item_str in item_strings:
-        size = extract_watch_size(item_str)
-        size_groups.setdefault(size, []).append(item_str)
-    sorted_sizes = sorted(size_groups.keys(), key=lambda s: (s is None, s if s is not None else float("inf")))
-    output = []
-    for size in sorted_sizes:
-        items_list = sorted(size_groups[size], key=lambda x: x.lower())
-        if not items_list:
-            continue
-        if output:
-            output.append("-")
-        if size is not None:
-            output.append(f"-{size}mm-")
-        output.append("-")
-        output.extend(items_list)
-    return output
-
-
-def _sort_plain(item_strings):
-    return _filter_real_items(item_strings)
-
-
-_PHONE_BRANDS = (
-    "iphone", "ipad", "macbook", "mac mini", "imac", "ipod",
-    "samsung", "galaxy", "huawei", "xiaomi", "redmi", "poco",
-    "pixel", "oneplus", "honor", "realme", "oppo", "vivo",
-    "nothing", "motorola", "nokia", "sony", "xperia", "asus",
-    "rog phone", "zte", "tecno", "infinix", "playstation", "dualsense",
-)
-
-
-def sort_items_in_category(items, header, preserve_order: bool = False):
-    if items and isinstance(items[0], dict):
-        item_strings = [item.get("text", "") for item in items if item.get("text")]
-    else:
-        item_strings = [str(x) for x in items if str(x).strip()]
-    item_strings = [normalize_item_text(s) for s in item_strings]
-    item_strings = _filter_real_items(item_strings)
-    if not item_strings:
-        return []
-    header_lower = (header or "").lower()
-    has_watch_size = any(extract_watch_size(s) is not None for s in item_strings)
-    has_memory = any(extract_memory(s) is not None for s in item_strings)
-    watch_count = sum(1 for s in item_strings if extract_watch_size(s) is not None)
-    is_watch = (
-        "watch" in header_lower
-        or (has_watch_size and watch_count >= max(1, (len(item_strings) + 1) // 2) and not has_memory)
-    )
-    is_memory_device = has_memory or any(b in header_lower for b in _PHONE_BRANDS)
-    if is_watch:
-        return _sort_by_watch_size(item_strings)
-    if is_memory_device:
-        return _sort_by_memory_and_sim(item_strings)
-    return _sort_plain(item_strings)
-
-
-def build_output_text(categories, preserve_order: bool = False):
-    output_lines = []
-    for cat in categories:
-        header = cat.get("header") or cat.get("name")
-        if not header or str(header).strip() == "__SYSTEM__":
-            continue
-        display_header = normalize_name(header)
-        if not display_header.endswith(":"):
-            display_header += ":"
-        dash_len = max(len(display_header) + 2, 12)
-        output_lines.append("-" * dash_len)
-        output_lines.append(display_header)
-        output_lines.append("-" * dash_len)
-        output_lines.append("-")
-        items = cat.get("items", []) or []
-        sorted_output = sort_items_in_category(items, header, preserve_order=False) if items else []
-        output_lines.extend(sorted_output)
-        if sorted_output and sorted_output[-1].strip() != "-":
-            output_lines.append("-")
-        output_lines.append("")
-    while output_lines and output_lines[-1] == "":
-        output_lines.pop()
-    return "\n".join(output_lines)
-
-
-def find_category_for_item(item, categories):
-    matched = match_existing_category(item, categories)
-    if matched is None:
-        return None
-    for idx, cat in enumerate(categories):
-        if (cat.get("header") or cat.get("name")) == matched:
-            return idx
-    return None
-
-
-def add_item_to_categories(item, categories):
-    matched = match_existing_category(item, categories)
-    if matched is None:
-        return categories, None
-    for idx, cat in enumerate(categories):
-        if (cat.get("header") or cat.get("name")) == matched:
-            categories[idx]["items"].append(item)
-            return categories, idx
-    return categories, None
+    return best if best_score >= 150 else None
