@@ -40,7 +40,8 @@ def normalize_model(name):
 
 def normalize_item_text(text: str) -> str:
     """
-    Единый «красивый» вид названия товара (MacBook / Watch / iPad / общее).
+    Единый «красивый» вид названия товара.
+    Apple Watch / iPhone / iPad / MacBook / AirPods / Samsung + общее.
     Серийник в скобках сохраняется.
     """
     if not text:
@@ -48,55 +49,220 @@ def normalize_item_text(text: str) -> str:
     s = str(text).strip()
     s = re.sub(r"\s+", " ", s)
 
-    # Wi-Fi
+    # --- общее: память, SIM, Wi-Fi ---
     s = re.sub(r"\bWi[\s\-]?Fi\b", "Wi-Fi", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bSIM\s*\+\s*e?\s*SIM\b", "SIM+eSIM", s, flags=re.IGNORECASE)
+    s = re.sub(r"\be\s*SIM\b", "eSIM", s, flags=re.IGNORECASE)
 
-    # Apple Watch Series 11 → Apple Watch S11
+    def _mem_pair(m):
+        unit = m.group(3).upper().replace("ГБ", "GB").replace("ТБ", "TB")
+        return f"{m.group(1)}/{m.group(2).replace(',', '.')}{unit}"
+
+    def _mem_one(m):
+        unit = m.group(2).upper().replace("ГБ", "GB").replace("ТБ", "TB")
+        return f"{m.group(1).replace(',', '.')}{unit}"
+
+    s = re.sub(
+        r"(\d+)\s*/\s*(\d+(?:[.,]\d+)?)\s*(GB|ГБ|TB|ТБ)\b",
+        _mem_pair,
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\b(\d+(?:[.,]\d+)?)\s*(GB|ГБ|TB|ТБ)\b",
+        _mem_one,
+        s,
+        flags=re.IGNORECASE,
+    )
+
+    # --- Apple Watch ---
     s = re.sub(
         r"\bApple Watch\s+Series\s+(\d+)\b",
         r"Apple Watch S\1",
         s,
         flags=re.IGNORECASE,
     )
-    # Apple Watch S11 42mm Color → Apple Watch S11, 42mm, Color
     s = re.sub(
-        r"\b(Apple Watch S\d+),?\s*(\d+\s*mm),?\s+",
+        r"\bApple Watch\s+SE\s*(\d+)\b",
+        r"Apple Watch SE \1",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\bApple Watch\s+Ultra\s*(\d+)\b",
+        r"Apple Watch Ultra \1",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\bApple Watch\s+Ultra\b(?!\s*\d)",
+        "Apple Watch Ultra",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(r"\bGPS\s*\+\s*Cellular\b", "GPS+Cellular", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bGPS\s+Cellular\b", "GPS+Cellular", s, flags=re.IGNORECASE)
+    s = re.sub(
+        r"\b(Apple Watch (?:S\d+|SE(?:\s*\d+)?|Ultra(?:\s+\d+)?)),?\s*(\d+\s*mm),?\s+",
         r"\1, \2, ",
         s,
         flags=re.IGNORECASE,
     )
+    s = re.sub(r"\b(\d+)\s*mm\b", r"\1mm", s, flags=re.IGNORECASE)
 
-    # MacBook Air/Pro 13|15|16 → с дюймами
+    # --- iPhone ---
+    s = re.sub(r"\bi\s*Phone\b", "iPhone", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bIPHONE\b", "iPhone", s)
+    s = re.sub(
+        r"\biPhone\s+(\d+)\s*Pro\s*Max\b",
+        r"iPhone \1 Pro Max",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\biPhone\s+(\d+)\s*Pro\b(?!\s*Max)",
+        r"iPhone \1 Pro",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\biPhone\s+(\d+)\s*Plus\b",
+        r"iPhone \1 Plus",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\biPhone\s+(\d+)\s*Air\b",
+        r"iPhone \1 Air",
+        s,
+        flags=re.IGNORECASE,
+    )
+
+    _color_map = [
+        ("natural titanium", "Natural Titanium"),
+        ("white titanium", "White Titanium"),
+        ("black titanium", "Black Titanium"),
+        ("desert titanium", "Desert Titanium"),
+        ("blue titanium", "Blue Titanium"),
+        ("deep purple", "Deep Purple"),
+        ("deep blue", "Deep Blue"),
+        ("space black", "Space Black"),
+        ("space gray", "Space Gray"),
+        ("space grey", "Space Gray"),
+        ("starlight", "Starlight"),
+        ("midnight", "Midnight"),
+        ("product red", "Product Red"),
+        ("sierra blue", "Sierra Blue"),
+        ("alpine green", "Alpine Green"),
+        ("pacific blue", "Pacific Blue"),
+        ("rose gold", "Rose Gold"),
+        ("jet black", "Jet Black"),
+        ("sky blue", "Sky Blue"),
+        ("phantom black", "Phantom Black"),
+        ("titanium gray", "Titanium Gray"),
+        ("titanium grey", "Titanium Gray"),
+        ("ultramarine", "Ultramarine"),
+        ("silver", "Silver"),
+        ("gold", "Gold"),
+        ("pink", "Pink"),
+        ("purple", "Purple"),
+        ("orange", "Orange"),
+        ("teal", "Teal"),
+        ("yellow", "Yellow"),
+        ("green", "Green"),
+        ("blue", "Blue"),
+        ("black", "Black"),
+        ("white", "White"),
+        ("red", "Red"),
+    ]
+    for low, nice in _color_map:
+        s = re.sub(rf"\b{re.escape(low)}\b", nice, s, flags=re.IGNORECASE)
+
+    # --- iPad / MacBook ---
     s = re.sub(
         r'\b(MacBook (?:Air|Pro))\s+(13|15|16)(?![\"”])\b',
         r'\1 \2"',
         s,
         flags=re.IGNORECASE,
     )
-
-    # iPad Pro 11|13 → с дюймами
     s = re.sub(
         r'\b(iPad Pro)\s+(11|13)(?![\"”])\b',
         r'\1 \2"',
         s,
         flags=re.IGNORECASE,
     )
-
-    # (M5) / (M4) как чип → M5
+    s = re.sub(r"\biPad\s*Air\b", "iPad Air", s, flags=re.IGNORECASE)
+    s = re.sub(r"\biPad\s*mini\b", "iPad mini", s, flags=re.IGNORECASE)
+    s = re.sub(r"\biPad\s*Pro\b", "iPad Pro", s, flags=re.IGNORECASE)
     s = re.sub(r"\(M(\d+)\)", r"M\1", s)
 
-    # Пробелы в серийных скобках: ( JQ620 ) → (JQ620)
+    # --- AirPods ---
+    s = re.sub(r"\bAir\s*Pods\b", "AirPods", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bAIRPODS\b", "AirPods", s)
+    s = re.sub(r"\bAirPods\s*Pro\s*(\d+)\b", r"AirPods Pro \1", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bAirPods\s*Pro\b(?!\s*\d)", "AirPods Pro", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bAirPods\s*Max\b", "AirPods Max", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bAirPods\s*(\d+)\b", r"AirPods \1", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bUSB\s*-?\s*C\b", "USB-C", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bType\s*-?\s*C\b", "USB-C", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bLightning\b", "Lightning", s, flags=re.IGNORECASE)
+
+    # --- Samsung ---
+    s = re.sub(r"\bSAMSUNG\b", "Samsung", s)
+    s = re.sub(r"\bSamsung\s+Galaxy\b", "Samsung Galaxy", s, flags=re.IGNORECASE)
+    s = re.sub(
+        r"\b(Samsung\s+)?Galaxy\s+S(\d+)\s*Ultra\b",
+        r"Samsung Galaxy S\2 Ultra",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\b(Samsung\s+)?Galaxy\s+S(\d+)\s*\+\b",
+        r"Samsung Galaxy S\2+",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\b(Samsung\s+)?Galaxy\s+S(\d+)\b(?!\s*(?:Ultra|\+))",
+        r"Samsung Galaxy S\2",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\b(Samsung\s+)?Galaxy\s+Z\s*Fold\s*(\d+)\b",
+        r"Samsung Galaxy Z Fold \2",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\b(Samsung\s+)?Galaxy\s+Z\s*Flip\s*(\d+)\b",
+        r"Samsung Galaxy Z Flip \2",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\b(Samsung\s+)?Galaxy\s+A(\d+)\b",
+        r"Samsung Galaxy A\2",
+        s,
+        flags=re.IGNORECASE,
+    )
+    # «S24 Ultra» без Galaxy — только если Galaxy ещё нет рядом
+    s = re.sub(
+        r"(?<!Galaxy )(?<!Galaxy)(?<![A-Za-z])S(\d+)\s*Ultra\b",
+        r"Samsung Galaxy S\1 Ultra",
+        s,
+        flags=re.IGNORECASE,
+    )
+
+    s = re.sub(r"\bDual\s*Sense\b", "DualSense", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bPlay\s*Station\b", "PlayStation", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bPS\s*5\b", "PS5", s, flags=re.IGNORECASE)
+
+    # --- серийник / пунктуация ---
     s = re.sub(r"[\(\[]\s*([A-Za-z0-9\-]{4,})\s*[\)\]]", r"(\1)", s)
-
-    # Пробел перед серийником, если его нет
     s = re.sub(r"([A-Za-z0-9])(\([A-Za-z0-9\-]{4,}\))", r"\1 \2", s)
-
-    # Запятые: единый вид «, »
     s = re.sub(r"\s*,\s*", ", ", s)
-
-    # StarLight → Starlight
-    s = re.sub(r"\bStarLight\b", "Starlight", s)
-    s = re.sub(r"\bSTARLIGHT\b", "Starlight", s)
+    s = re.sub(r"\s+", " ", s)
 
     return s.strip()
 
