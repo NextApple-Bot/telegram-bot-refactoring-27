@@ -1,70 +1,60 @@
+import asyncio
 import logging
 import os
 import re
 import tempfile
+from typing import Optional
 
-import aiofiles
-from aiogram import F, Router
+from aiogram import Bot, F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy import select
 
 from bot import config
 from bot.db import get_async_session_factory
-from bot.handlers.states import ArrivalConfirmState
+from bot.filters.group import in_arrival, in_main_group
 from bot.models import Category, Item
-from bot.repositories.item import ItemRepository
 from bot.services.assortment import AssortmentService
-from bot.utils.helpers import send_and_clean
-from bot.utils.sort import match_existing_category
+from bot.states.arrival import ArrivalStates
+from bot.utils.message import send_and_clean
+from bot.utils.sort import match_existing_category, normalize_item_text
 from bot.utils.validators import extract_serials
 
 logger = logging.getLogger(__name__)
-
-router = Router()
-MAX_FILE_SIZE = 10 * 1024 * 1024
+router = Router(name="arrival")
 
 
-def _short_line(line: str, max_len: int = 90) -> str:
-    s = (line or "").strip()
-    if len(s) <= max_len:
-        return s
-    return s[: max_len - 1] + "…"
-
-
-def _format_skipped_block(title: str, lines: list[str], limit: int = 15) -> str:
-    if not lines:
+def _format_skipped_block(title: str, items: list, limit: int = 8) -> str:
+    if not items:
         return ""
-    block = f"{title} ({len(lines)}):\n"
-    for line in lines[:limit]:
-        block += f"  • {_short_line(line)}\n"
-    if len(lines) > limit:
-        block += f"  … и ещё {len(lines) - limit}\n"
-    return block
+    lines = [f"\n{title} ({len(items)}):"]
+    for it in items[:limit]:
+        lines.append(f"• {it}")
+    if len(items) > limit:
+        lines.append(f"… и ещё {len(items) - limit}")
+    return "\n".join(lines)
 
 
-@router.message(
-    F.chat.id == config.MAIN_GROUP_ID,
-    F.message_thread_id == config.THREAD_ARRIVAL,
-    (F.text | F.caption | F.document),
-)
-async def handle_arrival(message: Message, bot, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state == ArrivalConfirmState.waiting_for_confirm.state:
+@router.message(in_main_group, in_arrival, F.text | F.document | F.photo, StateFilter("*"))
+async def handle_arrival_message(message: Message, state: FSMContext, bot: Bot) -> None:
+    current = await state.get_state()
+    if current == ArrivalStates.waiting_confirm.state:
         await send_and_clean(
             bot=message.bot,
             chat_id=message.chat.id,
             text="⚠️ Сначала подтвердите или отмените предыдущую загрузку (используйте кнопки).",
             reply_to_message_id=message.message_id,
             message_thread_id=config.THREAD_ARRIVAL,
-            delete_after=60,
+            delete_after=30,
         )
         return
 
-    lines = []
+    lines: list[str] = []
+
     if message.document:
-        document = message.document
-        if document.file_size and document.file_size > MAX_FILE_SIZE:
+        doc = message.document
+        if doc.file_size and doc.file_size > 10 * 1024 * 1024:
             await send_and_clean(
                 bot=message.bot,
                 chat_id=message.chat.id,
@@ -74,10 +64,8 @@ async def handle_arrival(message: Message, bot, state: FSMContext):
                 delete_after=60,
             )
             return
-        if not (
-            document.mime_type == "text/plain"
-            or (document.file_name or "").endswith(".txt")
-        ):
+        file_name = (doc.file_name or "").lower()
+        if not file_name.endswith(".txt"):
             await send_and_clean(
                 bot=message.bot,
                 chat_id=message.chat.id,
@@ -87,15 +75,14 @@ async def handle_arrival(message: Message, bot, state: FSMContext):
                 delete_after=60,
             )
             return
-        with tempfile.NamedTemporaryFile(
-            mode="wb", suffix="_" + (document.file_name or "arrival.txt"), delete=False
-        ) as tmp:
+        file = await bot.get_file(doc.file_id)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
             file_path = tmp.name
-        await bot.download(document, destination=file_path)
         try:
-            async with aiofiles.open(file_path, encoding="utf-8") as f:
-                content = await f.read()
-                lines = [line.strip() for line in content.splitlines() if line.strip()]
+            await bot.download_file(file.file_path, file_path)
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            lines = [line.strip() for line in content.splitlines() if line.strip()]
         finally:
             if os.path.exists(file_path):
                 os.remove(file_path)
@@ -158,20 +145,30 @@ async def handle_arrival(message: Message, bot, state: FSMContext):
         result = await session.execute(select(Item.text, Item.serial))
         rows = result.all()
 
-        existing_texts = {row._mapping["text"] for row in rows}
+        existing_texts = {
+            (row._mapping["text"] or "").strip()
+            for row in rows
+            if row._mapping.get("text")
+        }
         existing_serials = {
             row._mapping["serial"].strip().upper()
             for row in rows
             if row._mapping.get("serial")
         }
 
-        current_categories = await AssortmentService.load_inventory()
+        cats_result = await session.execute(
+            select(Category.id, Category.name).where(Category.name != "__SYSTEM__")
+        )
+        current_categories = [
+            {"header": r.name, "name": r.name, "id": r.id} for r in cats_result.all()
+        ]
 
         cat_to_items: dict[str, list] = {}
         skipped_duplicates = []
         skipped_no_category = []
 
         for line in filtered_lines:
+            line = normalize_item_text(line)
             if line in existing_texts:
                 skipped_duplicates.append(f"[Дубликат текста] {line}")
                 continue
@@ -183,7 +180,6 @@ async def handle_arrival(message: Message, bot, state: FSMContext):
                 skipped_duplicates.append(f"[Дубликат серийного {serial}] {line}")
                 continue
 
-            # Только существующие категории — новые НЕ создаём
             category_name = match_existing_category(line, current_categories)
             if not category_name:
                 skipped_no_category.append(line)
@@ -198,15 +194,11 @@ async def handle_arrival(message: Message, bot, state: FSMContext):
             msg += _format_skipped_block("⏭ Дубликаты", skipped_duplicates, limit=10)
         if skipped_no_category:
             msg += _format_skipped_block(
-                "⚠️ Без подходящей категории (не добавлены)",
-                skipped_no_category,
-                limit=15,
+                "⚠️ Нет категории", skipped_no_category, limit=10
             )
         if skipped_no_serial:
             msg += _format_skipped_block(
-                "⚠️ Без серийного номера",
-                skipped_no_serial,
-                limit=8,
+                "⚠️ Без серийного номера", skipped_no_serial, limit=10
             )
         await send_and_clean(
             bot=message.bot,
@@ -214,56 +206,38 @@ async def handle_arrival(message: Message, bot, state: FSMContext):
             text=msg.strip(),
             reply_to_message_id=message.message_id,
             message_thread_id=config.THREAD_ARRIVAL,
-            delete_after=120,
+            delete_after=90,
         )
         return
 
-    await state.set_state(ArrivalConfirmState.waiting_for_confirm)
-    await state.update_data(
-        cat_to_items=cat_to_items,
-        skipped_lines=skipped_duplicates,
-        skipped_no_serial=skipped_no_serial,
-        skipped_no_category=skipped_no_category,
-        message_id=message.message_id,
-        chat_id=message.chat.id,
-        thread_id=message.message_thread_id,
-    )
+    preview_lines = []
+    total_new = 0
+    for cat, items in cat_to_items.items():
+        preview_lines.append(f"• {cat}: +{len(items)}")
+        total_new += len(items)
 
-    total_new = sum(len(items) for items in cat_to_items.values())
-    response = f"📦 Найдено новых позиций: {total_new}\n"
-    response += "Категории:\n"
-    for cat_name, items in cat_to_items.items():
-        response += f"  • {cat_name}: +{len(items)}\n"
-
-    if skipped_no_category:
-        response += "\n"
-        response += _format_skipped_block(
-            "⚠️ Без подходящей категории (не будут добавлены)",
-            skipped_no_category,
-            limit=15,
-        )
+    msg = f"📦 К добавлению: {total_new}\n\n" + "\n".join(preview_lines)
     if skipped_no_serial:
-        response += "\n"
-        response += _format_skipped_block(
+        msg += _format_skipped_block(
             "⚠️ Без серийного номера (пропущены)",
             skipped_no_serial,
-            limit=8,
+            limit=5,
         )
     if skipped_duplicates:
-        response += "\n"
-        response += _format_skipped_block(
+        msg += _format_skipped_block(
             "⏭ Дубликаты (пропущены)",
             skipped_duplicates,
-            limit=8,
+            limit=5,
         )
+    if skipped_no_category:
+        msg += _format_skipped_block(
+            "⚠️ Нет категории (пропущены)",
+            skipped_no_category,
+            limit=5,
+        )
+    msg += "\n\nПодтвердите добавление?"
 
-    response += "\nПодтвердите добавление?"
-
-    # Telegram limit ~4096
-    if len(response) > 4000:
-        response = response[:3980] + "\n…\n\nПодтвердите добавление?"
-
-    keyboard = InlineKeyboardMarkup(
+    kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
@@ -275,29 +249,33 @@ async def handle_arrival(message: Message, bot, state: FSMContext):
             ]
         ]
     )
-    await message.reply(response, reply_markup=keyboard)
+
+    # store for confirm
+    payload = {
+        str(cat): [[t, s] for t, s in items] for cat, items in cat_to_items.items()
+    }
+    await state.set_state(ArrivalStates.waiting_confirm)
+    await state.update_data(cat_to_items=payload)
+
+    await message.answer(msg, reply_markup=kb)
 
 
-@router.callback_query(
-    ArrivalConfirmState.waiting_for_confirm, F.data.startswith("arrival_confirm:")
-)
-async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
-    try:
-        await callback.answer()
-    except Exception:
-        pass
-
+@router.callback_query(F.data.startswith("arrival_confirm:"), ArrivalStates.waiting_confirm)
+async def arrival_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    action = callback.data.split(":", 1)[1]
     data = await state.get_data()
-    cat_to_items = data.get("cat_to_items") or {}
-    action = (callback.data or "").split(":")[-1]
+    cat_to_items_raw = data.get("cat_to_items") or {}
+    cat_to_items = {
+        cat: [(t, s) for t, s in items] for cat, items in cat_to_items_raw.items()
+    }
 
-    if action == "yes" and cat_to_items:
+    if action == "yes":
+        total_inserted = 0
+        skipped_cat = []
+        errors = []
         async_session = get_async_session_factory()
-        async with async_session() as session, session.begin():
-            total_inserted = 0
-            errors = []
-            skipped_cat = []
-
+        async with async_session() as session:
             rows = (
                 await session.execute(select(Category.id, Category.name))
             ).all()
@@ -329,6 +307,8 @@ async def process_arrival_confirm(callback: CallbackQuery, state: FSMContext):
                         total_inserted += 1
                     except Exception as e:
                         errors.append(f"{text_val[:60]}: {e}")
+
+            await session.commit()
 
         await AssortmentService.invalidate_cache()
         msg = f"✅ Добавлено {total_inserted} товаров."
