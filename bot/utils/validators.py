@@ -42,20 +42,21 @@ def _looks_like_phone(value: str) -> bool:
 
 def extract_serials(text: str) -> List[str]:
     """
-    Извлечение серийных номеров / внутренних кодов из текста.
+    Извлечение серийных номеров / внутренних кодов / IMEI из текста.
 
     Поддерживает:
     - (CFW0KXY231) / [CFW0KXY231]
-    - (353708650084552) — IMEI / числовой SN (15 цифр)
+    - (353708650084552) / (353708650084552 ) — IMEI 15 цифр (пробелы в скобках ок)
     - (№8) / (S№10) / (№1)
+    - голый IMEI 15 цифр в тексте (Samsung без SN)
     """
     if not text:
         return []
 
     serials: List[str] = []
 
-    # 1) alphanumeric / numeric в скобках (от 6 символов)
-    for m in re.findall(r"[\(\[]([A-Za-z0-9\-]{6,})[\)\]]", text):
+    # 1) alphanumeric / numeric в скобках (от 6 символов), пробелы вокруг допускаем
+    for m in re.findall(r"[\(\[]\s*([A-Za-z0-9\-]{6,})\s*[\)\]]", text):
         normalized = normalize_serial(m)
         if not normalized:
             continue
@@ -65,7 +66,7 @@ def extract_serials(text: str) -> List[str]:
             serials.append(normalized)
 
     # 2) Внутренние коды: (№8), (S№10), (№ 4)
-    for m in re.findall(r"[\(\[](S?№\s*\d+)[\)\]]", text, flags=re.IGNORECASE):
+    for m in re.findall(r"[\(\[]\s*(S?№\s*\d+)\s*[\)\]]", text, flags=re.IGNORECASE):
         code = re.sub(r"\s+", "", m).upper()
         code = code.replace("Nº", "№").replace("N°", "№")
         if "№" not in code:
@@ -75,6 +76,14 @@ def extract_serials(text: str) -> List[str]:
                 code = f"{prefix}№{digits.group()}"
         if code and code not in serials:
             serials.append(code)
+
+    # 3) Голый IMEI (15 цифр) — Samsung и др. без буквенного SN
+    if not serials:
+        for m in re.findall(r"(?<!\d)(\d{15})(?!\d)", text):
+            if _looks_like_phone(m):
+                continue
+            if m not in serials:
+                serials.append(m)
 
     return serials
 
