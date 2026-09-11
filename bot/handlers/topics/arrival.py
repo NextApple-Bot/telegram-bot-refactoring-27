@@ -13,10 +13,10 @@ from sqlalchemy import select
 
 from bot import config
 from bot.db import get_async_session_factory
-from bot.filters.group import in_arrival, in_main_group
+from bot.handlers.topics.filters import in_arrival, in_main_group
 from bot.models import Category, Item
 from bot.services.assortment import AssortmentService
-from bot.states.arrival import ArrivalStates
+from bot.handlers.states import ArrivalConfirmState
 from bot.utils.message import send_and_clean
 from bot.utils.sort import match_existing_category, normalize_item_text
 from bot.utils.validators import extract_serials
@@ -39,7 +39,7 @@ def _format_skipped_block(title: str, items: list, limit: int = 8) -> str:
 @router.message(in_main_group, in_arrival, F.text | F.document | F.photo, StateFilter("*"))
 async def handle_arrival_message(message: Message, state: FSMContext, bot: Bot) -> None:
     current = await state.get_state()
-    if current == ArrivalStates.waiting_confirm.state:
+    if current == ArrivalConfirmState.waiting_for_confirm.state:
         await send_and_clean(
             bot=message.bot,
             chat_id=message.chat.id,
@@ -254,13 +254,13 @@ async def handle_arrival_message(message: Message, state: FSMContext, bot: Bot) 
     payload = {
         str(cat): [[t, s] for t, s in items] for cat, items in cat_to_items.items()
     }
-    await state.set_state(ArrivalStates.waiting_confirm)
+    await state.set_state(ArrivalConfirmState.waiting_for_confirm)
     await state.update_data(cat_to_items=payload)
 
     await message.answer(msg, reply_markup=kb)
 
 
-@router.callback_query(F.data.startswith("arrival_confirm:"), ArrivalStates.waiting_confirm)
+@router.callback_query(F.data.startswith("arrival_confirm:"), ArrivalConfirmState.waiting_for_confirm)
 async def arrival_confirm(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     action = callback.data.split(":", 1)[1]
