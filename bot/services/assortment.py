@@ -6,6 +6,7 @@ from sqlalchemy import select
 from bot.db import get_async_session_factory, get_pool
 from bot.models import Category, Item
 from bot.services.cache import cache
+from bot.utils.sort import normalize_item_text
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class AssortmentService:
 
             await conn.execute(
                 """
-                INSERT INTO deleted_items 
+                INSERT INTO deleted_items
                     (item_id, text, serial, category_id, reason, sale_message_id)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 """,
@@ -163,10 +164,10 @@ class AssortmentService:
 
                         for item in cat.get("items", []):
                             if isinstance(item, dict):
-                                text = (item.get("text") or "").strip()
+                                text = normalize_item_text((item.get("text") or "").strip())
                                 serial = item.get("serial")
                             else:
-                                text = str(item).strip()
+                                text = normalize_item_text(str(item).strip())
                                 serial = None
 
                             if not text:
