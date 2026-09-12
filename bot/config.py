@@ -44,10 +44,18 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_secrets(self):
+        import logging
+        log = logging.getLogger(__name__)
         if not self.SECRET_KEY or len(self.SECRET_KEY) < 32:
             raise ValueError("SECRET_KEY должен содержать не менее 32 символов")
         if not self.ADMIN_PASSWORD and not self.ADMIN_PASSWORD_HASH:
             raise ValueError("Должен быть задан ADMIN_PASSWORD или ADMIN_PASSWORD_HASH")
+        if not self.ADMIN_IDS:
+            log.warning(
+                "⚠️ ADMIN_ID / ADMIN_IDS пуст — команды и callback'и бота, "
+                "завязанные на is_admin(), недоступны никому. "
+                "Задайте ADMIN_ID=123,456 в env."
+            )
         return self
 
 
