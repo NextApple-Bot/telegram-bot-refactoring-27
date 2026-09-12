@@ -1,6 +1,8 @@
 # bot/utils/sort_normalize.py
-"""Нормализация названий товаров для ассортимента."""
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 _SERIAL_IN_PARENS = re.compile(
     r"[\(\[]("
@@ -22,7 +24,7 @@ _ONLY_SERIAL_LINE = re.compile(
     re.IGNORECASE,
 )
 _TRAILING_PARENS = re.compile(r"[\(\[][^\)\]]{1,40}[\)\]]\s*$")
-_MEM_MARKER = re.compile(
+_MEMORY_OR_SIM_MARKER_RE = re.compile(
     r"^\s*-?\s*(\d+\s*(GB|TB|mm)|eSIM|SIM\+eSIM|SIM|Dual SIM)\s*-?\s*$",
     re.IGNORECASE,
 )
@@ -38,8 +40,10 @@ def normalize_model(name):
 
 def normalize_item_text(text: str) -> str:
     """
-    Единая нормализация строки товара:
+    Единый «красивый» вид названия товара.
     Apple Watch / iPhone / iPad / MacBook / AirPods / Samsung / Marshall + общее.
+    Три типа SIM: eSIM | SIM+eSIM | Dual SIM.
+    Серийник в скобках сохраняется.
     """
     if not text:
         return text
@@ -114,14 +118,31 @@ def normalize_item_text(text: str) -> str:
         ("deep purple", "Deep Purple"), ("deep blue", "Deep Blue"),
         ("space black", "Space Black"), ("space gray", "Space Gray"),
         ("space grey", "Space Gray"), ("starlight", "Starlight"),
+        ("midnight", "Midnight"), ("product red", "Product Red"),
+        ("sierra blue", "Sierra Blue"), ("alpine green", "Alpine Green"),
+        ("pacific blue", "Pacific Blue"), ("rose gold", "Rose Gold"),
+        ("jet black", "Jet Black"), ("sky blue", "Sky Blue"),
+        ("mist blue", "Mist Blue"), ("light gold", "Light Gold"),
+        ("cloud white", "Cloud White"), ("phantom black", "Phantom Black"),
+        ("silver shadow", "Silver Shadow"), ("silver blue", "Silver Blue"),
+        ("cobalt violet", "Cobalt Violet"), ("titanium gray", "Titanium Gray"),
+        ("titanium grey", "Titanium Gray"), ("ultramarine", "Ultramarine"),
+        ("lavender", "Lavender"), ("silver", "Silver"), ("gold", "Gold"),
+        ("pink", "Pink"), ("purple", "Purple"), ("orange", "Orange"),
+        ("teal", "Teal"), ("yellow", "Yellow"), ("green", "Green"),
+        ("blue", "Blue"), ("black", "Black"), ("white", "White"),
+        ("red", "Red"), ("sage", "Sage"), ("navy", "Navy"),
+        ("graphite", "Graphite"), ("indigo", "Indigo"), ("blush", "Blush"),
+        ("citrus", "Citrus"),
     ]
-    for old, new in _color_map:
-        s = re.sub(re.escape(old), new, s, flags=re.IGNORECASE)
+    for low, nice in _color_map:
+        s = re.sub(rf"\b{re.escape(low)}\b", nice, s, flags=re.IGNORECASE)
 
-    # MacBook Neo: единый вид MacBook Neo, 13", 8/256GB, Color
-    s = re.sub(r"\bMac\s*Book\b", "MacBook", s, flags=re.IGNORECASE)
-    s = re.sub(r"\bMacBook\s+13\s*Neo\b", "MacBook Neo, 13\"", s, flags=re.IGNORECASE)
-    s = re.sub(r"\bMacBook\s+Neo\s*,?\s*13[\"”]?", 'MacBook Neo, 13"', s, flags=re.IGNORECASE)
+    s = re.sub(r'\b(MacBook (?:Air|Pro))\s+(13|15|16)(?![\"”])\b', r'\1 \2"', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bMacBook\s+(13|14|16)\s*Pro\b', r'MacBook Pro \1"', s, flags=re.IGNORECASE)
+    # MacBook Neo → MacBook Neo, 13", RAM/SSD, Color
+    s = re.sub(r'\bMacBook\s+13\s*Neo\b', "MacBook Neo 13", s, flags=re.IGNORECASE)
+    s = re.sub(r'\bMacBook\s+Neo\s*,?\s*13[\"”]?', 'MacBook Neo, 13"', s, flags=re.IGNORECASE)
     s = re.sub(r'(MacBook Neo,\s*13)"+', r'\1"', s, flags=re.IGNORECASE)
     s = re.sub(r'(MacBook Neo,\s*13")\s+(\d+\s*/\s*\d+(?:GB|TB))', r'\1, \2', s, flags=re.IGNORECASE)
     s = re.sub(r'(MacBook Neo,\s*13",\s*\d+/\d+(?:GB|TB))\s+([A-Za-zА-Яа-яЁё])', r'\1, \2', s, flags=re.IGNORECASE)
@@ -164,8 +185,16 @@ def normalize_item_text(text: str) -> str:
     s = re.sub(r"\b(Samsung\s+)?Galaxy\s+A(\d+)\b", r"Samsung Galaxy A\2", s, flags=re.IGNORECASE)
     s = re.sub(r"(?<!Galaxy )(?<!Galaxy)(?<![A-Za-z])S(\d+)\s*Ultra\b", r"Samsung Galaxy S\1 Ultra", s, flags=re.IGNORECASE)
 
-    s = re.sub(r"\bMarshal+\b", "Marshall", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bMarshal+l?\b", "Marshall", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bDual\s*Sense\b", "DualSense", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bPlay\s*Station\b", "PlayStation", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bPS\s*5\b", "PS5", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bRay\s*-?\s*Ban\b", "Ray-Ban", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bRayBan\b", "Ray-Ban", s, flags=re.IGNORECASE)
 
-    s = re.sub(r"\s+,\s*", ", ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+    s = re.sub(r"[\(\[]\s*([A-Za-z0-9\-]{4,})\s*[\)\]]", r"(\1)", s)
+    s = re.sub(r"([A-Za-z0-9])(\([A-Za-z0-9\-]{4,}\))", r"\1 \2", s)
+    s = re.sub(r"\s*,\s*", ", ", s)
+    s = re.sub(r"\s+", " ", s)
+
+    return s.strip()
