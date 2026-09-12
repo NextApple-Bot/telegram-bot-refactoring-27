@@ -38,6 +38,10 @@ app.add_middleware(
     https_only=False,
 )
 
+# Per-IP limit on admin app (login / API). Outer relative to Session.
+from bot.middleware.rate_limit import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware, max_calls=90, window_seconds=60)
+
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(search.router, prefix="/search", tags=["search"])
