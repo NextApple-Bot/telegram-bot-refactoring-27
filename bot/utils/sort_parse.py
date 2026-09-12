@@ -299,6 +299,21 @@ def _filter_real_items(item_strings):
     return [s for s in item_strings if s and not is_marker_line(s)]
 
 
+# «№5», «S№10», «№ 12» — сортировка от меньшего к большему
+_NUM_MARK_RE = re.compile(r"[Ss]?№\s*(\d+)")
+
+
+def _extract_num_mark(text: str) -> int | None:
+    m = _NUM_MARK_RE.search(text or "")
+    return int(m.group(1)) if m else None
+
+
+def _item_sort_key(text: str):
+    """Сначала по номеру №N (если есть), иначе алфавит."""
+    n = _extract_num_mark(text)
+    return (n is None, n if n is not None else 0, (text or "").lower())
+
+
 def _sort_by_memory_and_sim(item_strings):
     item_strings = _filter_real_items(item_strings)
     groups: dict = {}
@@ -326,7 +341,7 @@ def _sort_by_memory_and_sim(item_strings):
             items_list = bucket[sim_type]
             if not items_list:
                 continue
-            items_list = sorted(items_list, key=lambda x: x.lower())
+            items_list = sorted(items_list, key=_item_sort_key)
             if not first_sim:
                 output.append("-")
             if sim_type != "other":
@@ -346,7 +361,7 @@ def _sort_by_watch_size(item_strings):
     sorted_sizes = sorted(size_groups.keys(), key=lambda s: (s is None, s if s is not None else float("inf")))
     output = []
     for size in sorted_sizes:
-        items_list = sorted(size_groups[size], key=lambda x: x.lower())
+        items_list = sorted(size_groups[size], key=_item_sort_key)
         if not items_list:
             continue
         if output:
@@ -359,7 +374,8 @@ def _sort_by_watch_size(item_strings):
 
 
 def _sort_plain(item_strings):
-    return _filter_real_items(item_strings)
+    items = _filter_real_items(item_strings)
+    return sorted(items, key=_item_sort_key)
 
 
 _PHONE_BRANDS = (
