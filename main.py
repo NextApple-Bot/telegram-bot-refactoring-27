@@ -15,148 +15,72 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-SENTRY_DSN = os.getenv("SENTRY_DSN")
-if SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
-    from sentry_sdk.integrations.fastapi import FastApiIntegration
-    from sentry_sdk.integrations.starlette import StarletteIntegration
-
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        traces_sample_rate=1.0,
-        environment=os.getenv("ENVIRONMENT", "production"),
-        integrations=[StarletteIntegration(), FastApiIntegration()],
-    )
-    logging.info("✅ Sentry инициализирован")
-else:
-    logging.info("ℹ️ SENTRY_DSN не задан, мониторинг ошибок отключён")
-
-log_format = os.getenv("LOG_FORMAT", "text").lower()
-if log_format == "json":
-    from pythonjsonlogger import jsonlogger
-    handler = logging.StreamHandler()
-    formatter = jsonlogger.JsonFormatter('%(asctime)s %(name)s %(levelname)s %(message)s')
-    handler.setFormatter(formatter)
-    logging.getLogger().handlers = [handler]
-    logging.getLogger().setLevel(logging.INFO)
-else:
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    stream=sys.stdout,
+)
 logger = logging.getLogger(__name__)
 
 
 class Application:
     def __init__(self):
+        from bot.config import config
+
+        self.config = config
         self.bot = None
         self.dp = None
-        self.config = None
-        self._redis_client = None
+        self._shutdown = False
 
-    async def initialize(self):
-        import redis.asyncio as redis
+    async def startup(self):
         from aiogram import Bot, Dispatcher
+        from aiogram.client.default import DefaultBotProperties
+        from aiogram.enums import ParseMode
         from aiogram.fsm.storage.memory import MemoryStorage
-        from aiogram.fsm.storage.redis import RedisStorage
 
-        from bot.config import config as bot_config
-        from bot.db import get_async_session_factory
+        from bot.db import init_db
+        from bot.handlers import router as root_router
         from bot.middleware.error_handler import ErrorHandlerMiddleware
+        from bot.webhook_utils import check_and_set_webhook
 
-        self.config = bot_config
-        logger.info("✅ Конфигурация загружена")
+        await init_db()
 
-        self.bot = Bot(token=bot_config.BOT_TOKEN)
-        logger.info("✅ Экземпляр Bot создан")
-
-        # FSM: Redis переживает рестарт; при ошибке — MemoryStorage
         storage = MemoryStorage()
-        if bot_config.REDIS_URL:
+        if self.config.REDIS_URL:
             try:
-                storage = RedisStorage.from_url(bot_config.REDIS_URL)
-                self._redis_client = redis.from_url(
-                    bot_config.REDIS_URL,
-                    decode_responses=True,
-                    socket_connect_timeout=5,
-                    socket_timeout=5,
-                )
-                await self._redis_client.ping()
-                logger.info("✅ RedisStorage для FSM + Redis ping OK")
+                from aiogram.fsm.storage.redis import RedisStorage
+                from redis.asyncio import Redis
+
+                redis = Redis.from_url(self.config.REDIS_URL)
+                storage = RedisStorage(redis=redis)
+                logger.info("✅ Redis FSM storage")
             except Exception as e:
-                logger.error(
-                    "❌ Redis недоступен (%s). FSM на MemoryStorage. Проверьте REDIS_URL на Amvera.",
-                    e,
-                )
-                storage = MemoryStorage()
-                self._redis_client = None
+                logger.warning("⚠️ Redis FSM недоступен, MemoryStorage: %s", e)
         else:
             logger.warning(
-                "⚠️ REDIS_URL не задан — MemoryStorage. "
-                "Состояния FSM сбрасываются при рестарте. "
-                "Добавьте Redis в Amvera и переменную REDIS_URL."
+                "⚠️ REDIS_URL не задан — MemoryStorage. Состояния FSM сбрасываются при рестарте. Добавьте Redis в Amvera и переменную REDIS_URL."
             )
 
+        self.bot = Bot(
+            token=self.config.BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        )
         self.dp = Dispatcher(storage=storage)
-        self.dp.update.middleware(ErrorHandlerMiddleware())
-        logger.info("✅ Диспетчер создан")
+        self.dp.message.middleware(ErrorHandlerMiddleware())
+        self.dp.callback_query.middleware(ErrorHandlerMiddleware())
+        self.dp.include_router(root_router)
 
-        from bot.handlers import router
-        self.dp.include_router(router)
-        logger.info("✅ Роутер подключён")
-
-        async_session = get_async_session_factory()
-        async with async_session() as session:
-            await session.execute(text("SELECT 1"))
-        logger.info("✅ Подключение к БД подтверждено")
+        await check_and_set_webhook(self.bot, self.dp)
 
         from bot.background import start_background_tasks
-        asyncio.create_task(start_background_tasks(self.bot, self.dp))
-        logger.info("✅ Фоновые задачи запущены")
 
-        await self._setup_webhook()
-        return self
-
-    async def _setup_webhook(self, max_retries=5, base_delay=3):
-        if not self.config.RENDER_URL:
-            logger.warning("⚠️ RENDER_URL не задан — вебхук не будет установлен автоматически.")
-            return
-        webhook_url = f"{self.config.RENDER_URL}/webhook"
-        for attempt in range(1, max_retries + 1):
-            try:
-                await self.bot.delete_webhook(drop_pending_updates=True)
-                allowed_updates = self.dp.resolve_used_update_types()
-                await self.bot.set_webhook(url=webhook_url, allowed_updates=allowed_updates)
-                logger.info(f"✅ Вебхук установлен на {webhook_url}")
-                return
-            except Exception as e:
-                logger.warning(f"⚠️ Попытка {attempt}/{max_retries} не удалась: {e}")
-                if attempt < max_retries:
-                    await asyncio.sleep(base_delay * attempt)
-                else:
-                    logger.error("❌ Не удалось установить вебхук")
+        await start_background_tasks(self.bot)
 
     async def shutdown(self):
-        logger.info("🛑 Завершение работы...")
+        self._shutdown = True
         try:
             if self.bot:
-                try:
-                    await self.bot.delete_webhook()
-                    if hasattr(self.bot, "session") and self.bot.session:
-                        try:
-                            await self.bot.session.close()
-                        except Exception as e:
-                            logger.error(f"Ошибка при закрытии bot.session: {e}")
-                except Exception as e:
-                    logger.error(f"Ошибка при закрытии бота: {e}")
-
-            if self._redis_client:
-                try:
-                    await self._redis_client.aclose()
-                except Exception as e:
-                    logger.error(f"Ошибка при закрытии Redis: {e}")
-
-            from bot.db import dispose_engine
-            await dispose_engine()
+                await self.bot.session.close()
         except Exception as e:
             logger.error(f"Ошибка в shutdown: {e}")
 
@@ -165,6 +89,7 @@ class Application:
             return Response(status_code=503)
         try:
             from aiogram.types import Update
+
             update_data = await request.json()
             update = Update(**update_data)
             await self.dp.feed_update(bot=self.bot, update=update)
@@ -178,6 +103,7 @@ class Application:
 
     async def health_detailed(self, _: Request) -> Response:
         from bot.db import check_db_health, check_redis_health
+
         start = time.monotonic()
         db_ok = await check_db_health()
         db_time = time.monotonic() - start
@@ -185,11 +111,20 @@ class Application:
         redis_ok = await check_redis_health()
         redis_time = time.monotonic() - start
         overall = db_ok  # redis optional for health
-        return JSONResponse({
-            "status": "healthy" if overall else "unhealthy",
-            "database": {"status": "up" if db_ok else "down", "response_time_ms": round(db_time * 1000, 2) if db_ok else None},
-            "redis": {"status": "up" if redis_ok else "down", "response_time_ms": round(redis_time * 1000, 2) if redis_ok else None},
-        }, status_code=200 if overall else 503)
+        return JSONResponse(
+            {
+                "status": "healthy" if overall else "unhealthy",
+                "database": {
+                    "status": "up" if db_ok else "down",
+                    "response_time_ms": round(db_time * 1000, 2) if db_ok else None,
+                },
+                "redis": {
+                    "status": "up" if redis_ok else "down",
+                    "response_time_ms": round(redis_time * 1000, 2) if redis_ok else None,
+                },
+            },
+            status_code=200 if overall else 503,
+        )
 
 
 def create_starlette_app(app_instance):
@@ -213,45 +148,66 @@ def create_starlette_app(app_instance):
         )
         logger.info("✅ SessionMiddleware подключён")
 
-    if app_instance.config.ADMIN_PASSWORD and app_instance.config.SECRET_KEY:
+    # Rate limit last-added = outermost (runs first). Webhook/health/metrics exempt.
+    try:
+        from bot.middleware.rate_limit import RateLimitMiddleware
+
+        starlette_app.add_middleware(RateLimitMiddleware, max_calls=120, window_seconds=60)
+        logger.info("✅ RateLimitMiddleware подключён")
+    except Exception as e:
+        logger.warning("⚠️ RateLimitMiddleware не подключён: %s", e)
+
+    _has_admin_secret = bool(
+        app_instance.config.ADMIN_PASSWORD or app_instance.config.ADMIN_PASSWORD_HASH
+    )
+    if _has_admin_secret and app_instance.config.SECRET_KEY:
         try:
             from web_admin.main import app as admin_app
+
             starlette_app.mount("/admin", admin_app)
             logger.info("✅ Веб-админка смонтирована на /admin")
         except Exception as e:
             logger.error(f"❌ Не удалось смонтировать веб-админку: {e}")
     else:
-        logger.warning("⚠️ Веб-админка не смонтирована (нет ADMIN_PASSWORD или SECRET_KEY)")
+        logger.warning(
+            "⚠️ Веб-админка не смонтирована (нет ADMIN_PASSWORD/ADMIN_PASSWORD_HASH или SECRET_KEY)"
+        )
 
     return starlette_app
 
 
 async def main_entry():
     app = Application()
-    try:
-        await app.initialize()
-    except Exception:
-        logger.critical("Не удалось инициализировать приложение.\n" + traceback.format_exc())
-        sys.exit(1)
-
+    await app.startup()
     starlette_app = create_starlette_app(app)
 
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(app.shutdown()))
-
-    port = int(os.getenv("PORT", "8000"))
-    logger.info(f"🚀 Запуск сервера на порту {port}")
     config = uvicorn.Config(
         starlette_app,
         host="0.0.0.0",
-        port=port,
+        port=int(os.getenv("PORT", app.config.PORT or 80)),
         log_level="info",
-        timeout_graceful_shutdown=30,
+        lifespan="on",
     )
     server = uvicorn.Server(config)
+
+    loop = asyncio.get_running_loop()
+
+    def _handle_sig(*_):
+        logger.info("Signal received, shutting down...")
+        asyncio.create_task(app.shutdown())
+        server.should_exit = True
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, _handle_sig)
+        except NotImplementedError:
+            pass
+
     await server.serve()
 
 
 if __name__ == "__main__":
-    asyncio.run(main_entry())
+    try:
+        asyncio.run(main_entry())
+    except KeyboardInterrupt:
+        pass
