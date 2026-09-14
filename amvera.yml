@@ -7,6 +7,7 @@ build:
   dockerfile: Dockerfile
 
 run:
-  command: sh /app/start.sh
+  command: /bin/sh
+  args: /app/start.sh
   containerPort: 80
   persistenceMount: /data
