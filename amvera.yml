@@ -1,14 +1,12 @@
 meta:
   environment: docker
   toolchain:
-    name: python
+    name: docker
 
 build:
   dockerfile: Dockerfile
 
 run:
   command: ./start.sh
-  persistence:
-    - type: volume
-      mount: /data
-      capacity: 1GB
+  containerPort: 80
+  persistenceMount: /data
