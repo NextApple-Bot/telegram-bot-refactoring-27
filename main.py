@@ -221,19 +221,34 @@ def create_starlette_app(app_instance):
     except Exception as e:
         logger.warning("⚠️ RateLimitMiddleware не подключён: %s", e)
 
-    _has_admin_secret = bool(
-        app_instance.config.ADMIN_PASSWORD or app_instance.config.ADMIN_PASSWORD_HASH
+    # Admin mount: env may also be read via os.getenv as fallback
+    _pwd = (app_instance.config.ADMIN_PASSWORD or os.getenv("ADMIN_PASSWORD") or "").strip()
+    _hash = (app_instance.config.ADMIN_PASSWORD_HASH or os.getenv("ADMIN_PASSWORD_HASH") or "").strip()
+    _secret = (app_instance.config.SECRET_KEY or os.getenv("SECRET_KEY") or "").strip()
+    _has_admin_secret = bool(_pwd or _hash)
+    logger.info(
+        "Admin mount check: password=%s hash=%s secret_len=%s",
+        bool(_pwd),
+        bool(_hash),
+        len(_secret),
     )
-    if _has_admin_secret and app_instance.config.SECRET_KEY:
+    if _has_admin_secret and _secret:
         try:
             from web_admin.main import app as admin_app
             starlette_app.mount("/admin", admin_app)
             logger.info("✅ Веб-админка смонтирована на /admin")
-        except Exception as e:
-            logger.error(f"❌ Не удалось смонтировать веб-админку: {e}")
+        except Exception:
+            logger.error(
+                "❌ Не удалось смонтировать веб-админку:\n%s",
+                traceback.format_exc(),
+            )
     else:
         logger.warning(
-            "⚠️ Веб-админка не смонтирована (нет ADMIN_PASSWORD/ADMIN_PASSWORD_HASH или SECRET_KEY)"
+            "⚠️ Веб-админка не смонтирована "
+            "(password=%s hash=%s secret_len=%s; нужны ADMIN_PASSWORD или HASH и SECRET_KEY)",
+            bool(_pwd),
+            bool(_hash),
+            len(_secret),
         )
 
     return starlette_app
