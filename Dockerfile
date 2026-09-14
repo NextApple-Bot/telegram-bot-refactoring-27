@@ -37,8 +37,8 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy application code
 COPY . .
 
-# Set ownership to non-root user
-RUN chown -R botuser:botgroup /app /opt/venv
+# Ensure start.sh is executable (Amvera run.command may call ./start.sh)
+RUN chmod +x /app/start.sh && chown -R botuser:botgroup /app /opt/venv
 
 # Switch to non-root user
 USER botuser
@@ -52,5 +52,5 @@ ENV PYTHONPATH=/app
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Запуск через start.sh
-CMD ["sh", "./start.sh"]
+# Запуск через start.sh (sh не требует +x)
+CMD ["sh", "/app/start.sh"]
