@@ -6,6 +6,7 @@ simple abuse (login brute-force, spam) on a single instance.
 from __future__ import annotations
 
 import functools
+import inspect
 import logging
 import time
 from collections import defaultdict
@@ -82,7 +83,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ip = _client_ip(request)
         key = f"mw:{ip}"
         if not allow_request(key, self.max_calls, self.window_seconds):
-            logger.warning("Rate limit exceeded for %s path=%s", ip, path)
+            logger.warning("HTTP rate limit exceeded ip=%s path=%s", ip, path)
             return JSONResponse(
                 {"detail": "Too Many Requests"},
                 status_code=429,
@@ -149,7 +150,7 @@ def rate_limit(
                     )
             return func(*args, **kwargs)
 
-        if functools.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
 
