@@ -5,8 +5,8 @@
         from bot.services.payment_parser import (
             extract_payment_amounts,
             extract_declared_total,
-            extract_day_counts,
         )
+        from bot.services.day_counts import extract_day_counts
         payments = extract_payment_amounts(text)
         counts = extract_day_counts(text)
         declared = None
