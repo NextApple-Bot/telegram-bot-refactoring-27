@@ -1,4 +1,5 @@
                 "accessories_count": snap.get("accessories_count", 0),
+                "accessories_revenue": float(snap.get("accessories_revenue", 0) or 0),
                 "preorders_count": snap["preorders_count"],
                 "bookings_count": snap["bookings_count"],
                 "active_bookings": active_bookings,
