@@ -1,23 +1,27 @@
 """
-Единый снимок дня: raw-данные + StatsAdjustment.
+Единый расчёт «цифр дня» с учётом StatsAdjustment.
 
 Используется дашбордом, статистикой продавцов и (по возможности) stats.
-Не дублировать эту логику в роутах.
 """
 from __future__ import annotations
 
 import calendar
-import logging
-import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, func, select
 
-from bot.models import Booking, DailyPayment, Preorder, Sale, StatsAdjustment
+from bot.models import (
+    Booking,
+    DailyPayment,
+    Item,
+    Preorder,
+    Sale,
+    StatsAdjustment,
+)
 
-logger = logging.getLogger(__name__)
+TZ = ZoneInfo("Asia/Vladivostok")
 
 PAYMENT_METRICS = ("cash", "terminal", "qr", "transfer", "invoice", "installment")
 COUNT_METRICS = ("sales_count", "preorders_count", "bookings_count", "accessories_count")
@@ -37,35 +41,13 @@ METRIC_LABELS = {
     "total_revenue": "Выручка (Σ оплат), ₽",
 }
 
-APP_TZ_NAME = os.getenv("APP_TZ", "Europe/Moscow")
-try:
-    APP_TZ = ZoneInfo(APP_TZ_NAME)
-except Exception:
-    APP_TZ = timezone(timedelta(hours=3))
-    logger.warning("Не удалось загрузить ZoneInfo(%s), используем UTC+3", APP_TZ_NAME)
+
+def today_local() -> date:
+    return datetime.now(TZ).date()
 
 
 def now_local() -> datetime:
-    return datetime.now(APP_TZ)
-
-
-def today_local() -> date:
-    return now_local().date()
-
-
-def as_date(value) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.date()
-        return value.astimezone(APP_TZ).date()
-    if isinstance(value, date):
-        return value
-    try:
-        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
-    except (ValueError, TypeError):
-        return None
+    return datetime.now(TZ)
 
 
 async def load_adjustments(session, day: date) -> dict[str, float]:
@@ -82,9 +64,7 @@ async def load_adjustments(session, day: date) -> dict[str, float]:
 async def load_adjustments_detail(session, day: date) -> list[dict]:
     rows = (
         await session.execute(
-            select(StatsAdjustment)
-            .where(StatsAdjustment.target_date == day)
-            .order_by(StatsAdjustment.metric)
+            select(StatsAdjustment).where(StatsAdjustment.target_date == day)
         )
     ).scalars().all()
     out = []
@@ -92,54 +72,26 @@ async def load_adjustments_detail(session, day: date) -> list[dict]:
         out.append(
             {
                 "metric": r.metric,
+                "label": METRIC_LABELS.get(r.metric, r.metric),
                 "base_value": float(r.base_value or 0),
                 "target_value": float(r.target_value or 0),
                 "delta": float(r.delta or 0),
-                "reason": r.reason or "",
+                "reason": r.reason,
                 "updated_at": r.updated_at.isoformat() if r.updated_at else None,
             }
         )
     return out
 
 
-async def load_adjustments_range(session, start_date: date, end_date: date) -> dict:
-    rows = (
-        await session.execute(
-            select(
-                StatsAdjustment.target_date,
-                StatsAdjustment.metric,
-                StatsAdjustment.delta,
-            ).where(StatsAdjustment.target_date.between(start_date, end_date))
-        )
-    ).all()
-
-    by_day: dict[date, dict[str, float]] = {}
-    totals: dict[str, float] = {}
-    for d, metric, delta in rows:
-        day = d if isinstance(d, date) else d
-        val = float(delta or 0)
-        if day not in by_day:
-            by_day[day] = {}
-        by_day[day][metric] = by_day[day].get(metric, 0.0) + val
-        totals[metric] = totals.get(metric, 0.0) + val
-    return {"by_day": by_day, "totals": totals}
-
-
 async def raw_sales_count(session, day: date) -> int:
-    from_sales = (
+    cnt = (
         await session.execute(
-            select(func.count(Sale.id)).where(func.date(Sale.sold_at) == day)
-        )
-    ).scalar() or 0
-    from_payments = (
-        await session.execute(
-            select(func.count(DailyPayment.id)).where(
-                func.date(DailyPayment.created_at) == day,
-                DailyPayment.type == "sale",
+            select(func.coalesce(func.sum(Sale.count), 0)).where(
+                func.date(Sale.sold_at) == day
             )
         )
     ).scalar() or 0
-    return int(max(from_sales, from_payments))
+    return int(cnt)
 
 
 async def raw_accessories_count(session, day: date) -> int:
@@ -153,6 +105,27 @@ async def raw_accessories_count(session, day: date) -> int:
         )
     ).scalar() or 0
     return int(cnt)
+
+
+async def raw_accessories_revenue(session, day: date) -> float:
+    """Сумма всех способов оплаты по продажам-аксессуарам за день."""
+    expr = (
+        func.coalesce(func.sum(Sale.cash), 0)
+        + func.coalesce(func.sum(Sale.terminal), 0)
+        + func.coalesce(func.sum(Sale.qr), 0)
+        + func.coalesce(func.sum(Sale.transfer), 0)
+        + func.coalesce(func.sum(Sale.invoice), 0)
+        + func.coalesce(func.sum(Sale.installment), 0)
+    )
+    val = (
+        await session.execute(
+            select(expr).where(
+                func.date(Sale.sold_at) == day,
+                Sale.is_accessory.is_(True),
+            )
+        )
+    ).scalar() or 0
+    return float(val)
 
 
 async def raw_preorders_count(session, day: date) -> int:
@@ -173,14 +146,20 @@ async def raw_preorders_count(session, day: date) -> int:
 
 
 async def raw_bookings_count(session, day: date) -> int:
-    return int(
-        (
-            await session.execute(
-                select(func.count(Booking.id)).where(func.date(Booking.booked_at) == day)
+    from_payments = (
+        await session.execute(
+            select(func.count(DailyPayment.id)).where(
+                func.date(DailyPayment.created_at) == day,
+                DailyPayment.type == "booking",
             )
-        ).scalar()
-        or 0
-    )
+        )
+    ).scalar() or 0
+    from_table = (
+        await session.execute(
+            select(func.count(Booking.id)).where(func.date(Booking.booked_at) == day)
+        )
+    ).scalar() or 0
+    return int(max(from_payments, from_table))
 
 
 async def raw_payments(session, day: date) -> dict[str, float]:
@@ -234,16 +213,17 @@ async def day_snapshot(session, day: date) -> dict:
 
     raw_sales = await raw_sales_count(session, day)
     raw_acc = await raw_accessories_count(session, day)
+    raw_acc_rev = await raw_accessories_revenue(session, day)
     raw_pre = await raw_preorders_count(session, day)
     raw_book = await raw_bookings_count(session, day)
     raw_pay = await raw_payments(session, day)
 
     sales = max(0, int(round(raw_sales + adj.get("sales_count", 0))))
     accessories = max(0, int(round(raw_acc + adj.get("accessories_count", 0))))
-    # устройства = все продажи минус аксессуары (не уходим в минус)
     devices = max(0, sales - accessories)
     preorders = max(0, int(round(raw_pre + adj.get("preorders_count", 0))))
     bookings = max(0, int(round(raw_book + adj.get("bookings_count", 0))))
+    accessories_revenue = max(0.0, float(raw_acc_rev))
 
     payments = {
         k: max(0.0, float(raw_pay.get(k, 0) + adj.get(k, 0))) for k in PAYMENT_METRICS
@@ -253,6 +233,7 @@ async def day_snapshot(session, day: date) -> dict:
         "sales_count": sales,
         "devices_count": devices,
         "accessories_count": accessories,
+        "accessories_revenue": accessories_revenue,
         "preorders_count": preorders,
         "bookings_count": bookings,
         "payments": payments,
@@ -260,6 +241,7 @@ async def day_snapshot(session, day: date) -> dict:
         "raw": {
             "sales_count": raw_sales,
             "accessories_count": raw_acc,
+            "accessories_revenue": raw_acc_rev,
             "preorders_count": raw_pre,
             "bookings_count": raw_book,
             "payments": raw_pay,
@@ -269,11 +251,6 @@ async def day_snapshot(session, day: date) -> dict:
 
 
 def build_day_reconciliation(snap: dict) -> dict:
-    """
-    Сверка дня: факт из БД / корректировка / итог на дашборде.
-
-    snap — результат day_snapshot().
-    """
     rows: list[dict] = []
     has_adj = False
 
@@ -319,9 +296,8 @@ def build_day_reconciliation(snap: dict) -> dict:
     raw_total = float(sum(float(raw_pay.get(k, 0) or 0) for k in PAYMENT_METRICS))
     final_total = float(snap.get("total_revenue", 0) or 0)
     delta_total = final_total - raw_total
-    if abs(delta_total) > 0.01:
+    if abs(delta_total) > 1e-9:
         has_adj = True
-
     rows.append(
         {
             "key": "total_revenue",
@@ -330,8 +306,7 @@ def build_day_reconciliation(snap: dict) -> dict:
             "raw": raw_total,
             "delta": delta_total,
             "final": final_total,
-            "changed": abs(delta_total) > 0.01,
-            "is_total": True,
+            "changed": abs(delta_total) > 1e-9,
         }
     )
 
@@ -341,7 +316,6 @@ def build_day_reconciliation(snap: dict) -> dict:
         "raw_total": raw_total,
         "final_total": final_total,
         "delta_total": delta_total,
-        "changed_count": sum(1 for r in rows if r.get("changed")),
     }
 
 
@@ -352,6 +326,7 @@ async def month_totals(session, day: date) -> dict:
 
     sales = 0
     accessories = 0
+    accessories_revenue = 0.0
     devices = 0
     revenue = 0.0
     preorders = 0
@@ -364,6 +339,7 @@ async def month_totals(session, day: date) -> dict:
         s = await day_snapshot(session, d)
         sales += s["sales_count"]
         accessories += s.get("accessories_count", 0)
+        accessories_revenue += float(s.get("accessories_revenue", 0) or 0)
         devices += s.get("devices_count", 0)
         preorders += s["preorders_count"]
         bookings += s["bookings_count"]
@@ -384,6 +360,7 @@ async def month_totals(session, day: date) -> dict:
         "sales_count": sales,
         "devices_count": devices,
         "accessories_count": accessories,
+        "accessories_revenue": accessories_revenue,
         "preorders_count": preorders,
         "bookings_count": bookings,
         "revenue": revenue,
@@ -403,10 +380,4 @@ async def clear_adjustments_for_dates(session, days: Iterable[date]) -> int:
     result = await session.execute(
         delete(StatsAdjustment).where(StatsAdjustment.target_date.in_(unique))
     )
-    deleted = result.rowcount if result.rowcount is not None else 0
-    logger.info(
-        "Сброшены StatsAdjustment за дни %s (rows≈%s)",
-        [d.isoformat() for d in unique],
-        deleted,
-    )
-    return len(unique)
+    return int(result.rowcount or 0)
