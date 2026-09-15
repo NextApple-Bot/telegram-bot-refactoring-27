@@ -136,7 +136,7 @@
         <div x-show="editing" x-cloak class="space-y-4">
             <div>
                 <label class="block text-xs font-medium text-slate-500 mb-1.5">Вставьте текст итогов (парсер)</label>
-                <textarea x-model="pasteText" rows="4" placeholder="Наличные — 50 000&#10;Терминал — 120 000&#10;Общая сумма — 170 000"
+                <textarea x-model="pasteText" rows="4" placeholder="Продажи: 12&#10;Предзаказы — 3&#10;Брони: 5&#10;Наличные — 50 000&#10;Терминал — 120 000"
                           class="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm resize-y focus:ring-2 focus:ring-indigo-500 focus:outline-none"></textarea>
                 <div class="mt-2 flex flex-wrap gap-2">
                     <button type="button" @click="parsePaste()" :disabled="parsing"
@@ -205,110 +205,6 @@
 </div>
 {% endif %}
 
-<script>
-function statsEditor() {
-    return {
-        editing: false,
-        parsing: false,
-        saving: false,
-        pasteText: '',
-        parseMsg: '',
-        saveMsg: '',
-        saveOk: false,
-        paymentFields: [
-            { key: 'cash', label: 'Наличные' },
-            { key: 'terminal', label: 'Терминал' },
-            { key: 'qr', label: 'QR-код' },
-            { key: 'transfer', label: 'Перевод' },
-            { key: 'invoice', label: 'По счёту' },
-            { key: 'installment', label: 'Рассрочка' },
-        ],
-        form: {
-            cash: {{ payments.cash|default(0)|int }},
-            terminal: {{ payments.terminal|default(0)|int }},
-            qr: {{ payments.qr|default(0)|int }},
-            transfer: {{ payments.transfer|default(0)|int }},
-            invoice: {{ payments.invoice|default(0)|int }},
-            installment: {{ payments.installment|default(0)|int }},
-            sales_count: {{ stats.sales_count|default(sales_today)|int }},
-            preorders_count: {{ stats.preorders_count|default(0)|int }},
-            bookings_count: {{ stats.bookings_count|default(0)|int }},
-            reason: '',
-        },
-        async parsePaste() {
-            if (!this.pasteText.trim()) { this.parseMsg = 'Вставьте текст'; return; }
-            this.parsing = true; this.parseMsg = '';
-            try {
-                const res = await fetch('/admin/dashboard/parse_payments', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify({ text: this.pasteText }),
-                });
-                const data = await res.json();
-                if (!res.ok || !data.success) {
-                    this.parseMsg = data.error || 'Ошибка разбора';
-                    return;
-                }
-                const p = data.payments || {};
-                for (const f of this.paymentFields) {
-                    if (p[f.key] != null) this.form[f.key] = Math.round(Number(p[f.key]) || 0);
-                }
-                this.parseMsg = 'Разобрано, проверьте поля и сохраните';
-            } catch (e) {
-                this.parseMsg = 'Сеть / ошибка запроса';
-                console.error(e);
-            } finally { this.parsing = false; }
-        },
-        async saveStats() {
-            this.saving = true; this.saveMsg = ''; this.saveOk = false;
-            try {
-                const body = {
-                    target_date: '{{ target_date_iso }}',
-                    reason: this.form.reason || 'Ручная правка с дашборда',
-                    cash: this.form.cash,
-                    terminal: this.form.terminal,
-                    qr: this.form.qr,
-                    transfer: this.form.transfer,
-                    invoice: this.form.invoice,
-                    installment: this.form.installment,
-                    sales_count: this.form.sales_count,
-                    preorders_count: this.form.preorders_count,
-                    bookings_count: this.form.bookings_count,
-                };
-                const res = await fetch('/admin/dashboard/update_stats', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify(body),
-                });
-                const data = await res.json();
-                if (!res.ok || !data.success) {
-                    this.saveMsg = data.error || 'Ошибка сохранения';
-                    return;
-                }
-                this.saveOk = true;
-                this.saveMsg = data.message || 'Сохранено';
-                setTimeout(() => location.reload(), 600);
-            } catch (e) {
-                this.saveMsg = 'Сеть / ошибка запроса';
-                console.error(e);
-            } finally { this.saving = false; }
-        },
-    };
-}
+{% include 'partials/stats_editor_script.html' %}
 
-async function toggleSeller(sellerId) {
-    try {
-        const res = await fetch('/admin/dashboard/toggle_seller_day', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `seller_id=${sellerId}&target_date={{ target_date_iso }}` });
-        if (!res.ok) return;
-        const data = await res.json();
-        const btn = document.getElementById('seller-btn-' + sellerId);
-        if (!btn) return;
-        if (data.present) {
-            btn.className = 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300';
-        } else {
-            btn.className = 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300';
-        }
-    } catch (e) { console.error(e); }
-}
-</script>
 {% endblock %}
