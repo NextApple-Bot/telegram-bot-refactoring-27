@@ -26,6 +26,8 @@ function statsEditor() {
             sales_count: {{ stats.sales_count|default(sales_today)|int }},
             preorders_count: {{ stats.preorders_count|default(0)|int }},
             bookings_count: {{ stats.bookings_count|default(0)|int }},
+            accessories_count: {{ stats.accessories_count|default(0)|int }},
+            accessories_revenue: {{ stats.accessories_revenue|default(0)|int }},
             reason: '',
         },
         async parsePaste() {
@@ -77,6 +79,8 @@ function statsEditor() {
                     sales_count: this.form.sales_count,
                     preorders_count: this.form.preorders_count,
                     bookings_count: this.form.bookings_count,
+                    accessories_count: this.form.accessories_count,
+                    accessories_revenue: this.form.accessories_revenue,
                 };
                 const res = await fetch('/admin/dashboard/update_stats', {
                     method: 'POST',
