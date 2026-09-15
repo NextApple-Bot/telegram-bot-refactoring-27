@@ -2,8 +2,13 @@
     if not text:
         return JSONResponse({"success": False, "error": "Пустой текст"}, status_code=400)
     try:
-        from bot.services.payment_parser import extract_payment_amounts, extract_declared_total
+        from bot.services.payment_parser import (
+            extract_payment_amounts,
+            extract_declared_total,
+            extract_day_counts,
+        )
         payments = extract_payment_amounts(text)
+        counts = extract_day_counts(text)
         declared = None
         try:
             declared = extract_declared_total(text)
@@ -12,6 +17,11 @@
         return JSONResponse({
             "success": True,
             "payments": {k: float(v or 0) for k, v in payments.items()},
+            "counts": {
+                "sales_count": counts.get("sales_count"),
+                "preorders_count": counts.get("preorders_count"),
+                "bookings_count": counts.get("bookings_count"),
+            },
             "declared_total": declared,
         })
     except Exception as e:
