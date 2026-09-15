@@ -21,11 +21,15 @@ _COUNT_LINE_PATTERNS: dict[str, re.Pattern[str]] = {
     ),
 }
 
+# «План продаж 30», «План: 25» — не факт, пропускаем
+_PLAN_LINE = re.compile(r"план", re.IGNORECASE)
+
 
 def extract_day_counts(text: str) -> dict[str, int | None]:
     """
     Достаёт из текста итогов: продажи / предзаказы / брони (шт.).
     None — если в тексте не найдено. Берёт последнее совпадение по типу (построчно).
+    Строки с «план» не учитываются.
     """
     result: dict[str, int | None] = {
         "sales_count": None,
@@ -38,6 +42,8 @@ def extract_day_counts(text: str) -> dict[str, int | None]:
     for line in text.splitlines():
         line = line.strip()
         if not line:
+            continue
+        if _PLAN_LINE.search(line):
             continue
         for key, pattern in _COUNT_LINE_PATTERNS.items():
             m = pattern.search(line)
