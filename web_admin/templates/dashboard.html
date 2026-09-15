@@ -173,7 +173,7 @@
                 </template>
             </div>
 
-            <div class="grid grid-cols-3 gap-3">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
                     <label class="block text-[11px] text-slate-500 mb-1">Продажи (шт.)</label>
                     <input type="number" min="0" step="1" x-model.number="form.sales_count"
@@ -189,6 +189,16 @@
                     <input type="number" min="0" step="1" x-model.number="form.bookings_count"
                            class="w-full h-10 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                 </div>
+                <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">Аксессуары (шт.)</label>
+                    <input type="number" min="0" step="1" x-model.number="form.accessories_count"
+                           class="w-full h-10 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+            </div>
+            <div>
+                <label class="block text-[11px] text-slate-500 mb-1">Аксессуары (сумма, ₽)</label>
+                <input type="number" min="0" step="1" x-model.number="form.accessories_revenue"
+                       class="w-full h-10 rounded-xl border border-pink-200 dark:border-pink-800 bg-pink-50/50 dark:bg-pink-950/20 px-3 text-sm tabular-nums focus:ring-2 focus:ring-pink-500 focus:outline-none">
             </div>
 
             <div>
