@@ -86,7 +86,7 @@ async def auth_middleware(request: Request, call_next):
             request.method in ("POST", "PUT", "PATCH", "DELETE")
             or "application/json" in accept
             or path.rstrip("/").endswith(
-                ("/update_stats", "/toggle_seller_day", "/top_models_data", "/search/api")
+                ("/update_stats", "/toggle_seller_day", "/top_models_data", "/parse_payments", "/search/api")
             )
             or "/search/api" in path
         )
