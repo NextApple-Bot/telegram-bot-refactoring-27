@@ -124,13 +124,29 @@
             </button>
         </div>
 
-        <div x-show="!editing" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {% for key, label, icon, color in [('cash','Наличные','fa-money-bill-wave','emerald'),('terminal','Терминал','fa-credit-card','blue'),('qr','QR-код','fa-qrcode','violet'),('transfer','Перевод','fa-exchange-alt','sky'),('invoice','По счёту','fa-file-invoice','slate'),('installment','Рассрочка','fa-calendar-alt','amber')] %}
-            <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <div class="w-9 h-9 rounded-lg bg-{{ color }}-50 dark:bg-{{ color }}-950/40 flex items-center justify-center"><i class="fas {{ icon }} text-{{ color }}-600 dark:text-{{ color }}-400 text-sm"></i></div>
-                <div class="min-w-0"><p class="text-xs text-slate-500 dark:text-slate-400">{{ label }}</p><p class="text-sm font-semibold text-slate-900 dark:text-white truncate">{{ "{:,.0f}".format((payments[key]|default(0))).replace(",", " ") }} ₽</p></div>
+        <div x-show="!editing" class="space-y-3">
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {% for key, label, icon, color in [('cash','Наличные','fa-money-bill-wave','emerald'),('terminal','Терминал','fa-credit-card','blue'),('qr','QR-код','fa-qrcode','violet'),('transfer','Перевод','fa-exchange-alt','sky'),('invoice','По счёту','fa-file-invoice','slate'),('installment','Рассрочка','fa-calendar-alt','amber')] %}
+                <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                    <div class="w-9 h-9 rounded-lg bg-{{ color }}-50 dark:bg-{{ color }}-950/40 flex items-center justify-center"><i class="fas {{ icon }} text-{{ color }}-600 dark:text-{{ color }}-400 text-sm"></i></div>
+                    <div class="min-w-0"><p class="text-xs text-slate-500 dark:text-slate-400">{{ label }}</p><p class="text-sm font-semibold text-slate-900 dark:text-white truncate">{{ "{:,.0f}".format((payments[key]|default(0))).replace(",", " ") }} ₽</p></div>
+                </div>
+                {% endfor %}
             </div>
-            {% endfor %}
+            <div class="flex items-center gap-3 p-3 rounded-xl bg-pink-50 dark:bg-pink-950/30 border border-pink-100 dark:border-pink-900/40">
+                <div class="w-9 h-9 rounded-lg bg-pink-100 dark:bg-pink-900/40 flex items-center justify-center shrink-0">
+                    <i class="fas fa-headphones text-pink-600 dark:text-pink-400 text-sm"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Аксессуары (сумма)</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">
+                        {{ "{:,.0f}".format((stats.accessories_revenue|default(0))).replace(",", " ") }} ₽
+                        {% if stats.accessories_count|default(0) %}
+                        <span class="text-xs font-normal text-slate-400">· {{ stats.accessories_count }} шт.</span>
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
         </div>
 
         <div x-show="editing" x-cloak class="space-y-4">
