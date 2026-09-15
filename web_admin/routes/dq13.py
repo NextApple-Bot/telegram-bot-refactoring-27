@@ -1,4 +1,6 @@
                 "bookings_count": float(_int("bookings_count")),
+                "accessories_count": float(_int("accessories_count")),
+                "accessories_revenue": max(0.0, _num("accessories_revenue")),
             }
             for pt in PAYMENT_METRICS:
                 targets[pt] = max(0.0, _num(pt))
@@ -7,6 +9,8 @@
                 "sales_count": float(raw_sales),
                 "preorders_count": float(raw_pre),
                 "bookings_count": float(raw_book),
+                "accessories_count": float(raw_acc),
+                "accessories_revenue": float(raw_acc_rev),
                 **{k: float(raw_pay.get(k, 0)) for k in PAYMENT_METRICS},
             }
 

@@ -25,6 +25,12 @@
             raw_pre = await raw_preorders_count(session, target_date)
             raw_book = await raw_bookings_count(session, target_date)
             raw_pay = await raw_payments(session, target_date)
+            from web_admin.services.day_stats import (
+                raw_accessories_count,
+                raw_accessories_revenue,
+            )
+            raw_acc = await raw_accessories_count(session, target_date)
+            raw_acc_rev = await raw_accessories_revenue(session, target_date)
 
             targets = {
                 "sales_count": float(_int("sales_count")),
