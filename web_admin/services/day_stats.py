@@ -15,7 +15,6 @@ from sqlalchemy import delete, func, select
 from bot.models import (
     Booking,
     DailyPayment,
-    Item,
     Preorder,
     Sale,
     StatsAdjustment,
@@ -25,13 +24,15 @@ TZ = ZoneInfo("Asia/Vladivostok")
 
 PAYMENT_METRICS = ("cash", "terminal", "qr", "transfer", "invoice", "installment")
 COUNT_METRICS = ("sales_count", "preorders_count", "bookings_count", "accessories_count")
-ALL_METRICS = COUNT_METRICS + PAYMENT_METRICS
+EXTRA_METRICS = ("accessories_revenue",)
+ALL_METRICS = COUNT_METRICS + PAYMENT_METRICS + EXTRA_METRICS
 
 METRIC_LABELS = {
     "sales_count": "Продажи, шт.",
     "preorders_count": "Предзаказы, шт.",
     "bookings_count": "Брони, шт.",
     "accessories_count": "Аксессуары, шт.",
+    "accessories_revenue": "Аксессуары, ₽",
     "cash": "Наличные, ₽",
     "terminal": "Терминал, ₽",
     "qr": "QR-код, ₽",
@@ -223,7 +224,9 @@ async def day_snapshot(session, day: date) -> dict:
     devices = max(0, sales - accessories)
     preorders = max(0, int(round(raw_pre + adj.get("preorders_count", 0))))
     bookings = max(0, int(round(raw_book + adj.get("bookings_count", 0))))
-    accessories_revenue = max(0.0, float(raw_acc_rev))
+    accessories_revenue = max(
+        0.0, float(raw_acc_rev) + float(adj.get("accessories_revenue", 0) or 0)
+    )
 
     payments = {
         k: max(0.0, float(raw_pay.get(k, 0) + adj.get(k, 0))) for k in PAYMENT_METRICS
@@ -279,6 +282,24 @@ def build_day_reconciliation(snap: dict) -> dict:
         raw = float(raw_pay.get(key, 0) or 0)
         delta = float(adj.get(key, 0) or 0)
         final = float(fin_pay.get(key, 0) or 0)
+        if abs(delta) > 1e-9:
+            has_adj = True
+        rows.append(
+            {
+                "key": key,
+                "label": METRIC_LABELS.get(key, key),
+                "kind": "money",
+                "raw": raw,
+                "delta": delta,
+                "final": final,
+                "changed": abs(delta) > 1e-9,
+            }
+        )
+
+    for key in EXTRA_METRICS:
+        raw = float(snap.get("raw", {}).get(key, 0) or 0)
+        delta = float(adj.get(key, 0) or 0)
+        final = float(snap.get(key, 0) or 0)
         if abs(delta) > 1e-9:
             has_adj = True
         rows.append(
