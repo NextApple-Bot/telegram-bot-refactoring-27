@@ -75,8 +75,8 @@ async def add_seller(request: Request, name: str = Form(...)):
         except HTTPException:
             raise
         except SQLAlchemyError as e:
-            logger.error("Ошибка при добавлении продавца '%s': %s", name, e)
-            raise HTTPException(status_code=500, detail="Ошибка при добавлении продавца")
+            logger.error("Ошибка при добавлении продавца: %s", e)
+            raise HTTPException(status_code=500, detail="Ошибка базы данных")
 
 
 @router.post("/delete/{seller_id}")
@@ -94,7 +94,7 @@ async def delete_seller(seller_id: int):
             raise
         except SQLAlchemyError as e:
             logger.error("Ошибка при удалении продавца %s: %s", seller_id, e)
-            raise HTTPException(status_code=500, detail="Ошибка при удалении продавца")
+            raise HTTPException(status_code=500, detail="Ошибка базы данных")
 
 
 @router.get("/stats")
@@ -154,11 +154,15 @@ async def seller_stats(
                 days_worked = len(work_days)
                 sales_count = 0
                 revenue = 0.0
+                accessories_count = 0
+                accessories_revenue = 0.0
 
                 for wd in work_days:
                     s = await snap(wd)
                     sales_count += s["sales_count"]
                     revenue += float(s["total_revenue"])
+                    accessories_count += int(s.get("accessories_count", 0) or 0)
+                    accessories_revenue += float(s.get("accessories_revenue", 0) or 0)
 
                 avg_check = (revenue / sales_count) if sales_count else 0.0
                 sales_per_shift = (sales_count / days_worked) if days_worked else 0.0
@@ -170,6 +174,8 @@ async def seller_stats(
                         "days_worked": days_worked,
                         "sales_count": sales_count,
                         "revenue": revenue,
+                        "accessories_count": accessories_count,
+                        "accessories_revenue": accessories_revenue,
                         "avg_check": avg_check,
                         "sales_per_shift": sales_per_shift,
                         "work_dates": [d.isoformat() for d in work_days],
@@ -194,6 +200,8 @@ async def seller_stats(
                     "sellers": list(day_sellers),
                     "sales": s["sales_count"],
                     "revenue": float(s["total_revenue"]),
+                    "accessories_count": int(s.get("accessories_count", 0) or 0),
+                    "accessories_revenue": float(s.get("accessories_revenue", 0) or 0),
                 }
                 calendar_rows.append(row)
 
@@ -233,28 +241,48 @@ async def seller_schedule(
     month: str | None = None,
     seller_id: int | None = None,
 ):
-    today = today_local()
     try:
         if month:
             y, m = map(int, month.split("-"))
             first = date(y, m, 1)
         else:
-            first = today.replace(day=1)
-    except (ValueError, TypeError):
-        first = today.replace(day=1)
+            t = today_local()
+            first = t.replace(day=1)
+    except ValueError:
+        t = today_local()
+        first = t.replace(day=1)
 
     if first.month == 12:
         last = date(first.year + 1, 1, 1) - timedelta(days=1)
+        next_month = date(first.year + 1, 1, 1)
     else:
         last = date(first.year, first.month + 1, 1) - timedelta(days=1)
+        next_month = date(first.year, first.month + 1, 1)
+    if first.month == 1:
+        prev_month = date(first.year - 1, 12, 1)
+    else:
+        prev_month = date(first.year, first.month - 1, 1)
 
-    prev_month = (first - timedelta(days=1)).replace(day=1)
-    next_month = (last + timedelta(days=1)).replace(day=1)
+    month_names = (
+        "",
+        "Январь",
+        "Февраль",
+        "Март",
+        "Апрель",
+        "Май",
+        "Июнь",
+        "Июль",
+        "Август",
+        "Сентябрь",
+        "Октябрь",
+        "Ноябрь",
+        "Декабрь",
+    )
+    month_label_ru = f"{month_names[first.month]} {first.year}"
 
     async_session = get_async_session_factory()
     async with async_session() as session:
-        async with session.begin():
-            await ensure_default_sellers(session)
+        await ensure_default_sellers(session)
 
         sellers = (
             await session.execute(select(Seller).order_by(Seller.name))
@@ -267,66 +295,47 @@ async def seller_schedule(
             selected = sellers[0]
             seller_id = selected.id
 
-        worked_dates: set[str] = set()
+        worked_dates: set[date] = set()
         if selected:
-            rows = (
-                await session.execute(
-                    select(SellerDay.date).where(
-                        SellerDay.seller_id == selected.id,
-                        SellerDay.date.between(first, last),
+            worked_dates = set(
+                (
+                    await session.execute(
+                        select(SellerDay.date).where(
+                            SellerDay.seller_id == selected.id,
+                            SellerDay.date.between(first, last),
+                        )
                     )
-                )
-            ).scalars().all()
-            worked_dates = {d.isoformat() for d in rows}
+                ).scalars().all()
+            )
 
-        days_grid: list[list[dict | None]] = []
-        week: list[dict | None] = []
-        for _ in range(first.weekday()):
-            week.append(None)
-
+        days_grid = []
         d = first
         while d <= last:
-            iso = d.isoformat()
-            week.append(
+            days_grid.append(
                 {
-                    "date": iso,
+                    "date": d.isoformat(),
                     "day": d.day,
-                    "worked": iso in worked_dates,
-                    "is_today": d == today,
                     "weekday": d.weekday(),
+                    "worked": d in worked_dates,
                 }
             )
-            if len(week) == 7:
-                days_grid.append(week)
-                week = []
             d += timedelta(days=1)
-        if week:
-            while len(week) < 7:
-                week.append(None)
-            days_grid.append(week)
 
-        ru_months = {
-            1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
-            5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
-            9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
-        }
-        month_label_ru = f"{ru_months.get(first.month, first.strftime('%B'))} {first.year}"
-
-    return templates.TemplateResponse(
-        "sellers_schedule.html",
-        {
-            "request": request,
-            "sellers": sellers,
-            "selected": selected,
-            "seller_id": seller_id,
-            "days_grid": days_grid,
-            "month": first.strftime("%Y-%m"),
-            "month_label": month_label_ru,
-            "prev_month": prev_month.strftime("%Y-%m"),
-            "next_month": next_month.strftime("%Y-%m"),
-            "worked_count": len(worked_dates),
-        },
-    )
+        return templates.TemplateResponse(
+            "sellers_schedule.html",
+            {
+                "request": request,
+                "sellers": sellers,
+                "selected": selected,
+                "seller_id": seller_id,
+                "days_grid": days_grid,
+                "month": first.strftime("%Y-%m"),
+                "month_label": month_label_ru,
+                "prev_month": prev_month.strftime("%Y-%m"),
+                "next_month": next_month.strftime("%Y-%m"),
+                "worked_count": len(worked_dates),
+            },
+        )
 
 
 @router.post("/schedule/save")
