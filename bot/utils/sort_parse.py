@@ -16,21 +16,32 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_category_key(name: str) -> str:
-    """RayBan / Ray-Ban / Ray Ban → rayban; Series → S."""
+    """RayBan / Ray-Ban / Ray Ban → rayban; Series → S.
+
+    MacBook Pro 14 / MacBook 14 Pro / MacBook 14\" Pro → один ключ macbookpro14.
+    """
     s = normalize_name(name or "").lower().rstrip(":").strip()
     s = re.sub(r"[•·|/]+", " ", s)
     s = re.sub(r"[()\[\]]", " ", s)
+    # кавычки дюймов у MacBook/iPad не влияют на ключ категории
+    s = s.replace('"', " ").replace("”", " ").replace("″", " ")
     s = re.sub(r"\bseries\b", "s", s, flags=re.IGNORECASE)
     s = re.sub(r"\bs\s*(\d+)\b", r"s\1", s)
     s = re.sub(r"\bse\s*(\d+)\b", r"se\1", s)
     s = s.replace("apple watch", "watch")
     s = s.replace("samsung galaxy", "galaxy")
+    # Сначала унифицируем порядок «MacBook 14 Pro» ↔ «MacBook Pro 14»
+    s = re.sub(r"\bmacbook\s+pro\s*(\d{2})\b", r"macbookpro\1", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bmacbook\s*(\d{2})\s*pro\b", r"macbookpro\1", s, flags=re.IGNORECASE)
     s = s.replace("macbook air", "macbookair")
     s = s.replace("macbook pro", "macbookpro")
     s = s.replace("macbook neo", "macbookneo")
     s = s.replace("macbook 13 neo", "macbookneo")
     s = s.replace("airpods pro", "airpodspro")
     s = s.replace("airpods max", "airpodsmax")
+    # iPad Pro 11 / iPad 11 Pro
+    s = re.sub(r"\bipad\s+pro\s*(11|13)\b", r"ipadpro\1", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bipad\s*(11|13)\s*pro\b", r"ipadpro\1", s, flags=re.IGNORECASE)
     s = s.replace("-", "")
     s = re.sub(r"\s+", "", s)
     return s
