@@ -105,12 +105,26 @@ function statsEditor() {
 
 async function toggleSeller(sellerId) {
     try {
-        const res = await fetch('/admin/dashboard/toggle_seller_day', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `seller_id=${sellerId}&target_date={{ target_date_iso }}` });
-        if (!res.ok) return;
+        const res = await fetch('/admin/dashboard/toggle_seller_day', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+            credentials: 'same-origin',
+            body: `seller_id=${sellerId}&target_date={{ target_date_iso }}`,
+        });
+        if (!res.ok) {
+            console.error('toggle_seller_day HTTP', res.status);
+            return;
+        }
         const data = await res.json();
+        if (!data.success) {
+            console.error('toggle_seller_day', data.error || data);
+            return;
+        }
         const btn = document.getElementById('seller-btn-' + sellerId);
         if (!btn) return;
-        if (data.present) {
+        // present: true после добавления, false после снятия (status: added|removed)
+        const present = data.present === true || data.status === 'added';
+        if (present) {
             btn.className = 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300';
         } else {
             btn.className = 'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300';

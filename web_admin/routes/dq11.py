@@ -14,7 +14,8 @@
             session.add(SellerDay(seller_id=seller_id, date=date_obj))
             status = "added"
 
-    return {"success": True, "status": status}
+    present = status == "added"
+    return {"success": True, "status": status, "present": present}
 
 
 @router.post("/update_stats")
