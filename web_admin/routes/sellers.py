@@ -86,18 +86,42 @@ async def delete_seller(seller_id: int):
 @router.get("/stats")
 async def seller_stats(
     request: Request,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    days: int | None = None,
     start: str | None = None,
     end: str | None = None,
 ):
+    """Статистика продавцов за период.
+
+    Форма шлёт date_from/date_to; быстрые ссылки — days=7|30|90.
+    start/end оставлены для совместимости.
+    """
     t = today_local()
-    try:
-        start_date = datetime.strptime(start[:10], "%Y-%m-%d").date() if start else t.replace(day=1)
-    except (ValueError, TypeError):
-        start_date = t.replace(day=1)
-    try:
-        end_date = datetime.strptime(end[:10], "%Y-%m-%d").date() if end else t
-    except (ValueError, TypeError):
+
+    if days and not date_from and not date_to and not start and not end:
         end_date = t
+        start_date = t - timedelta(days=max(1, int(days)) - 1)
+    else:
+        raw_from = date_from or start
+        raw_to = date_to or end
+        try:
+            start_date = (
+                datetime.strptime(str(raw_from)[:10], "%Y-%m-%d").date()
+                if raw_from
+                else t.replace(day=1)
+            )
+        except (ValueError, TypeError):
+            start_date = t.replace(day=1)
+        try:
+            end_date = (
+                datetime.strptime(str(raw_to)[:10], "%Y-%m-%d").date()
+                if raw_to
+                else t
+            )
+        except (ValueError, TypeError):
+            end_date = t
+
     if end_date < start_date:
         start_date, end_date = end_date, start_date
 
@@ -108,8 +132,24 @@ async def seller_stats(
             await session.execute(select(Seller).order_by(Seller.name))
         ).scalars().all()
 
+        snap_cache: dict[date, dict] = {}
+
         async def snap(d: date) -> dict:
-            return await day_snapshot(session, d)
+            if d not in snap_cache:
+                snap_cache[d] = await day_snapshot(session, d)
+            return snap_cache[d]
+
+        days_sellers: dict[date, list[str]] = {}
+        all_seller_days = (
+            await session.execute(
+                select(SellerDay.date, Seller.name)
+                .join(Seller, Seller.id == SellerDay.seller_id)
+                .where(SellerDay.date.between(start_date, end_date))
+                .order_by(SellerDay.date, Seller.name)
+            )
+        ).all()
+        for d, name in all_seller_days:
+            days_sellers.setdefault(d, []).append(name)
 
         seller_rows = []
         for seller in sellers:
@@ -128,20 +168,15 @@ async def seller_stats(
             revenue = 0.0
             accessories_revenue = 0.0
             accessories_count = 0
+            # Если в день оба — каждому полный день (как в подписи шаблона)
             for d in worked:
                 s = await snap(d)
-                # если в день несколько продавцов — делим поровну
-                present = (
-                    await session.execute(
-                        select(func.count(SellerDay.id)).where(SellerDay.date == d)
-                    )
-                ).scalar() or 1
-                share = 1.0 / max(1, int(present))
-                sales_count += int(round(s.get("sales_count", 0) * share))
-                revenue += float(s.get("total_revenue", 0) or 0) * share
-                accessories_revenue += float(s.get("accessories_revenue", 0) or 0) * share
-                accessories_count += int(round(s.get("accessories_count", 0) * share))
+                sales_count += int(s.get("sales_count", 0) or 0)
+                revenue += float(s.get("total_revenue", 0) or 0)
+                accessories_revenue += float(s.get("accessories_revenue", 0) or 0)
+                accessories_count += int(s.get("accessories_count", 0) or 0)
 
+            avg_check = (revenue / sales_count) if sales_count else 0.0
             sales_per_shift = (sales_count / days_worked) if days_worked else 0.0
             seller_rows.append(
                 {
@@ -152,33 +187,40 @@ async def seller_stats(
                     "revenue": revenue,
                     "accessories_revenue": accessories_revenue,
                     "accessories_count": accessories_count,
+                    "avg_check": avg_check,
                     "sales_per_shift": sales_per_shift,
-                    "dates": [d.isoformat() for d in worked],
+                    "work_dates": [d.isoformat() for d in worked],
                 }
             )
 
-        # дни с продажами без отмеченных смен
-        orphan_days = []
+        calendar = []
+        unassigned_days = []
         d = start_date
         while d <= end_date:
             s = await snap(d)
-            if s.get("sales_count") or s.get("total_revenue"):
-                has_seller = (
-                    await session.execute(
-                        select(Seller.id)
-                        .join(SellerDay, SellerDay.seller_id == Seller.id)
-                        .where(SellerDay.date == d)
-                        .limit(1)
-                    )
-                ).scalar_one_or_none()
-                if not has_seller:
-                    orphan_days.append(
-                        {
-                            "date": d.isoformat(),
-                            "sales": s.get("sales_count", 0),
-                            "revenue": s.get("total_revenue", 0),
-                        }
-                    )
+            names = days_sellers.get(d, [])
+            sales = int(s.get("sales_count", 0) or 0)
+            rev = float(s.get("total_revenue", 0) or 0)
+            acc_rev = float(s.get("accessories_revenue", 0) or 0)
+            calendar.append(
+                {
+                    "date": d.isoformat(),
+                    "date_display": d.strftime("%d.%m.%Y"),
+                    "sellers": names,
+                    "sales": sales,
+                    "revenue": rev,
+                    "accessories_revenue": acc_rev,
+                }
+            )
+            if (sales or rev) and not names:
+                unassigned_days.append(
+                    {
+                        "date": d.isoformat(),
+                        "date_display": d.strftime("%d.%m.%Y"),
+                        "sales": sales,
+                        "revenue": rev,
+                    }
+                )
             d += timedelta(days=1)
 
         return templates.TemplateResponse(
@@ -186,9 +228,10 @@ async def seller_stats(
             {
                 "request": request,
                 "sellers": seller_rows,
-                "start": start_date.isoformat(),
-                "end": end_date.isoformat(),
-                "orphan_days": orphan_days,
+                "date_from": start_date.isoformat(),
+                "date_to": end_date.isoformat(),
+                "calendar": calendar,
+                "unassigned_days": unassigned_days,
             },
         )
 
@@ -266,11 +309,9 @@ async def seller_schedule(
                 ).scalars().all()
             )
 
-        # Календарь: недели по 7 ячеек (Пн…Вс), пустые — None
-        # иначе шаблон {% for week in days_grid %}{% for cell in week %} ломается
         today = today_local()
         days_grid: list[list] = []
-        week: list = [None] * first.weekday()  # weekday: Mon=0 … Sun=6
+        week: list = [None] * first.weekday()
         d = first
         while d <= last:
             week.append(
