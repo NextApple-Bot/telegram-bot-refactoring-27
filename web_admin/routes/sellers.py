@@ -55,184 +55,142 @@ async def seller_manage(request: Request):
 
 @router.post("/add")
 async def add_seller(request: Request, name: str = Form(...)):
-    name = name.strip() if name else ""
+    name = (name or "").strip()
     if not name:
-        raise HTTPException(status_code=400, detail="Имя продавца не может быть пустым")
-
+        raise HTTPException(status_code=400, detail="Имя обязательно")
     async_session = get_async_session_factory()
     async with async_session() as session:
-        try:
-            async with session.begin():
-                existing = await session.execute(
+        async with session.begin():
+            exists = (
+                await session.execute(
                     select(Seller.id).where(func.lower(Seller.name) == func.lower(name))
                 )
-                if existing.scalar_one_or_none():
-                    raise HTTPException(
-                        status_code=400, detail="Продавец с таким именем уже существует"
-                    )
-                session.add(Seller(name=name))
-            return RedirectResponse(url="/admin/sellers/manage", status_code=303)
-        except HTTPException:
-            raise
-        except SQLAlchemyError as e:
-            logger.error("Ошибка при добавлении продавца: %s", e)
-            raise HTTPException(status_code=500, detail="Ошибка базы данных")
+            ).scalar_one_or_none()
+            if exists:
+                raise HTTPException(status_code=400, detail="Такой продавец уже есть")
+            session.add(Seller(name=name))
+    return RedirectResponse(url="/admin/sellers/manage", status_code=303)
 
 
 @router.post("/delete/{seller_id}")
 async def delete_seller(seller_id: int):
     async_session = get_async_session_factory()
     async with async_session() as session:
-        try:
-            async with session.begin():
-                seller = await session.get(Seller, seller_id)
-                if not seller:
-                    raise HTTPException(status_code=404, detail="Продавец не найден")
+        async with session.begin():
+            seller = await session.get(Seller, seller_id)
+            if seller:
                 await session.delete(seller)
-            return RedirectResponse(url="/admin/sellers/manage", status_code=303)
-        except HTTPException:
-            raise
-        except SQLAlchemyError as e:
-            logger.error("Ошибка при удалении продавца %s: %s", seller_id, e)
-            raise HTTPException(status_code=500, detail="Ошибка базы данных")
+    return RedirectResponse(url="/admin/sellers/manage", status_code=303)
 
 
 @router.get("/stats")
 async def seller_stats(
     request: Request,
-    days: int = Query(30, ge=1, le=365),
-    date_from: str | None = None,
-    date_to: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
 ):
+    t = today_local()
     try:
-        if date_from and date_to:
-            start_date = date.fromisoformat(date_from)
-            end_date = date.fromisoformat(date_to)
-            if end_date < start_date:
-                start_date, end_date = end_date, start_date
-        else:
-            end_date = today_local()
-            start_date = end_date - timedelta(days=days - 1)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Неверный формат даты")
+        start_date = datetime.strptime(start[:10], "%Y-%m-%d").date() if start else t.replace(day=1)
+    except (ValueError, TypeError):
+        start_date = t.replace(day=1)
+    try:
+        end_date = datetime.strptime(end[:10], "%Y-%m-%d").date() if end else t
+    except (ValueError, TypeError):
+        end_date = t
+    if end_date < start_date:
+        start_date, end_date = end_date, start_date
 
     async_session = get_async_session_factory()
     async with async_session() as session:
-        try:
-            async with session.begin():
-                await ensure_default_sellers(session)
+        await ensure_default_sellers(session)
+        sellers = (
+            await session.execute(select(Seller).order_by(Seller.name))
+        ).scalars().all()
 
-            sellers = (
-                await session.execute(select(Seller).order_by(Seller.name))
-            ).scalars().all()
+        async def snap(d: date) -> dict:
+            return await day_snapshot(session, d)
 
-            snapshot_cache: dict[date, dict] = {}
-
-            async def snap(d: date) -> dict:
-                if d not in snapshot_cache:
-                    snapshot_cache[d] = await day_snapshot(session, d)
-                return snapshot_cache[d]
-
-            results: List[dict] = []
-            calendar_rows: List[dict] = []
-            unassigned_days: List[dict] = []
-            unassigned_sales = 0
-            unassigned_revenue = 0.0
-
-            for seller in sellers:
-                work_days = (
-                    await session.execute(
-                        select(SellerDay.date)
-                        .where(
-                            SellerDay.seller_id == seller.id,
-                            SellerDay.date.between(start_date, end_date),
-                        )
-                        .order_by(SellerDay.date)
+        seller_rows = []
+        for seller in sellers:
+            worked = (
+                await session.execute(
+                    select(SellerDay.date)
+                    .where(
+                        SellerDay.seller_id == seller.id,
+                        SellerDay.date.between(start_date, end_date),
                     )
-                ).scalars().all()
-
-                days_worked = len(work_days)
-                sales_count = 0
-                revenue = 0.0
-                accessories_count = 0
-                accessories_revenue = 0.0
-
-                for wd in work_days:
-                    s = await snap(wd)
-                    sales_count += s["sales_count"]
-                    revenue += float(s["total_revenue"])
-                    accessories_count += int(s.get("accessories_count", 0) or 0)
-                    accessories_revenue += float(s.get("accessories_revenue", 0) or 0)
-
-                avg_check = (revenue / sales_count) if sales_count else 0.0
-                sales_per_shift = (sales_count / days_worked) if days_worked else 0.0
-
-                results.append(
-                    {
-                        "id": seller.id,
-                        "name": seller.name,
-                        "days_worked": days_worked,
-                        "sales_count": sales_count,
-                        "revenue": revenue,
-                        "accessories_count": accessories_count,
-                        "accessories_revenue": accessories_revenue,
-                        "avg_check": avg_check,
-                        "sales_per_shift": sales_per_shift,
-                        "work_dates": [d.isoformat() for d in work_days],
-                    }
+                    .order_by(SellerDay.date)
                 )
-
-            day = start_date
-            while day <= end_date:
-                day_sellers = (
+            ).scalars().all()
+            days_worked = len(worked)
+            sales_count = 0
+            revenue = 0.0
+            accessories_revenue = 0.0
+            accessories_count = 0
+            for d in worked:
+                s = await snap(d)
+                # если в день несколько продавцов — делим поровну
+                present = (
                     await session.execute(
-                        select(Seller.name)
-                        .join(SellerDay, SellerDay.seller_id == Seller.id)
-                        .where(SellerDay.date == day)
-                        .order_by(Seller.name)
+                        select(func.count(SellerDay.id)).where(SellerDay.date == d)
                     )
-                ).scalars().all()
+                ).scalar() or 1
+                share = 1.0 / max(1, int(present))
+                sales_count += int(round(s.get("sales_count", 0) * share))
+                revenue += float(s.get("total_revenue", 0) or 0) * share
+                accessories_revenue += float(s.get("accessories_revenue", 0) or 0) * share
+                accessories_count += int(round(s.get("accessories_count", 0) * share))
 
-                s = await snap(day)
-                row = {
-                    "date": day.isoformat(),
-                    "date_display": day.strftime("%d.%m.%Y"),
-                    "sellers": list(day_sellers),
-                    "sales": s["sales_count"],
-                    "revenue": float(s["total_revenue"]),
-                    "accessories_count": int(s.get("accessories_count", 0) or 0),
-                    "accessories_revenue": float(s.get("accessories_revenue", 0) or 0),
-                }
-                calendar_rows.append(row)
-
-                if not day_sellers and (s["sales_count"] or s["total_revenue"]):
-                    unassigned_days.append(row)
-                    unassigned_sales += s["sales_count"]
-                    unassigned_revenue += float(s["total_revenue"])
-
-                day += timedelta(days=1)
-
-            calendar_rows.reverse()
-
-            return templates.TemplateResponse(
-                "sellers_stats.html",
+            sales_per_shift = (sales_count / days_worked) if days_worked else 0.0
+            seller_rows.append(
                 {
-                    "request": request,
-                    "results": results,
-                    "calendar": calendar_rows,
-                    "unassigned_days": unassigned_days,
-                    "unassigned_sales": unassigned_sales,
-                    "unassigned_revenue": unassigned_revenue,
-                    "days": days,
-                    "date_from": start_date.isoformat(),
-                    "date_to": end_date.isoformat(),
-                    "start_date": start_date.isoformat(),
-                    "end_date": end_date.isoformat(),
-                },
+                    "id": seller.id,
+                    "name": seller.name,
+                    "days_worked": days_worked,
+                    "sales_count": sales_count,
+                    "revenue": revenue,
+                    "accessories_revenue": accessories_revenue,
+                    "accessories_count": accessories_count,
+                    "sales_per_shift": sales_per_shift,
+                    "dates": [d.isoformat() for d in worked],
+                }
             )
-        except SQLAlchemyError as e:
-            logger.error("Ошибка статистики продавцов: %s", e)
-            raise HTTPException(status_code=500, detail="Ошибка базы данных")
+
+        # дни с продажами без отмеченных смен
+        orphan_days = []
+        d = start_date
+        while d <= end_date:
+            s = await snap(d)
+            if s.get("sales_count") or s.get("total_revenue"):
+                has_seller = (
+                    await session.execute(
+                        select(Seller.id)
+                        .join(SellerDay, SellerDay.seller_id == Seller.id)
+                        .where(SellerDay.date == d)
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if not has_seller:
+                    orphan_days.append(
+                        {
+                            "date": d.isoformat(),
+                            "sales": s.get("sales_count", 0),
+                            "revenue": s.get("total_revenue", 0),
+                        }
+                    )
+            d += timedelta(days=1)
+
+        return templates.TemplateResponse(
+            "sellers_stats.html",
+            {
+                "request": request,
+                "sellers": seller_rows,
+                "start": start_date.isoformat(),
+                "end": end_date.isoformat(),
+                "orphan_days": orphan_days,
+            },
+        )
 
 
 @router.get("/schedule")
@@ -308,18 +266,30 @@ async def seller_schedule(
                 ).scalars().all()
             )
 
-        days_grid = []
+        # Календарь: недели по 7 ячеек (Пн…Вс), пустые — None
+        # иначе шаблон {% for week in days_grid %}{% for cell in week %} ломается
+        today = today_local()
+        days_grid: list[list] = []
+        week: list = [None] * first.weekday()  # weekday: Mon=0 … Sun=6
         d = first
         while d <= last:
-            days_grid.append(
+            week.append(
                 {
                     "date": d.isoformat(),
                     "day": d.day,
                     "weekday": d.weekday(),
                     "worked": d in worked_dates,
+                    "is_today": d == today,
                 }
             )
+            if len(week) == 7:
+                days_grid.append(week)
+                week = []
             d += timedelta(days=1)
+        if week:
+            while len(week) < 7:
+                week.append(None)
+            days_grid.append(week)
 
         return templates.TemplateResponse(
             "sellers_schedule.html",
