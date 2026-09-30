@@ -227,6 +227,8 @@ async def seller_stats(
             "sellers_stats.html",
             {
                 "request": request,
+                # шаблон: {% for s in results %}
+                "results": seller_rows,
                 "sellers": seller_rows,
                 "date_from": start_date.isoformat(),
                 "date_to": end_date.isoformat(),
