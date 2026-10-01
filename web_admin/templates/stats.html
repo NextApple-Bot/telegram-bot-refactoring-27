@@ -51,16 +51,52 @@
     </div>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
         <div class="flex items-start justify-between">
             <div>
                 <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Продажи</p>
                 <p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ sales_count }}</p>
-                <p class="text-[11px] text-slate-400 mt-1">устр. {{ devices_count|default(sales_count) }} · акс. {{ accessories_count|default(0) }}</p>
+                <p class="text-[11px] text-slate-400 mt-1">устр. {{ devices_count|default(0) }} · акс. {{ accessories_count|default(0) }}</p>
             </div>
             <div class="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center">
                 <i class="fas fa-shopping-bag text-indigo-600 dark:text-indigo-400"></i>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Выручка</p>
+                <p class="mt-2 text-3xl font-bold text-emerald-600 dark:text-emerald-400">{{ "{:,.0f}".format(total_revenue|default(0)|float).replace(',', ' ') }} ₽</p>
+                <p class="text-[11px] text-slate-400 mt-1">сумма всех оплат за период</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center">
+                <i class="fas fa-ruble-sign text-emerald-600 dark:text-emerald-400"></i>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Устройства</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ devices_count|default(0) }}</p>
+                <p class="text-[11px] text-slate-400 mt-1">{{ "{:,.0f}".format(devices_revenue|default(0)|float).replace(',', ' ') }} ₽</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-sky-50 dark:bg-sky-950/50 flex items-center justify-center">
+                <i class="fas fa-mobile-alt text-sky-600 dark:text-sky-400"></i>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Аксессуары</p>
+                <p class="mt-2 text-3xl font-bold text-pink-600 dark:text-pink-400">{{ accessories_count|default(0) }}</p>
+                <p class="text-[11px] text-slate-400 mt-1">{{ "{:,.0f}".format(accessories_revenue|default(0)|float).replace(',', ' ') }} ₽</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-pink-50 dark:bg-pink-950/30 flex items-center justify-center">
+                <i class="fas fa-plug text-pink-600 dark:text-pink-400"></i>
             </div>
         </div>
     </div>
