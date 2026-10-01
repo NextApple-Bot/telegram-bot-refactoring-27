@@ -129,6 +129,29 @@ async def collect_report(session, start_date: date, end_date: date) -> dict:
     sales_row["accessories_count"] = accessories_count
     sales_row["devices_count"] = devices_count
 
+    # Суммы оплат по аксессуарам
+    pay_expr = (
+        func.coalesce(func.sum(Sale.cash), 0)
+        + func.coalesce(func.sum(Sale.terminal), 0)
+        + func.coalesce(func.sum(Sale.qr), 0)
+        + func.coalesce(func.sum(Sale.transfer), 0)
+        + func.coalesce(func.sum(Sale.invoice), 0)
+        + func.coalesce(func.sum(Sale.installment), 0)
+    )
+    acc_rev_raw = (
+        await session.execute(
+            select(pay_expr).where(
+                func.date(Sale.sold_at).between(start_date, end_date),
+                Sale.is_accessory.is_(True),
+            )
+        )
+    ).scalar() or 0
+    accessories_revenue = max(
+        0.0,
+        float(acc_rev_raw) + float(totals_adj.get("accessories_revenue", 0) or 0),
+    )
+    sales_row["accessories_revenue"] = accessories_revenue
+
     preorders_row["count"] = max(
         0, int(round(float(preorders_row["count"]) + totals_adj.get("preorders_count", 0)))
     )
@@ -137,6 +160,12 @@ async def collect_report(session, start_date: date, end_date: date) -> dict:
     )
     for k in PAYMENT_METRICS:
         sales_row[k] = max(0.0, float(sales_row.get(k) or 0) + totals_adj.get(k, 0.0))
+
+    # Итоговые суммы после корректировок оплат
+    total_revenue = sum(float(sales_row.get(k) or 0) for k in PAYMENT_METRICS)
+    devices_revenue = max(0.0, total_revenue - float(sales_row.get("accessories_revenue") or 0))
+    sales_row["devices_revenue"] = devices_revenue
+    sales_row["total_revenue"] = total_revenue
 
     sales_by_day = {
         row.d: int(row.cnt)
